@@ -2,7 +2,12 @@ import { useState, useRef, useEffect } from "react";
 import "./App.css";
 import MapView from "./MapView.jsx";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+function normalizeBackendUrl(rawUrl) {
+  if (!rawUrl) return null;
+  return rawUrl.match(/^https?:\/\//i) ? rawUrl : `https://${rawUrl}`;
+}
+
+const BACKEND_URL = normalizeBackendUrl(import.meta.env.VITE_BACKEND_URL) || "http://localhost:8000";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
