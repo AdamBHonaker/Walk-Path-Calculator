@@ -33,6 +33,7 @@ ALLOWED_ORIGINS = [
     o.strip() for o in _extra_origins.split(",") if o.strip()
 ]
 
+print("ALLOWED_ORIGINS:", ALLOWED_ORIGINS)  # Debug: confirm origins are loaded
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -72,8 +72,11 @@ CHICAGO_EAST:  float = -87.52
 
 CHICAGO_BBOX_GOOGLE: str = f"{CHICAGO_SOUTH},{CHICAGO_WEST}|{CHICAGO_NORTH},{CHICAGO_EAST}"
 
-# Street-graph coverage (tighter than full Chicago)
-STREET_GRAPH_SOUTH: float = 41.8560
-STREET_GRAPH_NORTH: float = 42.0190
-STREET_GRAPH_WEST:  float = -87.7260
+# Street-graph coverage — full Chicago city limits + a small buffer
+STREET_GRAPH_SOUTH: float = 41.6400
+STREET_GRAPH_NORTH: float = 42.0830
+STREET_GRAPH_WEST:  float = -87.9400
 STREET_GRAPH_EAST:  float = -87.5200
+
+# OSMnx bbox format: (west, south, east, north)
+STREET_GRAPH_BBOX_OSMNX: tuple = (STREET_GRAPH_WEST, STREET_GRAPH_SOUTH, STREET_GRAPH_EAST, STREET_GRAPH_NORTH)

@@ -8,6 +8,7 @@ function normalizeBackendUrl(rawUrl) {
 }
 
 const BACKEND_URL = normalizeBackendUrl(import.meta.env.VITE_BACKEND_URL) || "http://localhost:8000";
+console.log('BACKEND_URL:', BACKEND_URL); // Debug: check what URL is being used
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 

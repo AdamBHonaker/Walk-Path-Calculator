@@ -97,6 +97,13 @@ def _load_graph() -> "ig.Graph | None":
             print(f"[walking] Loading street graph from {GRAPH_PATH} ...")
             try:
                 G = ig.Graph.Read_GraphML(str(GRAPH_PATH))
+                # osmnx GraphML stores all attributes as strings; convert length to float
+                # so igraph's Dijkstra receives numeric weights instead of failing silently.
+                for e in G.es:
+                    try:
+                        e["length"] = float(e["length"]) if e["length"] else 0.0
+                    except (TypeError, ValueError):
+                        e["length"] = 0.0
                 _parse_geometry_inplace(G)
                 print(f"[walking] igraph loaded: {G.vcount():,} vertices, {G.ecount():,} edges")
             except Exception as e:
