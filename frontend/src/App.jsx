@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, memo, Component } from "react";
 import "./App.css";
 import MapView from "./MapView.jsx";
 
@@ -8,20 +8,22 @@ function normalizeBackendUrl(rawUrl) {
 }
 
 const BACKEND_URL = normalizeBackendUrl(import.meta.env.VITE_BACKEND_URL) || "http://localhost:8000";
-console.log('BACKEND_URL:', BACKEND_URL); // Debug: check what URL is being used
+
+const FT_OPTIONS = [4, 5, 6, 7];
+const IN_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function formatSteps(n) {
-  return n.toLocaleString();
+  return n != null ? n.toLocaleString() : "–";
 }
 
-function formatBlocks(blocks, blockType) {
+export function formatBlocks(blocks, blockType) {
   const t = blockType === "long" ? "long block" : "short block";
   return `${blocks} ${blocks === 1 ? t : t + "s"}`;
 }
 
-function motivationMessage(steps) {
+export function motivationMessage(steps) {
   if (steps < 1500) return "A great short walk. Every step counts toward your health!";
   if (steps < 4000) return "A solid neighborhood walk — this is exactly what daily health looks like.";
   if (steps < 7000) return "You're racking up serious steps. This beats a car ride every time.";
@@ -31,17 +33,15 @@ function motivationMessage(steps) {
 
 // ── Height section ────────────────────────────────────────────────────────
 
-function HeightInput({ heightFt, heightIn, onChange }) {
+const HeightInput = memo(function HeightInput({ heightFt, heightIn, onChange }) {
   const [open, setOpen] = useState(false);
 
   function handleFt(e) {
-    const ft = parseInt(e.target.value, 10);
-    onChange(ft, heightIn);
+    onChange(e.target.value, heightIn);
   }
 
   function handleIn(e) {
-    const inches = parseInt(e.target.value, 10);
-    onChange(heightFt, inches);
+    onChange(heightFt, e.target.value);
   }
 
   const hasHeight = heightFt !== null;
@@ -72,7 +72,7 @@ function HeightInput({ heightFt, heightIn, onChange }) {
                 aria-label="Height feet"
               >
                 <option value="" disabled>ft</option>
-                {[4, 5, 6, 7].map(f => (
+                {FT_OPTIONS.map(f => (
                   <option key={f} value={f}>{f} ft</option>
                 ))}
               </select>
@@ -83,7 +83,7 @@ function HeightInput({ heightFt, heightIn, onChange }) {
                 disabled={heightFt === null}
               >
                 <option value="" disabled>in</option>
-                {Array.from({ length: 12 }, (_, i) => (
+                {IN_OPTIONS.map(i => (
                   <option key={i} value={i}>{i} in</option>
                 ))}
               </select>
@@ -96,11 +96,11 @@ function HeightInput({ heightFt, heightIn, onChange }) {
       )}
     </div>
   );
-}
+});
 
 // ── Direction list ────────────────────────────────────────────────────────
 
-function DirectionList({ directions }) {
+function DirectionList({ directions = [] }) {
   const [showAll, setShowAll] = useState(false);
   const visible = showAll ? directions : directions.slice(0, 5);
   const hasMore = directions.length > 5;
@@ -204,6 +204,30 @@ function LoadingSkeleton() {
   );
 }
 
+// ── Error boundary ────────────────────────────────────────────────────────
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="error" role="alert">
+          Something went wrong displaying your route — try a new search.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── App ───────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -220,10 +244,11 @@ export default function App() {
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
-  function handleHeightChange(ft, inches) {
-    setHeightFt(ft === "" ? null : Number(ft));
-    setHeightIn(inches === "" ? null : Number(inches));
-  }
+  const handleHeightChange = useCallback((ft, inches) => {
+    const toNum = v => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));
+    setHeightFt(toNum(ft));
+    setHeightIn(toNum(inches));
+  }, []);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -336,7 +361,7 @@ export default function App() {
             {loading && <LoadingSkeleton />}
 
             {result && !loading && (
-              <>
+              <ErrorBoundary>
                 <StepHero result={result} />
 
                 <div className="motivation">
@@ -344,7 +369,7 @@ export default function App() {
                 </div>
 
                 <DirectionList directions={result.directions} />
-              </>
+              </ErrorBoundary>
             )}
           </main>
         </div>

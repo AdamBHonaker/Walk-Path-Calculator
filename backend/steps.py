@@ -12,8 +12,6 @@ reference body weight. The value is displayed as approximate; weight is not
 collected.
 """
 
-WALKING_SPEED_MPH: float = 3.0
-
 DEFAULT_STEP_LENGTH_FT: float = 2.5        # 30 inches — average adult
 _HEIGHT_TO_STEP_FACTOR: float = 0.413      # step_length_inches = height_inches × this
 _CALORIES_PER_MINUTE: float = 4.3         # ≈ MET 3.5 × 70 kg × 3.5 / 200
@@ -38,4 +36,6 @@ def calories_from_minutes(minutes: float) -> int:
 
 def daily_goal_pct(steps: int, daily_goal: int = 10_000) -> int:
     """Return steps as an integer percentage of the daily goal."""
+    if daily_goal <= 0:
+        return 0
     return round(steps / daily_goal * 100)

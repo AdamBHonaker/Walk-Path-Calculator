@@ -8,7 +8,7 @@ Usage:
   python fetch_street_graph.py           # download if missing
   python fetch_street_graph.py --force   # always re-download
 
-Geographic scope: full Chicago city limits (Howard→95th, lakefront→city edge).
+Geographic scope: northern Chicago only (20th St→Howard, lakefront→city west edge).
 Defined in utils.STREET_GRAPH_BBOX_OSMNX — edit there to adjust coverage.
 
 The igraph artifact (street_graph_igraph.pkl) is also built automatically.
@@ -169,9 +169,10 @@ if __name__ == "__main__":
             IGRAPH_PATH.unlink()
         download_and_save()
     else:
+        import sys
         size_mb = GRAPH_PATH.stat().st_size / (1024 * 1024)
-        if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("CI"):
-            print(f"Street graph already present ({size_mb:.1f} MB). Keeping it.")
+        if not sys.stdin.isatty() or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("CI"):
+            print(f"Street graph already present ({size_mb:.1f} MB). Keeping it (non-interactive).")
         else:
             print(f"Street graph already exists ({size_mb:.1f} MB) at {GRAPH_PATH}.")
             answer = input("Re-download and overwrite? [y/N]: ").strip().lower()

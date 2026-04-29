@@ -8,6 +8,7 @@ or falls back to parsing street_graph.graphml via igraph directly.
 Walking speed assumption: 3 mph (1.34 m/s) — a comfortable pedestrian pace.
 """
 
+import math
 import pickle
 import threading
 from functools import lru_cache
@@ -17,13 +18,12 @@ import igraph as ig
 import numpy as np
 from scipy.spatial import cKDTree
 
-from utils import haversine_miles as _haversine_miles
+from utils import haversine_miles as _haversine_miles, WALKING_SPEED_MPH
 
 GRAPH_PATH  = Path(__file__).parent / "street_graph.graphml"
 IGRAPH_PATH = Path(__file__).parent / "street_graph_igraph.pkl"
 
-WALKING_SPEED_MPS = 3.0 * 1609.34 / 3600  # 3 mph → metres per second ≈ 1.34 m/s
-WALKING_SPEED_MPH = 3.0
+WALKING_SPEED_MPS = WALKING_SPEED_MPH * 1609.34 / 3600  # mph → metres per second ≈ 1.34 m/s
 
 _LONG_BLOCK_METERS    = 201.17   # 1/8 mile = 660 ft — N-S numbered-address axis
 _SHORT_BLOCK_METERS   = 100.58   # 1/16 mile = 330 ft — E-W cross streets
@@ -176,19 +176,13 @@ def _haversine_walk_minutes(
     return round(_haversine_miles(lat1, lon1, lat2, lon2) / WALKING_SPEED_MPH * 60, 1)
 
 
-@lru_cache(maxsize=512)
-def walk_minutes(
-    origin_lat: float,
-    origin_lon: float,
-    dest_lat: float,
-    dest_lon: float,
-) -> float:
-    """
-    Return the estimated walking time in minutes between two lat/lon points,
-    routed along the real pedestrian street network.
+# ---------------------------------------------------------------------------
+# Private build helpers — not cached; called exactly once per _compute_route miss
+# ---------------------------------------------------------------------------
 
-    Falls back to a straight-line Haversine estimate if routing fails.
-    """
+def _build_minutes(
+    origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float,
+) -> float:
     try:
         G = _load_graph()
         if G is None:
@@ -203,16 +197,12 @@ def walk_minutes(
         return _haversine_walk_minutes(origin_lat, origin_lon, dest_lat, dest_lon)
 
 
-@lru_cache(maxsize=512)
-def _walk_directions_impl(
+def _build_directions(
     origin_lat: float,
     origin_lon: float,
     dest_lat: float,
     dest_lon: float,
 ) -> tuple:
-    """Cached implementation for walk_directions — returns a tuple so the cache holds immutable data."""
-    import math
-
     def _cardinal(lat1: float, lon1: float, lat2: float, lon2: float) -> str:
         dlat = lat2 - lat1
         dlon = lon2 - lon1
@@ -303,17 +293,15 @@ def walk_directions(
     Each step represents a continuous segment along a named street.
     Returns a fresh list on every call (safe to mutate).
     """
-    return list(_walk_directions_impl(origin_lat, origin_lon, dest_lat, dest_lon))
+    return list(_compute_route(origin_lat, origin_lon, dest_lat, dest_lon)[1])
 
 
-@lru_cache(maxsize=512)
-def _walk_path_impl(
+def _build_path(
     origin_lat: float,
     origin_lon: float,
     dest_lat: float,
     dest_lon: float,
 ) -> tuple:
-    """Cached implementation for walk_path."""
     try:
         G = _load_graph()
         if G is None:
@@ -340,7 +328,9 @@ def _walk_path_impl(
                 du_end   = (geom_coords[-1][0] - u_lon)**2 + (geom_coords[-1][1] - u_lat)**2
                 if du_start > du_end:
                     geom_coords = geom_coords[::-1]
-                start = 1 if result_coords and (geom_coords[0][1], geom_coords[0][0]) == result_coords[-1] else 0
+                first = (geom_coords[0][1], geom_coords[0][0])
+                last  = result_coords[-1] if result_coords else None
+                start = 1 if last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9 else 0
                 for lon, lat in geom_coords[start:]:
                     result_coords.append((lat, lon))
             else:
@@ -355,6 +345,35 @@ def _walk_path_impl(
         return ((origin_lat, origin_lon), (dest_lat, dest_lon))
 
 
+# ---------------------------------------------------------------------------
+# Single shared cache — resolves OPT-005 (stampede) and OPT-006 (uncoordinated eviction)
+# ---------------------------------------------------------------------------
+
+@lru_cache(maxsize=512)
+def _compute_route(
+    origin_lat: float,
+    origin_lon: float,
+    dest_lat: float,
+    dest_lon: float,
+) -> "tuple[tuple, tuple, float]":
+    """
+    Compute and cache all route data in one call.
+
+    Returns (path_coords_tuple, directions_tuple, minutes_float). All three
+    public routing functions read from this single cache, so Dijkstra runs at
+    most once per unique origin/destination pair and LRU evictions are coordinated.
+    """
+    return (
+        _build_path(origin_lat, origin_lon, dest_lat, dest_lon),
+        _build_directions(origin_lat, origin_lon, dest_lat, dest_lon),
+        _build_minutes(origin_lat, origin_lon, dest_lat, dest_lon),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def walk_path(
     origin_lat: float,
     origin_lon: float,
@@ -368,4 +387,19 @@ def walk_path(
     streets like Milwaukee Ave). Falls back to a straight line if routing fails.
     Returns a fresh list on every call (safe to mutate).
     """
-    return [list(pt) for pt in _walk_path_impl(origin_lat, origin_lon, dest_lat, dest_lon)]
+    return [list(pt) for pt in _compute_route(origin_lat, origin_lon, dest_lat, dest_lon)[0]]
+
+
+def walk_minutes(
+    origin_lat: float,
+    origin_lon: float,
+    dest_lat: float,
+    dest_lon: float,
+) -> float:
+    """
+    Return the estimated walking time in minutes between two lat/lon points,
+    routed along the real pedestrian street network.
+
+    Falls back to a straight-line Haversine estimate if routing fails.
+    """
+    return _compute_route(origin_lat, origin_lon, dest_lat, dest_lon)[2]

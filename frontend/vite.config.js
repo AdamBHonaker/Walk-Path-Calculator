@@ -3,6 +3,11 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test-setup.js"],
+  },
   plugins: [
     react(),
     VitePWA({
@@ -19,11 +24,12 @@ export default defineConfig({
         scope: "/",
         start_url: "/",
         icons: [
-          { src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" },
+          { src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+          { src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,ico,svg,woff2}", "icon-*.png", "apple-touch-icon.png"],
+        globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
         runtimeCaching: [
           {
             urlPattern: /\/(route|health)(\?.*)?$/i,

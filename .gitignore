@@ -9,6 +9,9 @@ backend/.env
 # Geocode cache (auto-generated)
 backend/geocode_cache.json
 
+# OSMnx / routing cache (large files)
+backend/cache/
+
 # Python
 __pycache__/
 *.py[cod]

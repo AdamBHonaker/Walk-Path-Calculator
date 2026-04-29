@@ -45,7 +45,7 @@ npm run dev             # starts at http://localhost:5173
 
 ## Key Design Decisions
 
-- **Chicago-only for now.** The street graph is pre-built and stored locally; routing is instant. Future expansion: add new city graphs and a city picker UI (one city per "game piece").
+- **Chicago-only for now.** The street graph is pre-built and stored locally; routing is instant. Current bbox covers northern Chicago (20th St → Howard, lakefront → west city edge) for faster development iteration. Future expansion: widen bbox to full city limits, then add new city graphs and a city picker UI (one city per "game piece").
 - **Walking speed: 3 mph.** Consistent with CTA-Transit-PWA. Used to convert segment minutes ↔ distances.
 - **Step formula:** `step_length_inches = height_inches × 0.413`. Default (no height): 2.5 ft (30 in). See `steps.py`.
 - **No transit data.** This project has zero dependency on GTFS, CTA APIs, or the transit graph. `walking.py`, `utils.py`, and `geocoding.py` are the entire backend surface.

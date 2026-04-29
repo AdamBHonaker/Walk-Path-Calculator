@@ -23,6 +23,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
+# Download the Chicago pedestrian street graph from OpenStreetMap and build the
+# fast igraph artifact. Runs once at build time so the server starts instantly.
+# If the graphml is already present in the build context (local dev), it is kept.
+RUN python fetch_street_graph.py
+
 # Expose the port FastAPI will run on
 EXPOSE 8000
 

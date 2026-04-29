@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from walking import walk_path, walk_directions, walk_minutes, WALKING_SPEED_MPH, _load_graph
+from walking import _compute_route, WALKING_SPEED_MPH, _load_graph
 from geocoding import resolve_location
 from steps import (
     step_length_from_height,
@@ -32,8 +32,6 @@ ALLOWED_ORIGINS = [
 ] + [
     o.strip() for o in _extra_origins.split(",") if o.strip()
 ]
-
-print("ALLOWED_ORIGINS:", ALLOWED_ORIGINS)  # Debug: confirm origins are loaded
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -76,12 +74,6 @@ class RouteRequest(BaseModel):
         if v is not None and not (36 <= v <= 108):  # 3 ft to 9 ft — sanity range
             raise ValueError("height_inches must be between 36 and 108")
         return v
-
-
-def _route_distance_miles(directions: list[dict]) -> float:
-    """Sum distance from all direction segments, derived from walk time."""
-    total_min = sum(d["minutes"] for d in directions)
-    return total_min * WALKING_SPEED_MPH / 60.0
 
 
 @app.get("/health")
@@ -132,20 +124,20 @@ async def route(request: RouteRequest, http_request: Request):
             detail="Your origin and destination appear to be the same location.",
         )
 
-    # Fetch walk data — all three share the same cached Dijkstra result
-    path, directions, total_minutes = await asyncio.gather(
-        loop.run_in_executor(None, walk_path,       *origin_coords, *dest_coords),
-        loop.run_in_executor(None, walk_directions, *origin_coords, *dest_coords),
-        loop.run_in_executor(None, walk_minutes,    *origin_coords, *dest_coords),
-    )
+    # Single cached call — Dijkstra runs at most once per origin/destination pair.
+    route         = await loop.run_in_executor(None, _compute_route, *origin_coords, *dest_coords)
+    path          = [list(pt) for pt in route[0]]
+    directions    = list(route[1])
+    total_minutes = route[2]
 
-    # Step calculation
+    # Step calculation — derive total_miles directly from total_minutes so that
+    # steps and calories are computed from the same underlying distance value.
     step_len = (
         step_length_from_height(request.height_inches)
         if request.height_inches is not None
         else DEFAULT_STEP_LENGTH_FT
     )
-    total_miles = _route_distance_miles(directions)
+    total_miles = total_minutes * WALKING_SPEED_MPH / 60.0
     total_steps = steps_from_miles(total_miles, step_len)
     calories    = calories_from_minutes(total_minutes)
     goal_pct    = daily_goal_pct(total_steps)

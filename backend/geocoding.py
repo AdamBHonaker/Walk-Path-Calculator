@@ -28,6 +28,9 @@ _GEOCODE_CACHE_PATH = Path(__file__).parent / "geocode_cache.json"
 _geocode_lock = threading.Lock()
 _http_session = requests.Session()
 
+_geocode_unsaved: int = 0      # entries added since last write
+_GEOCODE_SAVE_EVERY: int = 5   # write to disk every N new entries
+
 
 def _load_geocode_cache() -> dict:
     if _GEOCODE_CACHE_PATH.exists():
@@ -53,6 +56,22 @@ def _save_geocode_cache(cache: dict) -> None:
 
 
 _geocode_cache: dict = _load_geocode_cache()
+
+
+def _flush_geocode_if_needed() -> None:
+    """Increment unsaved counter and write cache every _GEOCODE_SAVE_EVERY entries."""
+    global _geocode_unsaved
+    _geocode_unsaved += 1
+    if _geocode_unsaved >= _GEOCODE_SAVE_EVERY:
+        _save_geocode_cache(_geocode_cache)
+        _geocode_unsaved = 0
+
+
+import atexit as _atexit
+@_atexit.register
+def _flush_geocode_on_exit() -> None:
+    if _geocode_unsaved > 0:
+        _save_geocode_cache(_geocode_cache)
 
 
 # ---------------------------------------------------------------------------
@@ -392,8 +411,7 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
         if query in _geocode_cache:
             return _geocode_cache[query]
 
-        api_key = os.getenv("GOOGLE_MAPS_API_KEY", "")
-        if not api_key:
+        if not _GOOGLE_API_KEY:
             print("[geocoding] GOOGLE_MAPS_API_KEY not set — geocoding unavailable")
             return None
 
@@ -402,7 +420,7 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
                 _GOOGLE_GEOCODE_URL,
                 params={
                     "address": query if "chicago" in query.lower() else query + ", Chicago, IL",
-                    "key": api_key,
+                    "key": _GOOGLE_API_KEY,
                     "components": "country:US",
                     "bounds": CHICAGO_BBOX_GOOGLE,
                 },
@@ -413,14 +431,14 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
                 loc = data["results"][0]["geometry"]["location"]
                 coords: tuple[float, float] = (float(loc["lat"]), float(loc["lng"]))
                 _geocode_cache[query] = coords
-                _save_geocode_cache(_geocode_cache)
+                _flush_geocode_if_needed()
                 print(f"[geocoding] Geocoded '{query}' → {coords}")
                 return coords
             status = data.get("status")
             print(f"[geocoding] Google returned status '{status}' for '{query}'")
             if status == "ZERO_RESULTS":
                 _geocode_cache[query] = None
-                _save_geocode_cache(_geocode_cache)
+                _flush_geocode_if_needed()
         except Exception as exc:
             print(f"[geocoding] Google geocoding failed for '{query}': {exc}")
 

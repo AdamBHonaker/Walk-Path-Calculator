@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 
-const DEFAULT_STYLE  = "https://tiles.openfreemap.org/styles/liberty";
+const DEFAULT_STYLE  = import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const DEFAULT_CENTER = [-87.654, 41.966]; // Uptown, Chicago
 const DEFAULT_ZOOM   = 13;
 const WALK_PATH_COLOR = "#2d7a3e";
@@ -32,7 +32,22 @@ function renderWalkRoute(map, result, layerIds, sourceIds) {
   if (!result?.path?.length) return;
 
   const { path, origin_coords, dest_coords } = result;
-  const geoPath = path.map(toGeo);
+
+  // Convert coords and compute bounding box in a single pass
+  const { geoPath, bounds } = path.reduce(
+    ({ geoPath, bounds }, pt) => {
+      const [lon, lat] = toGeo(pt);
+      geoPath.push([lon, lat]);
+      return {
+        geoPath,
+        bounds: [
+          [Math.min(bounds[0][0], lon), Math.min(bounds[0][1], lat)],
+          [Math.max(bounds[1][0], lon), Math.max(bounds[1][1], lat)],
+        ],
+      };
+    },
+    { geoPath: [], bounds: [[Infinity, Infinity], [-Infinity, -Infinity]] },
+  );
 
   // Walk path — solid green line
   _trackSource(map, "walk-path", {
@@ -81,13 +96,6 @@ function renderWalkRoute(map, result, layerIds, sourceIds) {
 
   // Auto-fit to route
   if (geoPath.length > 0) {
-    const bounds = geoPath.reduce(
-      ([sw, ne], [lon, lat]) => [
-        [Math.min(sw[0], lon), Math.min(sw[1], lat)],
-        [Math.max(ne[0], lon), Math.max(ne[1], lat)],
-      ],
-      [[Infinity, Infinity], [-Infinity, -Infinity]],
-    );
     map.fitBounds(bounds, { padding: 60, animate: false });
   }
 }
@@ -152,7 +160,8 @@ export default function MapView({
       map?.remove();
       mapRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // intentional: map init runs once; style/center/zoom are treated as stable init props
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -169,7 +178,8 @@ export default function MapView({
       map.once("load", render);
       return () => map.off("load", render);
     }
-  }, [result]); // eslint-disable-line react-hooks/exhaustive-deps
+  // intentional: only re-render route when result changes; mapRef is a stable ref
+  }, [result]);
 
   function handleUnlock() {
     const map = mapRef.current;
