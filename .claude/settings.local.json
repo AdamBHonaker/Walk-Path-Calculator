@@ -25,7 +25,14 @@
       "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" diff --stat HEAD)",
       "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" log --oneline -5)",
       "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" add .gitignore CLAUDE.md Efficiency_Improvements.md FEATURE_IMPLEMENTATION_PLANS.md Technical_Debt.md backend/Dockerfile backend/fetch_street_graph.py backend/geocoding.py backend/main.py backend/requirements.txt backend/steps.py backend/utils.py backend/walking.py frontend/.env.production frontend/package-lock.json frontend/package.json frontend/src/App.jsx frontend/src/MapView.jsx frontend/vite.config.js BUGS_TO_BE_FIXED.md RESOLVED_HISTORY.md backend/requirements-test.txt backend/tests/ frontend/src/App.test.jsx frontend/src/test-setup.js .claude/settings.local.json)",
-      "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" rm --cached Efficiency_Improvement_History.md Technical_Debt_Paid_Off.md)"
+      "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" rm --cached Efficiency_Improvement_History.md Technical_Debt_Paid_Off.md)",
+      "Bash(git -C 'c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator' commit -m ' *)",
+      "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" push)",
+      "Bash(railway --version)",
+      "Bash(npm root *)",
+      "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" add backend/Dockerfile backend/.dockerignore)",
+      "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" rm --cached backend/railway.toml)",
+      "Bash(git -C \"c:/Users/Adam & Serena/OneDrive/Documents/GitHub/Walk-Path-Calculator\" push origin main)"
     ]
   }
 }
