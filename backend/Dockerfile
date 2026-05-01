@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Download the street graph and build the fast igraph artifact from it
-RUN curl -L -o street_graph.graphml \
+RUN curl -fL -o street_graph.graphml \
     "https://github.com/AdamBHonaker/Walk-Path-Calculator/releases/download/street-graph/street_graph.graphml" \
     && python fetch_street_graph.py
 
