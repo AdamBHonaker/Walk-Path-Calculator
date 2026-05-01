@@ -98,6 +98,18 @@ const HeightInput = memo(function HeightInput({ heightFt, heightIn, onChange }) 
   );
 });
 
+function pathTypePhrase(pathType) {
+  switch (pathType) {
+    case "crosswalk":        return "through the crosswalk";
+    case "steps":            return "up the steps";
+    case "pedestrian plaza": return "through the pedestrian plaza";
+    case "bike path":        return "along the bike path";
+    case "footway":          return "along the footway";
+    case "trail":            return "along the trail";
+    default:                 return "along the path";
+  }
+}
+
 // ── Direction list ────────────────────────────────────────────────────────
 
 function DirectionList({ directions = [] }) {
@@ -126,10 +138,13 @@ function DirectionList({ directions = [] }) {
             <span className="direction-num">{i + 1}</span>
             <span className="direction-body">
               <span className="direction-street">
-                {i === 0 ? "Start on" : "Continue on"} {step.street}
+                {step.street
+                  ? `${i === 0 ? "Start on" : "Continue on"} ${step.street}`
+                  : `${i === 0 ? "Walk" : "Continue"}${step.direction_full ? ` ${step.direction_full}` : ""} ${pathTypePhrase(step.path_type)}`
+                }
               </span>
               <div className="direction-detail">
-                {step.direction_full && `Head ${step.direction_full} · `}
+                {step.street && step.direction_full && `Head ${step.direction_full} · `}
                 {formatBlocks(step.blocks, step.block_type)}
                 {" · "}{step.minutes} min
               </div>

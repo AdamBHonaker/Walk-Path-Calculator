@@ -34,6 +34,25 @@ _DIRECTION_FULL = {
     "S":  "South",     "SW": "Southwest", "W":  "West",      "NW": "Northwest",
 }
 
+_SERVICE_HIGHWAY_TYPES = {"service", "alley"}
+
+
+def _highway_path_type(highway: str, footway: str) -> str:
+    """Map OSM highway/footway tags to a human-readable path type label."""
+    if footway == "crossing" or highway == "crossing":
+        return "crosswalk"
+    if highway == "steps":
+        return "steps"
+    if highway == "pedestrian":
+        return "pedestrian plaza"
+    if highway == "cycleway":
+        return "bike path"
+    if highway == "track":
+        return "trail"
+    if highway in ("footway", "path"):
+        return highway
+    return "path"
+
 
 _graph_lock: threading.Lock = threading.Lock()
 _graph_cache: "ig.Graph | None" = None
@@ -110,6 +129,15 @@ def _load_graph() -> "ig.Graph | None":
                 print(f"[walking] Failed to load street graph ({type(e).__name__}: {e}) — walking will use Haversine fallback.")
                 _graph_load_failed = True
                 return None
+
+        if "highway" in G.es.attributes():
+            to_delete = [
+                e.index for e in G.es
+                if (e["highway"] or "") in _SERVICE_HIGHWAY_TYPES
+            ]
+            if to_delete:
+                G.delete_edges(to_delete)
+                print(f"[walking] Filtered {len(to_delete):,} service/alley edges")
 
         lons = np.array([v["x"] for v in G.vs], dtype=np.float64)
         lats = np.array([v["y"] for v in G.vs], dtype=np.float64)
@@ -214,8 +242,14 @@ def _build_directions(
         name = attrs.get("name", "")
         if isinstance(name, list):
             name = name[0] if name else ""
-        name = (name or "").strip()
-        return name if name else "unnamed path"
+        return (name or "").strip()
+
+    def _edge_path_type(attrs: dict) -> str:
+        hw = attrs.get("highway") or ""
+        fw = attrs.get("footway") or ""
+        if isinstance(hw, list): hw = hw[0] if hw else ""
+        if isinstance(fw, list): fw = fw[0] if fw else ""
+        return _highway_path_type(hw, fw)
 
     try:
         G = _load_graph()
@@ -231,23 +265,26 @@ def _build_directions(
         if len(vpath) < 2:
             return ()
 
-        raw: list[tuple[str, float, int, int]] = []
+        raw: list[tuple[str, str, float, int, int]] = []
         for eid, u, v in zip(epath, vpath, vpath[1:]):
             edge = G.es[eid]
-            raw.append((_street_name(edge.attributes()), edge["length"] or 0.0, u, v))
+            attrs = edge.attributes()
+            name = _street_name(attrs)
+            path_type = _edge_path_type(attrs) if not name else ""
+            raw.append((name, path_type, edge["length"] or 0.0, u, v))
 
         steps: list[dict] = []
         i = 0
         while i < len(raw):
-            name = raw[i][0]
+            name, path_type = raw[i][0], raw[i][1]
             total_length = 0.0
             edge_count   = 0
-            start_vertex = raw[i][2]
-            end_vertex   = raw[i][3]
-            while i < len(raw) and raw[i][0] == name:
-                total_length += raw[i][1]
+            start_vertex = raw[i][3]
+            end_vertex   = raw[i][4]
+            while i < len(raw) and raw[i][0] == name and raw[i][1] == path_type:
+                total_length += raw[i][2]
                 edge_count   += 1
-                end_vertex = raw[i][3]
+                end_vertex = raw[i][4]
                 i += 1
             lat1 = _vertex_lats[start_vertex]
             lon1 = _vertex_lons[start_vertex]
@@ -262,6 +299,7 @@ def _build_directions(
             block_type = "long" if is_long else "short"
             steps.append({
                 "street":         name,
+                "path_type":      path_type,
                 "direction":      direction_abbrev,
                 "direction_full": _DIRECTION_FULL.get(direction_abbrev, direction_abbrev),
                 "blocks":         blocks,

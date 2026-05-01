@@ -97,12 +97,24 @@ def _save_igraph_artifact(G_nx) -> None:
         nodes = list(G_nx.nodes())
         node_to_idx = {n: i for i, n in enumerate(nodes)}
 
-        edges: list[tuple[int, int]] = []
-        attr_length:   list[float]       = []
-        attr_name:     list[str]         = []
-        attr_geometry: list[list | None] = []
+        _SERVICE_TYPES = {"service", "alley"}
+
+        edges:         list[tuple[int, int]] = []
+        attr_length:   list[float]           = []
+        attr_name:     list[str]             = []
+        attr_highway:  list[str]             = []
+        attr_footway:  list[str]             = []
+        attr_geometry: list[list | None]     = []
+        filtered = 0
 
         for u, v, data in G_nx.edges(data=True):
+            hw = data.get("highway", "")
+            if isinstance(hw, list): hw = hw[0] if hw else ""
+            hw = (hw or "").strip()
+            if hw in _SERVICE_TYPES:
+                filtered += 1
+                continue
+
             edges.append((node_to_idx[u], node_to_idx[v]))
             attr_length.append(float(data.get("length") or 0.0))
 
@@ -110,6 +122,12 @@ def _save_igraph_artifact(G_nx) -> None:
             if isinstance(name, list):
                 name = name[0] if name else ""
             attr_name.append((name or "").strip())
+
+            attr_highway.append(hw)
+
+            fw = data.get("footway", "")
+            if isinstance(fw, list): fw = fw[0] if fw else ""
+            attr_footway.append((fw or "").strip())
 
             geom = data.get("geometry")
             if geom is not None and hasattr(geom, "coords"):
@@ -122,6 +140,9 @@ def _save_igraph_artifact(G_nx) -> None:
             else:
                 attr_geometry.append(None)
 
+        if filtered:
+            print(f"  Filtered {filtered:,} service/alley edges before saving artifact")
+
         ig_graph = ig.Graph(
             n=len(nodes),
             edges=edges,
@@ -133,6 +154,8 @@ def _save_igraph_artifact(G_nx) -> None:
             edge_attrs={
                 "length":   attr_length,
                 "name":     attr_name,
+                "highway":  attr_highway,
+                "footway":  attr_footway,
                 "geometry": attr_geometry,
             },
         )
