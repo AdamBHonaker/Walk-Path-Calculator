@@ -59,6 +59,7 @@ _graph_cache: "ig.Graph | None" = None
 _coord_kdtree: "cKDTree | None" = None
 _vertex_lats: "np.ndarray | None" = None
 _vertex_lons: "np.ndarray | None" = None
+_kdtree_to_vertex: "np.ndarray | None" = None
 _graph_load_failed: bool = False
 
 
@@ -82,7 +83,7 @@ def _parse_geometry_inplace(G: ig.Graph) -> None:
 
 def _load_graph() -> "ig.Graph | None":
     """Load street graph once; returns None (and never retries) if unavailable."""
-    global _graph_cache, _coord_kdtree, _vertex_lats, _vertex_lons, _graph_load_failed
+    global _graph_cache, _coord_kdtree, _vertex_lats, _vertex_lons, _kdtree_to_vertex, _graph_load_failed
 
     if _graph_cache is not None:
         return _graph_cache
@@ -143,7 +144,24 @@ def _load_graph() -> "ig.Graph | None":
         lats = np.array([v["y"] for v in G.vs], dtype=np.float64)
         _vertex_lats = lats
         _vertex_lons = lons
-        _coord_kdtree = cKDTree(np.column_stack([lons, lats]))
+
+        # Snap only to vertices in the largest weakly-connected component so
+        # geocoded coordinates can't latch onto isolated pockets (e.g. parking
+        # lot interiors orphaned by the service/alley filter), which would
+        # cause Dijkstra to fail with "couldn't reach some vertices".
+        components = G.connected_components(mode="weak")
+        sizes = components.sizes()
+        biggest = sizes.index(max(sizes))
+        membership = components.membership
+        valid_idx = np.array(
+            [i for i, m in enumerate(membership) if m == biggest],
+            dtype=np.int64,
+        )
+        orphans = G.vcount() - len(valid_idx)
+        if orphans:
+            print(f"[walking] Snapping restricted to giant component ({len(valid_idx):,} of {G.vcount():,} vertices, {orphans:,} orphans excluded)")
+        _kdtree_to_vertex = valid_idx
+        _coord_kdtree = cKDTree(np.column_stack([lons[valid_idx], lats[valid_idx]]))
         _graph_cache = G
 
     return _graph_cache
@@ -156,7 +174,7 @@ def _get_nearest_node(lat: float, lon: float) -> "int | None":
         return None
     try:
         _, idx = _coord_kdtree.query([lon, lat])
-        return int(idx)
+        return int(_kdtree_to_vertex[idx])
     except Exception:
         return None
 
