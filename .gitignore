@@ -25,11 +25,30 @@ build/
 venv/
 env/
 
+# Python test / coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
 # Node / frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.env
 frontend/.env.local
+frontend/src/wayfarer/
+frontend/handoff/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Claude Code per-machine settings
+.claude/settings.local.json
+
+# Personal documentation (not for the repo)
+Human Documentation/
 
 # IDE
 .vscode/

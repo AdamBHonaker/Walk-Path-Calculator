@@ -11,7 +11,38 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
-*(No resolved bugs yet.)*
+### 2026-05-02 · RouteCard crashes when result prop is null (BUG-001)
+
+**File:** `frontend/src/RouteCard.jsx`
+
+**Priority:** 🔴 High
+
+**What the bug was:** The component destructured `result` at the top of its render body without a null guard. If `result` was null — whether from a race condition, the modal opening before data arrived, or a future caller omitting the prop — React would throw `TypeError: Cannot destructure property 'total_steps' of null`.
+
+**How it was resolved:** Added `if (!result) return null;` on line 57, immediately before the destructuring. The component now safely returns nothing when result is absent.
+
+---
+
+### 2026-05-02 · Missing test coverage for frontend edge cases (BUG-002)
+
+**Files:** `frontend/src/compareEstimates.test.js`, `frontend/src/mapHelpers.test.js`, `frontend/src/RouteCard.test.jsx` (new)
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** Three coverage gaps left real code paths untested:
+1. `rideShareCost` and `co2AvoidedKg` were never tested with negative-mile inputs, despite `drivingMinutes` having that coverage — inconsistency that could mask guard regressions.
+2. `transitMinutes` was not tested with negative walk-minute inputs.
+3. The entire `turnCoords`/turn-marker code path in `renderWalkRoute` (mapHelpers.js lines 84–98) was never exercised; all existing tests passed `null`.
+4. `RouteCard` had no test file at all, so BUG-001 above went undetected.
+
+**How it was resolved:**
+- Added negative-value assertions to `rideShareCost`, `co2AvoidedKg`, and `transitMinutes` tests.
+- Added six new `renderWalkRoute` tests covering: turn-marker source/layer added when `turnCoords` provided, omitted when `null`, `activeTurnIndex` propagated into GeoJSON, and intermediate stop markers added/omitted based on `stop_coords` length.
+- Created `frontend/src/RouteCard.test.jsx` with a null-result smoke test (directly verifying BUG-001 fix) and three render tests for step count, stats, and route labels.
+
+Total test count after changes: **115 tests, all passing**.
+
+---
 
 ---
 

@@ -9,6 +9,16 @@ from main import app
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """Reset slowapi storage between tests so the 10/min limit doesn't bleed across cases."""
+    try:
+        app.state.limiter.reset()
+    except Exception:
+        pass
+    yield
+
+
 class TestHealth:
     def test_health_returns_ok(self):
         resp = client.get("/health")
@@ -23,7 +33,7 @@ class TestRouteValidation:
 
     def test_whitespace_origin_rejected(self):
         resp = client.post("/route", json={"origin": "   ", "destination": "Logan Square"})
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     def test_invalid_height_rejected(self):
         resp = client.post("/route", json={
@@ -131,3 +141,99 @@ class TestRouteSuccess:
         for lat, lon in [data["origin_coords"], data["dest_coords"]]:
             assert 41.6 < lat < 42.1
             assert -88.0 < lon < -87.5
+
+
+class TestAlternativeRoutes:
+    """Single /route call shared across assertions to stay under the 10/min limit."""
+
+    @pytest.fixture(scope="class")
+    def route_data(self):
+        resp = client.post("/route", json={
+            "origin": "Wrigleyville",
+            "destination": "Logan Square",
+        })
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    def test_routes_array_returned_with_three_flavors(self, route_data):
+        assert "routes" in route_data
+        assert "default_flavor" in route_data
+        assert "available_flavors" in route_data
+        flavors = [r["flavor"] for r in route_data["routes"]]
+        assert flavors == ["fastest", "fewest_turns", "greenest"]
+
+    def test_each_alternative_has_full_route_payload(self, route_data):
+        for r in route_data["routes"]:
+            assert r["total_steps"] > 0
+            assert r["total_miles"] > 0
+            assert r["total_minutes"] > 0
+            assert r["calories_approx"] > 0
+            assert len(r["path"]) >= 2
+            assert len(r["directions"]) >= 1
+
+    def test_legacy_top_level_fields_match_default_route(self, route_data):
+        default = next(r for r in route_data["routes"] if r["flavor"] == route_data["default_flavor"])
+        assert route_data["total_miles"]   == default["total_miles"]
+        assert route_data["total_minutes"] == default["total_minutes"]
+        assert route_data["total_steps"]   == default["total_steps"]
+        assert route_data["path"]          == default["path"]
+
+    def test_fastest_is_not_undercut_by_other_flavors(self, route_data):
+        routes = {r["flavor"]: r for r in route_data["routes"]}
+        fastest_miles = routes["fastest"]["total_miles"]
+        # Other flavors trade extra distance for their respective preferences,
+        # so they cannot be strictly shorter than the fastest route.
+        for flavor in ("fewest_turns", "greenest"):
+            assert routes[flavor]["total_miles"] >= fastest_miles - 0.01, (
+                f"{flavor} ({routes[flavor]['total_miles']} mi) must not undercut "
+                f"fastest ({fastest_miles} mi)"
+            )
+
+
+class TestMultiStopRoutes:
+    """Most assertions share a single 3-stop fixture call to stay under the 10/min limit."""
+
+    @pytest.fixture(scope="class")
+    def three_stop(self):
+        resp = client.post("/route", json={
+            "stops": ["Wrigleyville", "Lincoln Park", "Logan Square"],
+        })
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    def test_three_stops_returns_two_legs(self, three_stop):
+        data = three_stop
+        assert data["stops"] == ["Wrigleyville", "Lincoln Park", "Logan Square"]
+        assert len(data["stop_coords"]) == 3
+        assert "legs" in data
+        assert len(data["legs"]) == 2
+        sum_miles = sum(leg["miles"] for leg in data["legs"])
+        assert abs(data["total_miles"] - sum_miles) < 0.05
+        assert data["legs"][-1]["path_slice"][1] == len(data["path"]) - 1
+        # Adjacent legs share the seam index.
+        assert data["legs"][0]["path_slice"][1] == data["legs"][1]["path_slice"][0]
+        last = -1
+        for d in data["directions"]:
+            assert "leg_index" in d
+            assert d["leg_index"] >= last
+            last = d["leg_index"]
+
+    def test_multi_stop_forces_single_fastest_flavor(self, three_stop):
+        assert three_stop["available_flavors"] == ["fastest"]
+        assert len(three_stop["routes"]) == 1
+
+    def test_too_many_stops_rejected(self):
+        # 422 from pydantic — does not hit the rate-limited handler.
+        resp = client.post("/route", json={
+            "stops": ["Wrigleyville"] * 9,
+        })
+        assert resp.status_code == 422
+
+    def test_adjacent_duplicate_stops_rejected_with_index(self):
+        resp = client.post("/route", json={
+            "stops": ["Wrigleyville", "Lincoln Park", "Lincoln Park", "Logan Square"],
+        })
+        assert resp.status_code == 400
+        detail = resp.json()["detail"]
+        assert isinstance(detail, dict)
+        assert detail["stop_index"] == 2

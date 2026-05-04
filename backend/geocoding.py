@@ -9,7 +9,10 @@ Resolution order for any query:
 Requires GOOGLE_MAPS_API_KEY in .env for step 3. Steps 1 and 2 work offline.
 """
 
+import atexit as _atexit
+import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -17,9 +20,18 @@ from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 
+
+def _redact(query: str) -> str:
+    """Return a short opaque tag for `query` so logs do not store user-typed text."""
+    if not query:
+        return "<empty>"
+    return "q#" + hashlib.sha256(query.encode("utf-8")).hexdigest()[:10]
+
 import requests
 
-from utils import CHICAGO_BBOX_GOOGLE
+from utils import CHICAGO_BBOX_GOOGLE, CHICAGO_SOUTH, CHICAGO_NORTH, CHICAGO_WEST, CHICAGO_EAST, haversine_miles
+
+logger = logging.getLogger(__name__)
 
 _GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
@@ -36,9 +48,17 @@ def _load_geocode_cache() -> dict:
     if _GEOCODE_CACHE_PATH.exists():
         try:
             raw = json.loads(_GEOCODE_CACHE_PATH.read_text(encoding="utf-8"))
-            return {k: tuple(v) if v is not None else None for k, v in raw.items()}
-        except Exception:
-            pass
+            result = {}
+            for k, v in raw.items():
+                if v is None:
+                    result[k] = None
+                elif isinstance(v, list):
+                    result[k] = tuple(v)  # forward geocode: [lat, lon] → (lat, lon)
+                else:
+                    result[k] = v         # reverse geocode: {"label": ..., "source": ...}
+            return result
+        except Exception as exc:
+            logger.warning("Could not load geocode cache: %s", exc)
     return {}
 
 
@@ -46,13 +66,15 @@ def _save_geocode_cache(cache: dict) -> None:
     tmp = _GEOCODE_CACHE_PATH.with_suffix(".tmp")
     try:
         tmp.write_text(
-            json.dumps({k: list(v) if v is not None else None for k, v in cache.items()},
-                       indent=2, ensure_ascii=False),
+            json.dumps(
+                {k: list(v) if isinstance(v, tuple) else v for k, v in cache.items()},
+                indent=2, ensure_ascii=False,
+            ),
             encoding="utf-8",
         )
         tmp.replace(_GEOCODE_CACHE_PATH)
     except Exception as exc:
-        print(f"[geocoding] Could not save geocode cache: {exc}")
+        logger.error("Could not save geocode cache: %s", exc)
 
 
 _geocode_cache: dict = _load_geocode_cache()
@@ -67,7 +89,6 @@ def _flush_geocode_if_needed() -> None:
         _geocode_unsaved = 0
 
 
-import atexit as _atexit
 @_atexit.register
 def _flush_geocode_on_exit() -> None:
     if _geocode_unsaved > 0:
@@ -410,40 +431,52 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
     with _geocode_lock:
         if query in _geocode_cache:
             return _geocode_cache[query]
-
         if not _GOOGLE_API_KEY:
-            print("[geocoding] GOOGLE_MAPS_API_KEY not set — geocoding unavailable")
+            logger.warning("GOOGLE_MAPS_API_KEY not set — geocoding unavailable")
             return None
+    # Lock released here — network I/O happens without holding the lock so
+    # concurrent uncached queries don't serialise behind each other's round-trip.
 
-        try:
-            resp = _http_session.get(
-                _GOOGLE_GEOCODE_URL,
-                params={
-                    "address": query if "chicago" in query.lower() else query + ", Chicago, IL",
-                    "key": _GOOGLE_API_KEY,
-                    "components": "country:US",
-                    "bounds": CHICAGO_BBOX_GOOGLE,
-                },
-                timeout=5,
-            )
-            data = resp.json()
-            if data.get("status") == "OK" and data.get("results"):
-                loc = data["results"][0]["geometry"]["location"]
-                coords: tuple[float, float] = (float(loc["lat"]), float(loc["lng"]))
+    coords: "tuple[float, float] | None" = None
+    zero_results = False
+    try:
+        resp = _http_session.get(
+            _GOOGLE_GEOCODE_URL,
+            params={
+                "address": query if "chicago" in query.lower() else query + ", Chicago, IL",
+                "key": _GOOGLE_API_KEY,
+                "components": "country:US",
+                "bounds": CHICAGO_BBOX_GOOGLE,
+            },
+            timeout=5,
+        )
+        data = resp.json()
+        if data.get("status") == "OK" and data.get("results"):
+            loc = data["results"][0]["geometry"]["location"]
+            coords = (float(loc["lat"]), float(loc["lng"]))
+            logger.info("Geocoded %s → %s", _redact(query), coords)
+        else:
+            status = data.get("status")
+            logger.warning("Google returned status '%s' for %s", status, _redact(query))
+            if status == "ZERO_RESULTS":
+                zero_results = True
+    except Exception as exc:
+        logger.error("Google geocoding failed for %s: %s", _redact(query), exc)
+
+    # Re-acquire lock to write result; guard against a concurrent thread that
+    # already stored an answer while we were on the network.
+    with _geocode_lock:
+        if query not in _geocode_cache:
+            if coords is not None:
                 _geocode_cache[query] = coords
                 _flush_geocode_if_needed()
-                print(f"[geocoding] Geocoded '{query}' → {coords}")
-                return coords
-            status = data.get("status")
-            print(f"[geocoding] Google returned status '{status}' for '{query}'")
-            if status == "ZERO_RESULTS":
+            elif zero_results:
                 _geocode_cache[query] = None
                 _flush_geocode_if_needed()
-        except Exception as exc:
-            print(f"[geocoding] Google geocoding failed for '{query}': {exc}")
+    return coords
 
-        return None
 
+_COORD_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
 
 # ---------------------------------------------------------------------------
 # Main resolution entry point
@@ -453,9 +486,17 @@ def resolve_location(query: str) -> "tuple[float, float] | None":
     """
     Convert a free-text Chicago location query to (lat, lon).
 
-    Tries in order: exact neighborhood match → fuzzy match → Google Maps.
-    Returns None if all three fail.
+    Tries in order: coordinate pair → exact neighborhood match → fuzzy match → Google Maps.
+    Returns None if all fail.
     """
+    # Fast path: already a coordinate pair (e.g. from pick-on-map)
+    m = _COORD_RE.match(query)
+    if m:
+        lat, lon = float(m.group(1)), float(m.group(2))
+        if CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST:
+            return lat, lon
+        return None
+
     q = query.strip().lower()
     q = _normalize_street_abbr(q)
 
@@ -468,3 +509,101 @@ def resolve_location(query: str) -> "tuple[float, float] | None":
         return coords
 
     return geocode_google(q)
+
+
+# ---------------------------------------------------------------------------
+# Reverse geocoding
+# ---------------------------------------------------------------------------
+
+_REV_THRESHOLD_MI: float = 200.0 / 1609.34  # 200 m in miles
+
+
+# Lazy-built KDTree over NEIGHBORHOOD_COORDS for O(log n) nearest-neighbor lookup
+# in `reverse_geocode_point`. Uses (lon, lat) Euclidean distance as a coarse pre-
+# filter; final ranking uses true Haversine on the top-k candidates so result
+# ordering matches the previous linear scan exactly.
+_neighborhood_kdtree = None
+_neighborhood_names: tuple[str, ...] = ()
+_neighborhood_coords_arr = None
+
+
+def _get_neighborhood_kdtree():
+    global _neighborhood_kdtree, _neighborhood_names, _neighborhood_coords_arr
+    if _neighborhood_kdtree is None:
+        from scipy.spatial import cKDTree  # local import: keeps module import light
+        import numpy as np
+
+        items = list(NEIGHBORHOOD_COORDS.items())
+        names = tuple(name for name, _ in items)
+        coords = np.array([[lon, lat] for _, (lat, lon) in items], dtype=float)
+        _neighborhood_kdtree = cKDTree(coords)
+        _neighborhood_names = names
+        _neighborhood_coords_arr = coords
+    return _neighborhood_kdtree
+
+
+def _reverse_geocode_google(lat: float, lon: float) -> "str | None":
+    """Call Google reverse geocode; return a short human label or None."""
+    if not _GOOGLE_API_KEY:
+        return None
+    try:
+        resp = _http_session.get(
+            _GOOGLE_GEOCODE_URL,
+            params={"latlng": f"{lat},{lon}", "key": _GOOGLE_API_KEY},
+            timeout=5,
+        )
+        data = resp.json()
+        if data.get("status") == "OK" and data.get("results"):
+            # Prefer the most specific (first) result's formatted_address
+            addr = data["results"][0].get("formatted_address", "")
+            # Strip country suffix for brevity
+            addr = re.sub(r",\s*USA\s*$", "", addr).strip()
+            return addr or None
+    except Exception as exc:
+        logger.error("Google reverse geocode failed for (%s, %s): %s", lat, lon, exc)
+    return None
+
+
+def reverse_geocode_point(lat: float, lon: float) -> dict:
+    """
+    Reverse geocode a (lat, lon) to a human-readable label.
+    Returns {"label": str, "source": str}.
+    """
+    cache_key = f"rev:{lat:.5f},{lon:.5f}"
+
+    # 1. Fast cache check under lock
+    with _geocode_lock:
+        cached = _geocode_cache.get(cache_key)
+        if isinstance(cached, dict):
+            return cached
+
+    # 2. Nearest neighborhood via KDTree pre-filter, Haversine final ranking
+    tree = _get_neighborhood_kdtree()
+    k = min(5, len(_neighborhood_names))
+    _, idx = tree.query([lon, lat], k=k)
+    candidate_idx = [int(idx)] if k == 1 else [int(i) for i in idx]
+    best_name: str | None = None
+    best_dist = float("inf")
+    for i in candidate_idx:
+        name = _neighborhood_names[i]
+        nlat, nlon = NEIGHBORHOOD_COORDS[name]
+        d = haversine_miles(lat, lon, nlat, nlon)
+        if d < best_dist:
+            best_dist = d
+            best_name = name
+
+    if best_name and best_dist <= _REV_THRESHOLD_MI:
+        result = {"label": best_name.title(), "source": "neighborhood"}
+    else:
+        # 3. Google reverse geocode (network I/O, no lock needed)
+        label = _reverse_geocode_google(lat, lon)
+        if label:
+            result = {"label": label, "source": "google"}
+        else:
+            result = {"label": f"{lat:.5f}, {lon:.5f}", "source": "coordinates"}
+
+    # 4. Write result under lock
+    with _geocode_lock:
+        _geocode_cache[cache_key] = result
+        _flush_geocode_if_needed()
+    return result

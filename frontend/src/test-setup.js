@@ -20,10 +20,29 @@ vi.mock("maplibre-gl", () => ({
       resize() {}
       triggerRepaint() {}
       fitBounds() {}
+      flyTo() {}
       addSource() {}
       addLayer() {}
       removeLayer() {}
       removeSource() {}
+      getSource() { return null; }
+      getCanvas() { return null; }
+      setPaintProperty() {}
     },
   },
 }));
+
+// jsdom does not implement matchMedia; return a stub that never matches
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: vi.fn((query) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })),
+});

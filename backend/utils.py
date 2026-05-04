@@ -6,10 +6,6 @@ import math
 
 _EARTH_RADIUS_MILES = 3958.8
 
-_MILES_PER_DEG_LAT: float = 69.0
-# Miles per degree of longitude at Chicago's latitude (~41.9°): 69.0 × cos(41.9°) ≈ 51.35
-_MILES_PER_DEG_LON: float = 51.35
-
 WALKING_SPEED_MPH: float = 3.0
 
 
@@ -19,7 +15,7 @@ def haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float
     dlat = lat2 - lat1
     dlon = lon2 - lon1
     a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
-    return _EARTH_RADIUS_MILES * 2 * math.asin(math.sqrt(a))
+    return _EARTH_RADIUS_MILES * 2 * math.asin(min(1.0, math.sqrt(a)))
 
 
 # Chicago geographic bounds

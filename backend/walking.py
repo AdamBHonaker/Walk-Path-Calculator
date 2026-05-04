@@ -8,11 +8,14 @@ or falls back to parsing street_graph.graphml via igraph directly.
 Walking speed assumption: 3 mph (1.34 m/s) — a comfortable pedestrian pace.
 """
 
+import logging
 import math
 import pickle
 import threading
 from functools import lru_cache
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import igraph as ig
 import numpy as np
@@ -35,6 +38,21 @@ _DIRECTION_FULL = {
 }
 
 _SERVICE_HIGHWAY_TYPES = {"service", "alley"}
+
+FLAVORS: tuple[str, ...] = ("fastest", "fewest_turns", "greenest")
+DEFAULT_FLAVOR = "fastest"
+
+# Per-edge fixed penalty for "fewest_turns" — adds a constant cost to every
+# edge so routes with many short connector segments (which imply more turns)
+# are penalized vs. routes that ride a few long edges. igraph cannot express
+# true edge-pair turn penalties without an edge-expanded graph, and this
+# approximation captures most of the effect at zero preprocessing cost.
+_TURN_PENALTY_M = 30.0
+
+# Highway tags that route as "greener" (off-street paths, plazas, trails).
+# Note: park polygons are out of scope for v1 — see docs/FEATURE_HISTORY.md.
+_GREEN_HIGHWAYS = {"footway", "path", "cycleway", "pedestrian", "track"}
+_GREEN_DISCOUNT = 0.6
 
 
 def _highway_path_type(highway: str, footway: str) -> str:
@@ -61,6 +79,7 @@ _vertex_lats: "np.ndarray | None" = None
 _vertex_lons: "np.ndarray | None" = None
 _kdtree_to_vertex: "np.ndarray | None" = None
 _graph_load_failed: bool = False
+_flavor_weights: dict[str, list[float]] = {}
 
 
 def _parse_geometry_inplace(G: ig.Graph) -> None:
@@ -72,7 +91,8 @@ def _parse_geometry_inplace(G: ig.Graph) -> None:
             if isinstance(geom, str) and geom:
                 try:
                     e["geometry"] = list(shapely_wkt.loads(geom).coords)
-                except Exception:
+                except Exception as exc:
+                    logger.debug("Could not parse geometry for edge %s: %s", e.index, exc)
                     e["geometry"] = None
             elif not geom:
                 e["geometry"] = None
@@ -99,22 +119,22 @@ def _load_graph() -> "ig.Graph | None":
         G: "ig.Graph | None" = None
 
         if IGRAPH_PATH.exists():
-            print(f"[walking] Loading igraph artifact from {IGRAPH_PATH} ...")
+            logger.info("Loading igraph artifact from %s ...", IGRAPH_PATH)
             try:
                 with open(IGRAPH_PATH, "rb") as f:
                     data = pickle.load(f)
                 G = data["graph"]
-                print(f"[walking] igraph loaded: {G.vcount():,} vertices, {G.ecount():,} edges")
-            except Exception as e:
-                print(f"[walking] igraph pickle failed ({type(e).__name__}: {e}) — trying graphml fallback")
+                logger.info("igraph loaded: %s vertices, %s edges", f"{G.vcount():,}", f"{G.ecount():,}")
+            except (pickle.UnpicklingError, OSError, ValueError, KeyError) as e:
+                logger.warning("igraph pickle failed (%s: %s) — trying graphml fallback", type(e).__name__, e)
                 G = None
 
         if G is None:
             if not GRAPH_PATH.exists():
-                print(f"[walking] Street graph not found at {GRAPH_PATH} — walking will use Haversine fallback.")
+                logger.error("Street graph not found at %s — walking will use Haversine fallback.", GRAPH_PATH)
                 _graph_load_failed = True
                 return None
-            print(f"[walking] Loading street graph from {GRAPH_PATH} ...")
+            logger.info("Loading street graph from %s ...", GRAPH_PATH)
             try:
                 G = ig.Graph.Read_GraphML(str(GRAPH_PATH))
                 # osmnx GraphML stores all attributes as strings; convert length to float
@@ -125,9 +145,9 @@ def _load_graph() -> "ig.Graph | None":
                     except (TypeError, ValueError):
                         e["length"] = 0.0
                 _parse_geometry_inplace(G)
-                print(f"[walking] igraph loaded: {G.vcount():,} vertices, {G.ecount():,} edges")
-            except Exception as e:
-                print(f"[walking] Failed to load street graph ({type(e).__name__}: {e}) — walking will use Haversine fallback.")
+                logger.info("igraph loaded: %s vertices, %s edges", f"{G.vcount():,}", f"{G.ecount():,}")
+            except (OSError, ValueError, ig.InternalError) as e:
+                logger.error("Failed to load street graph (%s: %s) — walking will use Haversine fallback.", type(e).__name__, e)
                 _graph_load_failed = True
                 return None
 
@@ -138,7 +158,7 @@ def _load_graph() -> "ig.Graph | None":
             ]
             if to_delete:
                 G.delete_edges(to_delete)
-                print(f"[walking] Filtered {len(to_delete):,} service/alley edges")
+                logger.info("Filtered %s service/alley edges", f"{len(to_delete):,}")
 
         lons = np.array([v["x"] for v in G.vs], dtype=np.float64)
         lats = np.array([v["y"] for v in G.vs], dtype=np.float64)
@@ -153,13 +173,10 @@ def _load_graph() -> "ig.Graph | None":
         sizes = components.sizes()
         biggest = sizes.index(max(sizes))
         membership = components.membership
-        valid_idx = np.array(
-            [i for i, m in enumerate(membership) if m == biggest],
-            dtype=np.int64,
-        )
+        valid_idx = np.where(np.array(membership) == biggest)[0].astype(np.int64)
         orphans = G.vcount() - len(valid_idx)
         if orphans:
-            print(f"[walking] Snapping restricted to giant component ({len(valid_idx):,} of {G.vcount():,} vertices, {orphans:,} orphans excluded)")
+            logger.warning("Snapping restricted to giant component (%s of %s vertices, %s orphans excluded)", f"{len(valid_idx):,}", f"{G.vcount():,}", f"{orphans:,}")
         _kdtree_to_vertex = valid_idx
         _coord_kdtree = cKDTree(np.column_stack([lons[valid_idx], lats[valid_idx]]))
         _graph_cache = G
@@ -168,40 +185,78 @@ def _load_graph() -> "ig.Graph | None":
 
 
 @lru_cache(maxsize=2048)
-def _get_nearest_node(lat: float, lon: float) -> "int | None":
-    """Return the nearest igraph vertex index for a lat/lon coordinate; None if graph unavailable."""
+def _get_nearest_node_quantized(lat_q: int, lon_q: int) -> "int | None":
     if _load_graph() is None:
         return None
     try:
-        _, idx = _coord_kdtree.query([lon, lat])
+        _, idx = _coord_kdtree.query([lon_q / 1e5, lat_q / 1e5])
         return int(_kdtree_to_vertex[idx])
     except Exception:
         return None
 
 
-@lru_cache(maxsize=512)
-def _get_shortest_path(
-    origin_lat: float,
-    origin_lon: float,
-    dest_lat: float,
-    dest_lon: float,
-) -> "tuple[tuple[int, ...], tuple[int, ...]] | None":
-    """
-    Compute and cache the shortest path between two lat/lon coordinates.
+def _get_nearest_node(lat: float, lon: float) -> "int | None":
+    """Return the nearest igraph vertex index for a lat/lon coordinate; None if graph unavailable.
 
-    Returns (vpath, epath) or None if routing fails. All three public routing
-    functions share this cache so the Dijkstra run happens at most once per
-    unique origin/destination pair per process lifetime.
+    Coordinates are quantized to ~1m (5 decimal places) before cache lookup so attackers
+    cannot defeat the cache by jittering inputs.
     """
+    return _get_nearest_node_quantized(round(lat * 1e5), round(lon * 1e5))
+
+
+def _edge_attr(attrs: dict, key: str) -> str:
+    val = attrs.get(key) or ""
+    if isinstance(val, list):
+        val = val[0] if val else ""
+    return val
+
+
+def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "list[float] | str":
+    """Return the weight vector (or attribute name) used for Dijkstra under `flavor`."""
+    if flavor == "fastest":
+        return "length"
+
+    weights: list[float] = []
+    if flavor == "fewest_turns":
+        for e in G.es:
+            weights.append((e["length"] or 0.0) + _TURN_PENALTY_M)
+        return weights
+    if flavor == "greenest":
+        has_highway = "highway" in G.es.attributes()
+        for e in G.es:
+            length = e["length"] or 0.0
+            hw = _edge_attr(e.attributes(), "highway") if has_highway else ""
+            weights.append(length * _GREEN_DISCOUNT if hw in _GREEN_HIGHWAYS else length)
+        return weights
+
+    return "length"
+
+
+def _get_flavor_weights(flavor: str) -> "list[float] | str":
+    G = _load_graph()
+    if G is None or flavor == "fastest":
+        return "length"
+    cached = _flavor_weights.get(flavor)
+    if cached is not None and len(cached) == G.ecount():
+        return cached
+    weights = _build_flavor_weights(G, flavor)
+    if isinstance(weights, list):
+        _flavor_weights[flavor] = weights
+    return weights
+
+
+@lru_cache(maxsize=1536)
+def _get_shortest_path_by_node(
+    orig_idx: int,
+    dest_idx: int,
+    flavor: str = DEFAULT_FLAVOR,
+) -> "tuple[tuple[int, ...], tuple[int, ...]] | None":
     G = _load_graph()
     if G is None:
         return None
-    orig_idx = _get_nearest_node(origin_lat, origin_lon)
-    dest_idx = _get_nearest_node(dest_lat, dest_lon)
-    if orig_idx is None or dest_idx is None:
-        return None
+    weights = _get_flavor_weights(flavor)
     try:
-        result = G.get_shortest_paths(orig_idx, to=dest_idx, weights="length", output="epath")
+        result = G.get_shortest_paths(orig_idx, to=dest_idx, weights=weights, output="epath")
         if not result or not result[0]:
             return None
         epath = result[0]
@@ -213,6 +268,29 @@ def _get_shortest_path(
         return (tuple(vpath), tuple(epath))
     except Exception:
         return None
+
+
+def _get_shortest_path(
+    origin_lat: float,
+    origin_lon: float,
+    dest_lat: float,
+    dest_lon: float,
+    flavor: str = DEFAULT_FLAVOR,
+) -> "tuple[tuple[int, ...], tuple[int, ...]] | None":
+    """
+    Compute and cache the shortest path between two lat/lon coordinates.
+
+    Resolves each endpoint to a quantized graph vertex, then defers to a
+    vertex-keyed LRU cache so jittered coordinates that snap to the same
+    vertices share a single Dijkstra result.
+    """
+    if _load_graph() is None:
+        return None
+    orig_idx = _get_nearest_node(origin_lat, origin_lon)
+    dest_idx = _get_nearest_node(dest_lat, dest_lon)
+    if orig_idx is None or dest_idx is None:
+        return None
+    return _get_shortest_path_by_node(orig_idx, dest_idx, flavor)
 
 
 def _haversine_walk_minutes(
@@ -228,18 +306,20 @@ def _haversine_walk_minutes(
 
 def _build_minutes(
     origin_lat: float, origin_lon: float, dest_lat: float, dest_lon: float,
+    flavor: str = DEFAULT_FLAVOR,
 ) -> float:
     try:
         G = _load_graph()
         if G is None:
             raise RuntimeError("street graph unavailable")
-        path = _get_shortest_path(origin_lat, origin_lon, dest_lat, dest_lon)
+        path = _get_shortest_path(origin_lat, origin_lon, dest_lat, dest_lon, flavor)
         if path is None:
             raise RuntimeError("path unavailable")
         _, epath = path
         length_m = sum(G.es[e]["length"] or 0.0 for e in epath)
         return round(length_m / WALKING_SPEED_MPS / 60, 1)
-    except Exception:
+    except Exception as e:
+        logger.warning("walk_minutes fallback: %s: %s", type(e).__name__, e)
         return _haversine_walk_minutes(origin_lat, origin_lon, dest_lat, dest_lon)
 
 
@@ -248,6 +328,7 @@ def _build_directions(
     origin_lon: float,
     dest_lat: float,
     dest_lon: float,
+    flavor: str = DEFAULT_FLAVOR,
 ) -> tuple:
     def _cardinal(lat1: float, lon1: float, lat2: float, lon2: float) -> str:
         dlat = lat2 - lat1
@@ -257,24 +338,17 @@ def _build_directions(
         return dirs[round(deg / 45) % 8]
 
     def _street_name(attrs: dict) -> str:
-        name = attrs.get("name", "")
-        if isinstance(name, list):
-            name = name[0] if name else ""
-        return (name or "").strip()
+        return _edge_attr(attrs, "name").strip()
 
     def _edge_path_type(attrs: dict) -> str:
-        hw = attrs.get("highway") or ""
-        fw = attrs.get("footway") or ""
-        if isinstance(hw, list): hw = hw[0] if hw else ""
-        if isinstance(fw, list): fw = fw[0] if fw else ""
-        return _highway_path_type(hw, fw)
+        return _highway_path_type(_edge_attr(attrs, "highway"), _edge_attr(attrs, "footway"))
 
     try:
         G = _load_graph()
         if G is None:
             raise RuntimeError("street graph unavailable")
 
-        path = _get_shortest_path(origin_lat, origin_lon, dest_lat, dest_lon)
+        path = _get_shortest_path(origin_lat, origin_lon, dest_lat, dest_lon, flavor)
         if path is None:
             raise RuntimeError("path unavailable")
 
@@ -327,7 +401,8 @@ def _build_directions(
             })
         return tuple(steps)
 
-    except Exception:
+    except Exception as e:
+        logger.warning("walk_directions fallback: %s: %s", type(e).__name__, e)
         total_min = _haversine_walk_minutes(origin_lat, origin_lon, dest_lat, dest_lon)
         fallback_meters = total_min * 60 * WALKING_SPEED_MPS
         fallback_blocks = max(0.5, round(fallback_meters / _LONG_BLOCK_METERS * 2) / 2)
@@ -335,35 +410,19 @@ def _build_directions(
                  "block_type": "long", "minutes": total_min, "distance_meters": round(fallback_meters, 1)},)
 
 
-def walk_directions(
-    origin_lat: float,
-    origin_lon: float,
-    dest_lat: float,
-    dest_lon: float,
-) -> list[dict]:
-    """
-    Return turn-by-turn walking directions as a list of steps:
-      [{"street": "Broadway", "direction": "S", "blocks": 2.0, "minutes": 1.2,
-        "distance_meters": 401.0}, ...]
-
-    Each step represents a continuous segment along a named street.
-    Returns a fresh list on every call (safe to mutate).
-    """
-    return list(_compute_route(origin_lat, origin_lon, dest_lat, dest_lon)[1])
-
-
 def _build_path(
     origin_lat: float,
     origin_lon: float,
     dest_lat: float,
     dest_lon: float,
+    flavor: str = DEFAULT_FLAVOR,
 ) -> tuple:
     try:
         G = _load_graph()
         if G is None:
             raise RuntimeError("street graph unavailable")
 
-        path = _get_shortest_path(origin_lat, origin_lon, dest_lat, dest_lon)
+        path = _get_shortest_path(origin_lat, origin_lon, dest_lat, dest_lon, flavor)
         if path is None:
             raise RuntimeError("path unavailable")
 
@@ -397,7 +456,7 @@ def _build_path(
         return tuple(result_coords)
 
     except Exception as e:
-        print(f"[walk_path] routing failed: {type(e).__name__}: {e}")
+        logger.error("routing failed: %s: %s", type(e).__name__, e)
         return ((origin_lat, origin_lon), (dest_lat, dest_lon))
 
 
@@ -405,25 +464,67 @@ def _build_path(
 # Single shared cache — resolves OPT-005 (stampede) and OPT-006 (uncoordinated eviction)
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=512)
+@lru_cache(maxsize=1536)
+def _compute_route_quantized(
+    olat_q: int, olon_q: int, dlat_q: int, dlon_q: int,
+    flavor: str = DEFAULT_FLAVOR,
+) -> "tuple[tuple, tuple, float]":
+    olat, olon = olat_q / 1e5, olon_q / 1e5
+    dlat, dlon = dlat_q / 1e5, dlon_q / 1e5
+    return (
+        _build_path(olat, olon, dlat, dlon, flavor),
+        _build_directions(olat, olon, dlat, dlon, flavor),
+        _build_minutes(olat, olon, dlat, dlon, flavor),
+    )
+
+
 def _compute_route(
     origin_lat: float,
     origin_lon: float,
     dest_lat: float,
     dest_lon: float,
+    flavor: str = DEFAULT_FLAVOR,
 ) -> "tuple[tuple, tuple, float]":
     """
     Compute and cache all route data in one call.
 
-    Returns (path_coords_tuple, directions_tuple, minutes_float). All three
-    public routing functions read from this single cache, so Dijkstra runs at
-    most once per unique origin/destination pair and LRU evictions are coordinated.
+    Coordinates are quantized to ~1m before cache lookup so floating-point
+    jitter on the input cannot defeat the cache.
     """
-    return (
-        _build_path(origin_lat, origin_lon, dest_lat, dest_lon),
-        _build_directions(origin_lat, origin_lon, dest_lat, dest_lon),
-        _build_minutes(origin_lat, origin_lon, dest_lat, dest_lon),
+    if flavor not in FLAVORS:
+        flavor = DEFAULT_FLAVOR
+    return _compute_route_quantized(
+        round(origin_lat * 1e5), round(origin_lon * 1e5),
+        round(dest_lat * 1e5),   round(dest_lon * 1e5),
+        flavor,
     )
+
+
+def walk_paths_alternatives(
+    origin_lat: float,
+    origin_lon: float,
+    dest_lat: float,
+    dest_lon: float,
+) -> list[dict]:
+    """
+    Return route data for all FLAVORS as a list of dicts:
+      [{"flavor": "fastest", "path": [...], "directions": [...], "minutes": ...}, ...]
+
+    Each call hits a per-flavor LRU cache, so repeated requests for the same
+    OD pair are O(flavors) lookups after the first computation.
+    """
+    out: list[dict] = []
+    for flavor in FLAVORS:
+        path, directions, minutes = _compute_route(
+            origin_lat, origin_lon, dest_lat, dest_lon, flavor,
+        )
+        out.append({
+            "flavor": flavor,
+            "path": [list(pt) for pt in path],
+            "directions": list(directions),
+            "minutes": minutes,
+        })
+    return out
 
 
 # ---------------------------------------------------------------------------

@@ -38,4 +38,4 @@ def daily_goal_pct(steps: int, daily_goal: int = 10_000) -> int:
     """Return steps as an integer percentage of the daily goal."""
     if daily_goal <= 0:
         return 0
-    return round(steps / daily_goal * 100)
+    return max(0, round(steps / daily_goal * 100))
