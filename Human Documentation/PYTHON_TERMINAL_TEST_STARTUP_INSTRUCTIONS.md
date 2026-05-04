@@ -1,6 +1,8 @@
-# CTA Transit PWA — Local Test Startup Instructions
+# Walk-Path-Calculator — Local Test Startup Instructions
 
 You need **two terminal windows open at the same time**: one for the backend (Python), one for the frontend (Node). Both must be running simultaneously for the app to work.
+
+All `cd` commands below assume you start from the repo root (`Walk-Path-Calculator/`).
 
 ---
 
@@ -12,14 +14,15 @@ You need **two terminal windows open at the same time**: one for the backend (Py
    ```
    pip install -r requirements.txt
    ```
-3. Make sure `backend/.env` exists with your API keys:
+3. Create `backend/.env` by copying the example:
    ```
-   CTA_TRAIN_API_KEY=your_key_here
-   CTA_BUS_API_KEY=your_key_here
-   ANTHROPIC_API_KEY=your_key_here
+   cp backend/.env.example backend/.env
+   ```
+   Then fill in:
+   ```
    GOOGLE_MAPS_API_KEY=your_key_here
    ```
-   > `GOOGLE_MAPS_API_KEY` is required for geocoding addresses and landmarks. See `HUMAN_TODO.md` for instructions on obtaining it.
+   > `GOOGLE_MAPS_API_KEY` is required for geocoding street addresses (e.g., "1060 W Addison St"). Neighborhood and landmark names work offline without it. See the README for instructions on obtaining a key.
 
 ### Frontend
 1. Make sure Node.js is installed.
@@ -28,30 +31,39 @@ You need **two terminal windows open at the same time**: one for the backend (Py
    npm install
    ```
 
-### Data files (first-time or after re-downloading)
-The GTFS data is large and gitignored — it lives only on your local machine. If it is missing, run this **from the `backend/` folder** before starting the server:
+### Data files (first-time only)
+The street graph is large and gitignored — it lives only on your local machine. The backend will not start without it.
 
+You have two options to get it into `backend/`:
+
+**Option A — copy from CTA-Transit-PWA (fastest if you already have that repo):**
+The graph is identical between the two projects. Copy either file:
 ```
-python fetch_gtfs.py
+cp ../CTA-Transit-PWA/backend/street_graph.graphml backend/
+cp ../CTA-Transit-PWA/backend/street_graph_igraph.pkl backend/
 ```
 
-- `fetch_gtfs.py` downloads CTA GTFS static data (~354 MB) to `backend/gtfs_data/`
-- The OSMnx street graph (`backend/street_graph.graphml`) is **pre-built and committed to the repo via Git LFS** — it downloads automatically with `git pull` and does **not** need to be regenerated. Only run `python fetch_street_graph.py` if you need to rebuild it with a different bounding box.
-- GTFS download takes a few minutes. Run it once; re-run only when you want fresh CTA schedule data.
+**Option B — rebuild from OpenStreetMap (takes several minutes):**
+From the `backend/` folder, run:
+```
+python fetch_street_graph.py
+```
+
+Either file (`street_graph.graphml` or `street_graph_igraph.pkl`) is sufficient — the backend prefers the pickle if present.
 
 ---
 
 ## Starting the Backend (Terminal 1 — Python)
 
-Open a terminal, navigate to the `backend/` folder, and run:
+Open a terminal at the repo root, then run:
 
 ```
-cd "C:\Users\Adam & Serena\OneDrive\Documents\GitHub\CTA-Transit-PWA\backend"
+cd backend
 python -m uvicorn main:app --reload
 ```
 
 **What to expect:**
-- First startup takes 30–90 seconds — the server loads GTFS data and the street graph into memory.
+- First startup takes 10–30 seconds — the server loads the street graph into memory.
 - You will see log lines like `Application startup complete.` when it is ready.
 - The server runs at: `http://localhost:8000`
 - Health check: open `http://localhost:8000/health` in your browser — it should return `{"status":"ok"}`.
@@ -61,10 +73,10 @@ python -m uvicorn main:app --reload
 
 ## Starting the Frontend (Terminal 2 — Node)
 
-Open a **second** terminal, navigate to the `frontend/` folder, and run:
+Open a **second** terminal at the repo root, then run:
 
 ```
-cd "C:\Users\Adam & Serena\OneDrive\Documents\GitHub\CTA-Transit-PWA\frontend"
+cd frontend
 npm run dev
 ```
 
@@ -95,13 +107,12 @@ Press `Ctrl + C` in each terminal window to stop the server running in that wind
 
 ---
 
-## Updating CTA Data (as needed)
+## Rebuilding the Street Graph (rare)
 
-If CTA publishes a new GTFS feed or you want fresh schedule data, stop the backend and run:
+The street graph only needs to be regenerated if you want to change the bounding box (e.g., expand coverage beyond Chicago) or pull fresher OpenStreetMap data. Stop the backend, then from the `backend/` folder run:
 
 ```
-cd "C:\Users\Adam & Serena\OneDrive\Documents\GitHub\CTA-Transit-PWA\backend"
-python fetch_gtfs.py
+python fetch_street_graph.py --force
 ```
 
-Then restart the backend normally. The street graph does **not** need to be re-downloaded — it is stored in Git LFS.
+Then restart the backend normally.

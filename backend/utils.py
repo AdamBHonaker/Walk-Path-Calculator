@@ -26,6 +26,12 @@ CHICAGO_EAST:  float = -87.52
 
 CHICAGO_BBOX_GOOGLE: str = f"{CHICAGO_SOUTH},{CHICAGO_WEST}|{CHICAGO_NORTH},{CHICAGO_EAST}"
 
+# OSM highway tags for service/alley edges that are technically walkable but
+# not desirable for pedestrian routing (driveways, parking lot lanes, etc.).
+# Single source of truth — imported by walking.py (runtime filter) and
+# fetch_street_graph.py (graph-build filter) to keep them in sync.
+SERVICE_HIGHWAY_TYPES: frozenset[str] = frozenset({"service", "alley"})
+
 # Street-graph coverage — 77 community areas (Chicago city limits only)
 STREET_GRAPH_SOUTH: float = 41.8560
 STREET_GRAPH_NORTH: float = 42.0230

@@ -21,16 +21,20 @@ Walk-Path-Calculator/
 │
 └── frontend/             # React + Vite + MapLibre GL
     ├── src/
-    │   ├── App.jsx            # Main UI (form, step hero, directions)
-    │   ├── MapView.jsx        # Walk path + turn markers rendering
-    │   ├── RouteCard.jsx      # Shareable route card (PNG export)
-    │   ├── compareEstimates.js  # Ride-share vs. walk cost/CO2 comparison
-    │   ├── mapHelpers.js      # Turn point dedup, GeoJSON helpers
+    │   ├── App.jsx                # Main UI (form, step hero, directions)
+    │   ├── MapView.jsx            # Walk path + turn markers rendering
+    │   ├── RouteCard.jsx          # Shareable route card (PNG export)
+    │   ├── compareEstimates.js    # Ride-share vs. walk cost/CO2 comparison
+    │   ├── mapHelpers.js          # Map config, gesture lock/unlock, GeoJSON helpers
+    │   ├── calorieEquiv.js        # Maps calories → food-equivalent strings
+    │   ├── lib/
+    │   │   ├── storage.js         # Safe localStorage wrappers (try/catch in one place)
+    │   │   ├── recentSearches.js  # Persisted recent-routes list
+    │   │   └── stepLog.js         # 7-day step log persistence
     │   ├── App.css / index.css
     │   ├── main.jsx
     │   ├── test-setup.js
-    │   ├── *.test.{jsx,js}
-    │   └── wayfarer/          # Internal design system (primitives, forms, icons, tokens, themes)
+    │   └── *.test.{jsx,js}
     └── public/
 ```
 
@@ -56,9 +60,11 @@ npm run dev             # starts at http://localhost:5173
 ## Key Design Decisions
 
 - **Chicago-only for now.** The street graph is pre-built and stored locally; routing is instant. Coverage spans the full Chicago city limits (77 community areas). Future expansion: add new city graphs and a city picker UI (one city per "game piece").
-- **Walking speed: 3 mph.** Consistent with CTA-Transit-PWA. Used to convert segment minutes ↔ distances.
+- **Walking speed:** Routing is computed at 3 mph internally; the API response rescales `total_minutes` and per-direction `minutes` to the user's selected `pace` (`leisurely` 2 mph, `normal` 3 mph, `brisk` 4 mph).
 - **Step formula:** `step_length_inches = height_inches × 0.413`. Default (no height): 2.5 ft (30 in). See `steps.py`.
-- **Route flavors:** Three alternatives are computed for every 2-stop route — `fastest` (default), `fewest_turns`, and `greenest` (prefers footways/paths). Multi-stop routes always use `fastest`.
+- **Calorie formula:** `kcal = MET × weight_kg × 3.5 / 200 × minutes`. MET varies by pace (2.5/3.5/4.5). Default 70 kg reference body weight when `weight_kg` is unset; the response sets `personalized_calories: true` when the user supplied a weight.
+- **Route flavors:** Three alternatives are computed for every 2-stop route — `fastest` (default), `fewest_turns`, and `greenest` (prefers footways/paths). Multi-stop routes always use `fastest`. When `avoid_stairs` or `prefer_pedestrian` is true, the response collapses to a single `custom` flavor.
+- **Routing prefs:** `avoid_stairs` adds a large per-edge penalty to OSM `highway=steps` edges. `prefer_pedestrian` routes under the existing `greenest` flavor (footway/path/cycleway discount).
 - **Multi-stop routing:** Accepts 2–8 ordered stops. Legs are routed independently and stitched into one continuous path. The `legs` array in the response breaks down per-segment stats.
 - **Pick-on-map:** `GET /reverse-geocode?lat=X&lon=Y` resolves a clicked map point to a street address or neighborhood name, used to set origin/destination without typing.
 - **No transit data.** This project has zero dependency on GTFS, CTA APIs, or the transit graph. `walking.py`, `utils.py`, and `geocoding.py` are the entire backend surface.
@@ -74,11 +80,16 @@ Returns a street address or neighborhood name for the given coordinates (must be
 
 ### `POST /route`
 
-Request — use either `stops` (primary, 2–8 entries) or the `origin`/`destination` shorthand:
+Request — use either `stops` (primary, 2–8 entries) or the `origin`/`destination` shorthand. Personalization fields are all optional:
 ```json
 {
   "stops": ["Wrigleyville", "Bucktown", "Logan Square"],
-  "height_inches": 69
+  "height_inches": 69,
+  "weight_kg": 70,
+  "pace": "brisk",
+  "daily_goal": 12000,
+  "avoid_stairs": false,
+  "prefer_pedestrian": false
 }
 ```
 ```json
@@ -89,6 +100,15 @@ Request — use either `stops` (primary, 2–8 entries) or the `origin`/`destina
 }
 ```
 
+| Field               | Type                          | Default       | Notes                                            |
+| ------------------- | ----------------------------- | ------------- | ------------------------------------------------ |
+| `height_inches`     | number, 36–108                | unset         | Drives personalized stride length.               |
+| `weight_kg`         | number, 30–300                | 70 (default)  | Sets `personalized_calories: true` when present. |
+| `pace`              | `"leisurely"`/`"normal"`/`"brisk"` | `"normal"` | Rescales `total_minutes` + per-direction `minutes`; affects MET-based calories. |
+| `daily_goal`        | int, 1 000–100 000            | 10 000        | Drives `daily_goal_pct`.                         |
+| `avoid_stairs`      | bool                          | `false`       | Penalizes `highway=steps` edges; collapses to a `custom` flavor. |
+| `prefer_pedestrian` | bool                          | `false`       | Routes under `greenest` flavor; collapses to a `custom` flavor. |
+
 Response (2-stop — `routes` array contains one entry per flavor):
 ```json
 {
@@ -98,6 +118,8 @@ Response (2-stop — `routes` array contains one entry per flavor):
   "dest_coords": [41.9290, -87.7000],
   "step_length_inches": 28.5,
   "personalized": true,
+  "personalized_calories": true,
+  "pace": "normal",
   "default_flavor": "fastest",
   "available_flavors": ["fastest", "fewest_turns", "greenest"],
   "routes": [

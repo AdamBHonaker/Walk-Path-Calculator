@@ -11,6 +11,86 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
+### 2026-05-04 · Frontend personalization fields silently dropped by backend
+
+**Files:** `backend/main.py`, `backend/walking.py`, `backend/steps.py`, `backend/tests/test_main.py`, `backend/tests/test_steps.py`
+
+**Priority:** 🔴 High
+
+**What the bug was:** [`frontend/src/App.jsx`](../../frontend/src/App.jsx) sent `weight_kg`, `daily_goal`, `pace`, `avoid_stairs`, and `prefer_pedestrian` in the `/route` POST body, but `RouteRequest` in `backend/main.py` only declared `stops`, `origin`, `destination`, and `height_inches` — Pydantic silently dropped the extras. The UI also read `personalized_calories`, `elevation_gain_ft`, and `pace` from the response, but the backend never produced them. The net effect: every preference the user set in the UI's pace selector, weight input, accessibility prefs, and goal panel went to `/dev/null`, and conditionally rendered "personalized calories" / pace / elevation chips never appeared even when the user *had* configured a weight or pace.
+
+**How it was resolved:**
+- `RouteRequest` now declares all five fields with full validation (`weight_kg` 30–300 kg, `daily_goal` 1k–100k, `pace ∈ {leisurely, normal, brisk}`, two booleans). Invalid values now return 422 instead of being ignored.
+- `backend/steps.py` extends `calories_from_minutes(minutes, weight_kg=None, pace="normal")` to apply the standard MET-based formula `kcal = MET × weight_kg × 3.5 / 200 × minutes` (MET 2.5 / 3.5 / 4.5 for the three paces). Defaults preserve the prior 4.3 kcal/min coefficient to round-trip the existing `test_thirty_minutes` assertion.
+- `backend/walking.py` adds `pace_minutes_factor(pace)` (used by `main.py` to rescale canonical-3 mph minutes to the user's pace) and `compute_route_with_prefs(...)`. The latter routes under `greenest` when `prefer_pedestrian=True` and runs an uncached Dijkstra with `_AVOID_STAIRS_PENALTY_M = 10 000 m` layered onto step edges when `avoid_stairs=True`.
+- The `/route` handler threads all five inputs through both the 2-stop and multi-stop branches. The response now includes `pace` and `personalized_calories: bool`, and collapses `available_flavors` to `["custom"]` when either routing pref is set.
+- 15 new backend tests cover: pace rescaling, weight-driven calorie scaling, invalid-pace and invalid-weight rejection (422), `daily_goal` propagating into `daily_goal_pct`, `avoid_stairs` returning the `custom` flavor, plus four `/reverse-geocode` cases (in-bounds, neighborhood-source resolution, north/west out-of-bounds rejection).
+- `elevation_gain_ft` is intentionally not added — the street graph has no elevation data. The frontend already conditionally hides the chip (`elevation_gain_ft > 10`), so omitting the field keeps the chip hidden, which is correct for v1.
+
+Total backend test count after changes: **71 tests, all passing** (up from 56).
+
+---
+
+### 2026-05-03 · HSTS header set on attacker-controlled `X-Forwarded-Proto` (BUG-005)
+
+**File:** `backend/main.py`, `backend/.env.example`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The `add_security_headers` middleware emitted `Strict-Transport-Security` whenever the request scheme was `https` *or* the `X-Forwarded-Proto` header was `https`. On a directly-exposed instance (no trusted reverse proxy), a malicious client could send `X-Forwarded-Proto: https` over plain HTTP to coax the server into issuing a one-year HSTS directive, downgrading future plaintext access for that browser. Behind Railway / Cloudflare the header is trustworthy; outside that context it isn't.
+
+**How it was resolved:** Added a `TRUST_PROXY_HEADERS` env var (default `false`). The forwarded-proto branch is only consulted when the operator opts in. `backend/.env.example` documents the new variable with deployment guidance.
+
+---
+
+### 2026-05-03 · Multi-stop totals drift from 2-stop (BUG-004)
+
+**File:** `backend/main.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** 2-stop responses derived `total_steps` and `calories_approx` once at the end (`steps_from_miles(total_miles, ...)`), but the multi-stop branch summed per-leg already-rounded values. The two strategies drifted by ±N (leg-count) steps and ≤1 calorie for the same physical path, so an `A→C` walk and an `A→B→C` walk that traced the identical route reported slightly different totals.
+
+**How it was resolved:** After the per-leg loop in the multi-stop branch, recompute `total_steps = steps_from_miles(total_miles, step_len)` and `total_calories = calories_from_minutes(total_minutes, weight_kg, pace)` from the unrounded sums. Per-leg numbers in `legs_out` are unchanged; only the route-level totals were affected.
+
+---
+
+### 2026-05-03 · Google geocoder retried persistent failures forever (BUG-003)
+
+**File:** `backend/geocoding.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `geocode_google` only wrote a negative cache entry for `status == "ZERO_RESULTS"`. For `REQUEST_DENIED`, `INVALID_REQUEST`, network errors, etc., nothing was cached, so a misconfigured key or a single bad query would hammer Google on every retry — risky given the pending daily-quota cap on the active project.
+
+**How it was resolved:** Replaced the single `zero_results` flag with a `_PERSISTENT_FAILURE_STATUSES = {"ZERO_RESULTS", "REQUEST_DENIED", "INVALID_REQUEST"}` set; any of those now writes `None` to the cache, short-circuiting future calls for the same query. Transient statuses (`OVER_QUERY_LIMIT`, network timeouts) intentionally remain uncached so they can recover once the upstream issue clears.
+
+---
+
+### 2026-05-03 · `logWalk` recorded UTC date, mislabeling late-evening walks (BUG-002)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `logWalk` stored `new Date(now).toISOString().slice(0, 10)`, which formats the **UTC** date. For Chicago (UTC-5/-6), a walk logged after ~7 PM local time was tagged with the next calendar day in the Weekly Summary panel. The 7-day TTL prune was unaffected (it uses raw timestamps), but the visible per-row label was wrong every night.
+
+**How it was resolved:** Build the date string from local components (`d.getFullYear()`/`getMonth()`/`getDate()` zero-padded) so the recorded date matches the user's wall clock regardless of timezone.
+
+---
+
+### 2026-05-03 · MapView error handler crashed on errors with no `message` (BUG-001)
+
+**File:** `frontend/src/MapView.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** The expression `e?.error?.message?.toLowerCase().includes("style")` in the maplibre `error` listener stopped its optional chain at `toLowerCase()`. When a maplibre error fired without an `error.message` property (some tile-fetch and image-load errors are emitted as plain objects), the chain produced `undefined`, then `.includes("style")` threw `TypeError: Cannot read properties of undefined (reading 'includes')`. The handler aborted before `setStyleError(true)` could fire, so the user never saw the friendly "Map tiles unavailable" notice for that class of failures.
+
+**How it was resolved:** Added the missing optional chain: `e?.error?.message?.toLowerCase()?.includes("style")`. The expression now safely yields `undefined` (falsy) when any link in the chain is absent, and the `isStyleSource` check falls through to the next branch.
+
+---
+
 ### 2026-05-02 · RouteCard crashes when result prop is null (BUG-001)
 
 **File:** `frontend/src/RouteCard.jsx`
@@ -44,9 +124,162 @@ Total test count after changes: **115 tests, all passing**.
 
 ---
 
+### 2026-05-03 · Maplibre marker / popup / control DOM rendered invisibly (BUG-003)
+
+**File:** `frontend/src/main.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** The project never imported `maplibre-gl/dist/maplibre-gl.css`. Without that stylesheet, the `.maplibregl-marker` container (and `.maplibregl-popup`, `.maplibregl-ctrl*`, etc.) has no positioning rules, so anything maplibre adds to the DOM as a marker or control element renders at zero size / wrong position and is effectively invisible. The bug was latent because the existing route polyline and turn-circle markers are drawn on the WebGL canvas — those don't depend on the stylesheet — so the map *looked* fine. It only surfaced when the new pin-confirm flow added the first real `maplibregl.Marker` and the pin failed to appear despite being present in the DOM.
+
+**How it was resolved:** Added `import "maplibre-gl/dist/maplibre-gl.css";` at the top of [`frontend/src/main.jsx`](frontend/src/main.jsx). This single import covers every maplibre DOM element going forward (markers, popups, navigation/scale/geolocate controls, attribution, etc.), not just the new pick-pin marker.
+
 ---
 
 ## Technical Debt Paid Off
+
+### 2026-05-04 · Unused `wayfarer/` design system (~1,381 lines of dead code) (2026-05-03 TD-001)
+
+**File:** `frontend/src/wayfarer/` (deleted), `CLAUDE.md`
+
+**Priority:** 🔴 High
+
+**What the debt was:** The `wayfarer/` subdirectory contained an internal design system (primitives, forms, icons, tokens, themes — 1,381 lines of `.jsx` and `.css` total) that was never imported by any application file. `CLAUDE.md` documented it as "Internal design system", which made it look load-bearing while in practice none of `App.jsx`, `MapView.jsx`, `RouteCard.jsx`, `index.css`, `App.css`, or `main.jsx` referenced it.
+
+**How it was resolved:** Deleted the entire `frontend/src/wayfarer/` directory. Updated the project-tree section of `CLAUDE.md` to remove the wayfarer mention and replace it with the new `lib/` layout (storage, recentSearches, stepLog) and the freshly extracted `calorieEquiv.js`.
+
+---
+
+### 2026-05-04 · `App.jsx` was a 1,666-line monolith (2026-05-03 TD-002)
+
+**Files:** `frontend/src/App.jsx`, `frontend/src/calorieEquiv.js` (new), `frontend/src/lib/storage.js` (new), `frontend/src/lib/recentSearches.js` (new), `frontend/src/lib/stepLog.js` (new)
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** `App.jsx` mixed top-level state, URL param parsing, fetch-with-timeout, four `memo`'d input cards, the StepHero / ComparePanel / LoadingSkeleton / ErrorBoundary components, recent-searches persistence, the multi-day step log, the calorie-equivalent food table, and the share modal — all in one file. The file exported nine named symbols solely so `App.test.jsx` could reach internal helpers, which is a strong "this should be split" signal.
+
+**How it was resolved:** Extracted four standalone modules:
+- [`calorieEquiv.js`](../../frontend/src/calorieEquiv.js) — `CALORIE_FOODS`, `NICE_FRACS`, `calorieEquivalent()`. Tested in [`calorieEquiv.test.js`](../../frontend/src/calorieEquiv.test.js).
+- [`lib/storage.js`](../../frontend/src/lib/storage.js) — `safeGet`, `safeSet`, `safeRemove`, `loadJSON`, `saveJSON`. Replaces ten try/catch sites in App.jsx with one-liner calls.
+- [`lib/recentSearches.js`](../../frontend/src/lib/recentSearches.js) — `loadRecentSearches`, `saveRecentSearch`, `clearRecentSearches`, `recentEntryStops`, `formatRecentChip`, `RECENT_KEY`, `RECENT_MAX`.
+- [`lib/stepLog.js`](../../frontend/src/lib/stepLog.js) — `loadStepLog`, `logWalk`, `clearStepLog`, `STEP_LOG_TTL_DAYS`. Includes the prior BUG-002 fix (local-date YYYY-MM-DD instead of UTC ISO).
+
+`App.jsx` re-exports the symbols `App.test.jsx` imports, so the existing 122-test suite passes unchanged. Line count: 1,666 → 1,518 (further splitting of the React components themselves was deferred — the persistence/data layer is fully extracted, which captures the bulk of the testability and duplication wins).
+
+---
+
+### 2026-05-04 · Six separate `try/catch` localStorage helpers in `App.jsx` (2026-05-03 TD-003)
+
+**Files:** `frontend/src/lib/storage.js` (new), `frontend/src/App.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** Every persisted preference (`walkpath:dailyGoal`, `walkpath:weightUnit`, `walkpath:walkPace`, `walkpath:accessPrefs`, `walkpath:recentSearches`, `walkpath:stepLog`) reimplemented the same `try { localStorage.getItem / parseInt / JSON.parse / setItem } catch { /* ignore */ }` boilerplate. The "ignore quota / privacy mode" comment appeared verbatim three times.
+
+**How it was resolved:** Added [`lib/storage.js`](../../frontend/src/lib/storage.js) exporting `safeGet`, `safeSet`, `safeRemove`, `loadJSON`, `saveJSON`. Replaced all ten call sites in `App.jsx` plus the new `recentSearches.js` / `stepLog.js` modules with single-line calls. No remaining raw `localStorage.*` in `App.jsx`.
+
+---
+
+### 2026-05-04 · Map style URL, center, zoom duplicated between MapView and RouteCard (2026-05-03 TD-004)
+
+**Files:** `frontend/src/mapHelpers.js`, `frontend/src/MapView.jsx`, `frontend/src/RouteCard.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** Both `MapView.jsx` and `RouteCard.jsx` independently read `VITE_MAP_STYLE_URL` with the same fallback URL (`https://tiles.openfreemap.org/styles/liberty`) and hardcoded `center: [-87.654, 41.966]` (Uptown, Chicago). A future tile-provider switch would have silently desynced the two map renderings.
+
+**How it was resolved:** [`mapHelpers.js`](../../frontend/src/mapHelpers.js) now exports `MAP_STYLE_URL`, `DEFAULT_MAP_CENTER`, `DEFAULT_MAP_ZOOM`. `MapView.jsx` and `RouteCard.jsx` both import them; the in-component constants are gone.
+
+---
+
+### 2026-05-04 · Map gesture-enable code duplicated in `MapView.jsx` (2026-05-03 TD-005)
+
+**Files:** `frontend/src/mapHelpers.js`, `frontend/src/MapView.jsx`
+
+**Priority:** 🟢 Low
+
+**What the debt was:** The pickMode `useEffect` and `handleUnlock` both open-coded the same six `.enable()` calls (`scrollZoom`, `dragPan`, `dragRotate`, `doubleClickZoom`, `touchZoomRotate`, `keyboard`). The lock counterpart was already a shared helper.
+
+**How it was resolved:** Added `unlockMapGestures(map)` to `mapHelpers.js` next to the existing `lockMapGestures`. Replaced both inline blocks in `MapView.jsx` with `unlockMapGestures(map)` calls.
+
+---
+
+### 2026-05-04 · `_SERVICE_TYPES` set redefined three times across the backend (2026-05-03 TD-006)
+
+**Files:** `backend/utils.py`, `backend/walking.py`, `backend/fetch_street_graph.py`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** The set `{"service", "alley"}` was defined as `_SERVICE_HIGHWAY_TYPES` in `walking.py` and re-declared twice (locally) inside `fetch_street_graph.py` as `_SERVICE_TYPES`. Three copies that could drift if accessibility routing ever needed to treat alleys differently.
+
+**How it was resolved:** Added `SERVICE_HIGHWAY_TYPES: frozenset[str]` to [`backend/utils.py`](../../backend/utils.py) as the single source of truth. `walking.py` and `fetch_street_graph.py` both import it; the local definitions are gone.
+
+---
+
+### 2026-05-04 · `_needs_download()` was dead code in `fetch_street_graph.py` (2026-05-03 TD-007)
+
+**Files:** `backend/fetch_street_graph.py`
+
+**Priority:** 🟢 Low
+
+**What the debt was:** `_needs_download()` was defined but never called — its predicate had been inlined into the `__main__` block as `graphml_usable = ...`, leaving two copies of the same check that could drift.
+
+**How it was resolved:** Deleted the unused function. The `__main__` block remains the single decision site for whether the graph needs download or rebuild.
+
+---
+
+### 2026-05-04 · Hardcoded rate-limit values in `main.py` (2026-05-03 TD-008)
+
+**Files:** `backend/main.py`
+
+**Priority:** 🟢 Low
+
+**What the debt was:** Three different rate limits (`60/minute`, `30/minute`, `10/minute`) were embedded as string literals on `@limiter.limit(...)` decorators. No central place to inspect or override them per environment.
+
+**How it was resolved:** Added `RATE_LIMIT_HEALTH`, `RATE_LIMIT_REVERSE_GEOCODE`, `RATE_LIMIT_ROUTE` near the top of `main.py`. Each is seeded from an env var with the previous string as default, so production behavior is unchanged but a deploy can now tune limits via env without a code change.
+
+---
+
+### 2026-05-04 · Magic LRU cache sizes scattered across `walking.py` (2026-05-03 TD-009)
+
+**Files:** `backend/walking.py`
+
+**Priority:** 🟢 Low
+
+**What the debt was:** Three hand-tuned `@lru_cache(maxsize=...)` decorators (`2048`, `1536`, `1536`) sat naked on different functions. The two `1536` values were meant to evict together but nothing enforced that.
+
+**How it was resolved:** Defined `_NEAREST_NODE_CACHE_SIZE = 2048` and `_ROUTE_CACHE_SIZE = 1536` near the top of `walking.py` with a comment noting why the route caches are coupled. Both LRU decorators now reference the constants.
+
+---
+
+### 2026-05-04 · Calorie-equivalent food table embedded mid-file in `App.jsx` (2026-05-03 TD-010)
+
+**Files:** `frontend/src/calorieEquiv.js` (new), `frontend/src/calorieEquiv.test.js` (new), `frontend/src/App.jsx`
+
+**Priority:** 🟢 Low
+
+**What the debt was:** `CALORIE_FOODS` (12 entries with raw calorie counts) and `NICE_FRACS` (10 fractional buckets) were hardcoded data sitting alongside JSX in the App component file, with no source citation and no isolated tests.
+
+**How it was resolved:** Moved both arrays plus `calorieEquivalent()` into [`frontend/src/calorieEquiv.js`](../../frontend/src/calorieEquiv.js) with a header comment noting the calorie figures are USDA / nutrition-label averages. Added [`calorieEquiv.test.js`](../../frontend/src/calorieEquiv.test.js) with 8 focused tests (zero / null / negative inputs, exact and fractional matches, pluralization). `App.jsx` imports and re-exports `calorieEquivalent` so `App.test.jsx` continues to pass unchanged.
+
+---
+
+### 2026-05-04 · No tests for `/reverse-geocode` endpoint (2026-05-03 TD-011)
+
+**Files:** `backend/tests/test_main.py`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** `GET /reverse-geocode` had bbox validation, rate limiting, and a Google fallback — none of which were exercised by `test_main.py`. A regression that broke the bbox check or response shape would only surface via manual testing.
+
+**How it was resolved:** Added a `TestReverseGeocode` class with five offline-safe tests:
+1. In-bounds Wrigleyville coordinates return a `{label, source}` dict with `source ∈ {neighborhood, google, coordinates}`.
+2. Logan Square coordinates resolve to `source: "neighborhood"` with `"logan"` in the label (deterministic without Google).
+3. Out-of-bounds north (lat > CHICAGO_NORTH) returns 422.
+4. Out-of-bounds west (lon < CHICAGO_WEST) returns 422.
+5. Missing `lat`/`lon` query params return 422.
+
+---
 
 ### 2026-04-28 · No test coverage across the entire backend (TD-001)
 
@@ -319,3 +552,129 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 **What was inefficient:** Every successful Google geocode result (and every `ZERO_RESULTS` response) triggered `_save_geocode_cache(_geocode_cache)`, which serialized the entire cache dict, wrote it to a temp file, and replaced the on-disk file. As the cache grew, this O(n) write fired on every new entry.
 
 **Implemented:** Added `_geocode_unsaved` counter and `_GEOCODE_SAVE_EVERY = 5` threshold. `_flush_geocode_if_needed()` increments the counter and only calls `_save_geocode_cache` when the threshold is reached, then resets the counter. An `atexit` handler (`_flush_geocode_on_exit`) flushes any remaining unsaved entries on graceful shutdown. At most 4 entries can be lost on an ungraceful crash, which is an acceptable trade-off for a stable geocode cache.
+
+---
+
+### 2026-05-03 · `loadAccessPrefs()` runs every render (localStorage + JSON.parse) (OPT-009)
+
+**File:** [frontend/src/App.jsx](frontend/src/App.jsx)
+
+**Impact:** 🔴 High
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `const initialPrefs = loadAccessPrefs();` was called at the top of the `App()` function body on every render. The function does `localStorage.getItem("walkpath:accessPrefs")` + `JSON.parse` synchronously. The two `useState` calls only consumed the result on first render, so every subsequent render paid the localStorage + JSON.parse cost for nothing — including every keystroke in the form inputs. Sibling preferences (`loadDailyGoal`, `loadStoredPace`) were already using the lazy `useState(() => ...)` pattern; `loadAccessPrefs` had been missed.
+
+**Implemented:** Replaced the two `useState(initialPrefs.X)` calls with lazy initializers: `useState(() => loadAccessPrefs().avoidStairs)` and `useState(() => loadAccessPrefs().preferPedestrian)`. Removed the per-render `const initialPrefs` line. Localstorage and JSON.parse now run only on mount.
+
+---
+
+### 2026-05-03 · `renderWalkRoute` reduce allocates a new object + 2 nested arrays per path point (OPT-010)
+
+**File:** [frontend/src/mapHelpers.js](frontend/src/mapHelpers.js)
+
+**Impact:** 🔴 High
+
+**Category:** Redundant Computation / Memory Bloat
+
+**What was inefficient:** The `path.reduce(...)` returned a fresh `{ geoPath, bounds: [[...], [...]] }` literal on every iteration — one object plus two array literals per path point. Long Chicago routes routinely have hundreds of polyline points, so a ~500-point path generated ~500 wasted object allocations and ~1000 wasted array allocations per route render, plus the GC pressure that follows. `geoPath` was already mutably pushed; only the bounds tuple needed accumulator semantics.
+
+**Implemented:** Replaced the reduce with a plain `for` loop that pushes onto a single `geoPath` array and updates four scalar locals (`minLon`, `minLat`, `maxLon`, `maxLat`). The bounds tuple is constructed once at the end of the loop. No per-iteration allocation; same end state.
+
+---
+
+### 2026-05-03 · MapView draw-in animation rebuilds the coords array on every frame (OPT-011)
+
+**File:** [frontend/src/MapView.jsx](frontend/src/MapView.jsx)
+
+**Impact:** 🔴 High
+
+**Category:** Memory Bloat / Rendering
+
+**What was inefficient:** `setProgress` ran at ~60 fps for up to 8 seconds (`ANIM_MAX_DURATION_MS`). On each frame it allocated a fresh `coords` array and walked `fullPath[0..i]` calling `toGeo(...)` — which itself allocates a 2-element array per call. For a 500-point path animating for 4 seconds at 60 fps, that's ~240 frames × ~500 `toGeo` allocations ≈ 120,000 short-lived arrays per route render, all during the most visually sensitive moment of the UX.
+
+**Implemented:** Pre-converted `fullPath` to its `[lon, lat]` form once (`const geoFullPath = fullPath.map(toGeo);`) before the animation loop starts. Each frame now uses `geoFullPath.slice(0, i)` plus the interpolated tip, eliminating the inner `toGeo` allocations entirely. The final-state restore was also updated to reuse `geoFullPath` instead of calling `fullPath.map(toGeo)` again.
+
+---
+
+### 2026-05-03 · `fuzzy_match_neighborhood` rebuilds SequenceMatcher's `b2j` index per candidate (OPT-012)
+
+**File:** [backend/geocoding.py](backend/geocoding.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** The fuzzy-match loop created `SequenceMatcher(None, query, key)` for every candidate key. `SequenceMatcher` builds an internal `b2j` index on its second-argument string the first time `.ratio()` runs; constructing a fresh matcher per candidate forced that index to be rebuilt every iteration. With ~330 neighborhood keys and (after the inverted-word-index pre-filter) often dozens of candidates, this added measurable per-request CPU cost on any query that missed the exact-match path.
+
+**Implemented:** Construct `matcher = SequenceMatcher(None, "", query)` once outside the loop, with the constant query held in `seq2`. Inside the loop, call `matcher.set_seq1(key)` then `matcher.ratio()`. `set_seq1` is cheap and does not rebuild `b2j`; the index for the constant query is built once and reused across all candidates.
+
+---
+
+### 2026-05-03 · Geocode cache disk format wastes space and rewrites too aggressively (OPT-013)
+
+**File:** [backend/geocoding.py](backend/geocoding.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Inefficient I/O Pattern
+
+**What was inefficient:** `_save_geocode_cache` re-serialised the entire cache with `indent=2` (roughly doubling on-disk size for what is a machine-only cache) and the flush threshold was `_GEOCODE_SAVE_EVERY = 5`, so a busy week of new lookups triggered a full cache rewrite every 5 entries. As the cache grows, each rewrite is O(N) — hundreds of KB of JSON serialised, written to a temp file, and renamed.
+
+**Implemented:** Removed `indent=2` and added `separators=(",", ":")` so the on-disk format is compact (smaller writes, faster serialisation). Bumped `_GEOCODE_SAVE_EVERY` from 5 to 50 — the existing `atexit` flush ensures unsaved entries are persisted on clean shutdown, so the only risk is losing up to 49 entries on a crash, which is acceptable for a regenerable cache.
+
+---
+
+### 2026-05-03 · `_load_graph` builds vertex coord arrays via per-vertex attribute access (OPT-014)
+
+**File:** [backend/walking.py](backend/walking.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `lons = np.array([v["x"] for v in G.vs], dtype=np.float64)` iterated ~50k vertices and performed a per-vertex attribute lookup. igraph exposes `G.vs["x"]` as a single bulk attribute fetch returning a list — substantially faster than the comprehension. This runs at server startup and added avoidable wall-clock time to lifespan boot, delaying the first request after a cold deploy on Railway.
+
+**Implemented:** Replaced both lines with `np.asarray(G.vs["x"], dtype=np.float64)` and `np.asarray(G.vs["y"], dtype=np.float64)`. Single bulk fetch per axis, identical end state.
+
+---
+
+### 2026-05-03 · `_build_minutes` re-iterates the epath to sum lengths already summed by `_build_directions` (OPT-015)
+
+**File:** [backend/walking.py](backend/walking.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** Inside `_compute_route_quantized`, the three builders ran in sequence (`_build_path` → `_build_directions` → `_build_minutes`). Both `_build_directions` and `_build_minutes` iterated the full epath summing `e["length"]`, so every cache miss did the per-edge attribute lookup twice — for a 200-edge route, ~200 redundant igraph index calls per miss.
+
+**Implemented:** Restructured `_compute_route_quantized` to derive total minutes from the per-step `distance_meters` already produced by `_build_directions` (`total_meters = sum(d["distance_meters"] for d in directions)` then `round(total_meters / WALKING_SPEED_MPS / 60, 1)`). `_build_minutes` is only called as a fallback when directions are empty (degenerate path). Eliminates the second epath traversal on every cache miss.
+
+---
+
+### 2026-05-03 · `_build_path` reverses geometry coords with full slice copy (OPT-016)
+
+**File:** [backend/walking.py](backend/walking.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Memory Bloat
+
+**What was inefficient:** When edge geometry was oriented opposite the traversal direction, `geom_coords = geom_coords[::-1]` allocated a fresh list of every coord pair. Long curved streets (Milwaukee Ave, lakefront paths) can have 50+ points per edge; the reversal copied them all when iteration order was the only thing that mattered.
+
+**Implemented:** Replaced the slice-copy with a `range` that walks the geometry list forward or backward in-place (`range(n - 1, -1, -1)` for reverse, with a `skip_first` adjustment to preserve the existing seam-dedup logic). No copy is allocated; the inner loop reads `geom_coords[j][0/1]` directly.
+
+---
+
+### 2026-05-03 · `list(await asyncio.gather(...))` wraps an already-list result (OPT-017)
+
+**File:** [backend/main.py](backend/main.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `legs_raw = list(await asyncio.gather(*[...]))` wrapped `gather`'s already-returned list in another `list(...)` call, allocating and copying a second list with the same contents.
+
+**Implemented:** Removed the redundant `list(...)` wrap. `legs_raw` now binds directly to the gather result.

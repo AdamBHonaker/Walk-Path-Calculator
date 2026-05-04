@@ -21,7 +21,7 @@ import sys
 import time
 from pathlib import Path
 
-from utils import STREET_GRAPH_BBOX_OSMNX
+from utils import STREET_GRAPH_BBOX_OSMNX, SERVICE_HIGHWAY_TYPES
 
 GRAPH_PATH  = Path(__file__).parent / "street_graph.graphml"
 IGRAPH_PATH = Path(__file__).parent / "street_graph_igraph.pkl"
@@ -91,16 +91,6 @@ def _is_lfs_pointer(path: Path) -> bool:
         return first_line.startswith(b"version https://git-lfs.github.com")
     except Exception:
         return False
-
-
-def _needs_download() -> bool:
-    if not GRAPH_PATH.exists():
-        return True
-    if GRAPH_PATH.stat().st_size < 1024:
-        return True
-    if _is_lfs_pointer(GRAPH_PATH):
-        return True
-    return False
 
 
 OVERPASS_MIRRORS: dict[str, str] = {
@@ -180,14 +170,13 @@ def download_and_save(verbose: bool = False) -> None:
     _step_end(f"{raw_nodes:,} nodes, {raw_edges:,} edges")
 
     _step_begin("Filtering service/alley edges (not walkable)")
-    _SERVICE_TYPES = {"service", "alley"}
     svc_edges: list = []
     for u, v, k, data in G.edges(keys=True, data=True):
         hw = data.get("highway", "")
         if isinstance(hw, list):
             hw = hw[0] if hw else ""
         hw = (hw or "").strip()
-        if hw in _SERVICE_TYPES:
+        if hw in SERVICE_HIGHWAY_TYPES:
             svc_edges.append((u, v, k))
     G.remove_edges_from(svc_edges)
     _step_end(f"removed {len(svc_edges):,} service/alley edges")
@@ -230,8 +219,6 @@ def _save_igraph_artifact(G_nx) -> None:
         nodes = list(G_nx.nodes())
         node_to_idx = {n: i for i, n in enumerate(nodes)}
 
-        _SERVICE_TYPES = {"service", "alley"}
-
         edges:         list[tuple[int, int]] = []
         attr_length:   list[float]           = []
         attr_name:     list[str]             = []
@@ -244,7 +231,7 @@ def _save_igraph_artifact(G_nx) -> None:
             hw = data.get("highway", "")
             if isinstance(hw, list): hw = hw[0] if hw else ""
             hw = (hw or "").strip()
-            if hw in _SERVICE_TYPES:
+            if hw in SERVICE_HIGHWAY_TYPES:
                 filtered += 1
                 continue
 

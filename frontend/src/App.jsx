@@ -4,6 +4,38 @@ import MapView from "./MapView.jsx";
 import RouteCard from "./RouteCard.jsx";
 import { summarize } from "./compareEstimates.js";
 import { haversineMeters } from "./mapHelpers.js";
+import { calorieEquivalent } from "./calorieEquiv.js";
+import { safeGet, safeSet, safeRemove, loadJSON, saveJSON } from "./lib/storage.js";
+import {
+  RECENT_KEY,
+  RECENT_MAX,
+  loadRecentSearches,
+  saveRecentSearch,
+  clearRecentSearches,
+  recentEntryStops,
+  formatRecentChip,
+} from "./lib/recentSearches.js";
+import {
+  STEP_LOG_TTL_DAYS,
+  loadStepLog,
+  logWalk,
+  clearStepLog,
+} from "./lib/stepLog.js";
+
+// Re-exported for App.test.jsx — extractions to lib/ stay transparent
+// to the existing test imports.
+export {
+  calorieEquivalent,
+  RECENT_MAX,
+  loadRecentSearches,
+  saveRecentSearch,
+  recentEntryStops,
+  formatRecentChip,
+  STEP_LOG_TTL_DAYS,
+  loadStepLog,
+  logWalk,
+  clearStepLog,
+};
 
 function normalizeBackendUrl(rawUrl) {
   if (!rawUrl) return null;
@@ -82,58 +114,6 @@ const IN_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-const CALORIE_FOODS = [
-  { name: "cookie",         cal: 55,  plural: "cookies"         },
-  { name: "banana",         cal: 90,  plural: "bananas"         },
-  { name: "latte",          cal: 120, plural: "lattes"          },
-  { name: "bag of chips",   cal: 130, plural: "bags of chips"   },
-  { name: "can of soda",    cal: 150, plural: "cans of soda"    },
-  { name: "granola bar",    cal: 190, plural: "granola bars"    },
-  { name: "chocolate bar",  cal: 220, plural: "chocolate bars"  },
-  { name: "small fries",    cal: 230, plural: "small fries"     },
-  { name: "donut",          cal: 250, plural: "donuts"          },
-  { name: "slice of pizza", cal: 300, plural: "slices of pizza" },
-  { name: "cupcake",        cal: 350, plural: "cupcakes"        },
-  { name: "cheeseburger",   cal: 550, plural: "cheeseburgers"   },
-];
-
-const NICE_FRACS = [
-  { val: 0.25, label: "¼ of a"  },
-  { val: 0.33, label: "⅓ of a"  },
-  { val: 0.5,  label: "half a"  },
-  { val: 0.67, label: "⅔ of a"  },
-  { val: 0.75, label: "¾ of a"  },
-  { val: 1,    label: "1"       },
-  { val: 1.5,  label: "1½"      },
-  { val: 2,    label: "2"       },
-  { val: 3,    label: "3"       },
-  { val: 4,    label: "4"       },
-];
-
-export function calorieEquivalent(calories) {
-  if (!calories || calories <= 0) return null;
-
-  let bestFood = null;
-  let bestFrac = null;
-  let bestErr = Infinity;
-
-  for (const food of CALORIE_FOODS) {
-    const ratio = calories / food.cal;
-    for (const frac of NICE_FRACS) {
-      const err = Math.abs(ratio - frac.val);
-      if (err < bestErr) {
-        bestErr = err;
-        bestFood = food;
-        bestFrac = frac;
-      }
-    }
-  }
-
-  if (!bestFood) return null;
-  const itemLabel = bestFrac.val >= 2 ? bestFood.plural : bestFood.name;
-  return `≈ ${bestFrac.label} ${itemLabel}`;
-}
-
 function formatSteps(n) {
   return n != null ? n.toLocaleString() : "–";
 }
@@ -156,14 +136,10 @@ export function motivationMessage(steps) {
 const GOAL_PRESETS = [5_000, 7_500, 10_000, 15_000, 20_000];
 
 export function loadDailyGoal() {
-  try {
-    const raw = localStorage.getItem("walkpath:dailyGoal");
-    if (!raw) return null;
-    const n = parseInt(raw, 10);
-    return n >= 1_000 && n <= 100_000 ? n : null;
-  } catch {
-    return null;
-  }
+  const raw = safeGet("walkpath:dailyGoal");
+  if (!raw) return null;
+  const n = parseInt(raw, 10);
+  return n >= 1_000 && n <= 100_000 ? n : null;
 }
 
 const StepGoalInput = memo(function StepGoalInput({ dailyGoal, onChange }) {
@@ -300,13 +276,7 @@ function kgToLb(kg) {
 
 const WeightInput = memo(function WeightInput({ weightKg, onWeightChange }) {
   const [open, setOpen] = useState(false);
-  const [unit, setUnit] = useState(() => {
-    try {
-      return localStorage.getItem("walkpath:weightUnit") || "lb";
-    } catch {
-      return "lb";
-    }
-  });
+  const [unit, setUnit] = useState(() => safeGet("walkpath:weightUnit") || "lb");
   const [inputVal, setInputVal] = useState("");
 
   function handleUnitToggle() {
@@ -318,9 +288,7 @@ const WeightInput = memo(function WeightInput({ weightKg, onWeightChange }) {
       setInputVal(String(converted));
     }
     setUnit(newUnit);
-    try {
-      localStorage.setItem("walkpath:weightUnit", newUnit);
-    } catch { /* ignore quota / privacy mode */ }
+    safeSet("walkpath:weightUnit", newUnit);
   }
 
   function handleChange(e) {
@@ -475,10 +443,8 @@ export function safePaceLabel(pace) {
 }
 
 export function loadStoredPace() {
-  try {
-    const v = localStorage.getItem("walkpath:walkPace");
-    if (v === "leisurely" || v === "normal" || v === "brisk") return v;
-  } catch { /* ignore */ }
+  const v = safeGet("walkpath:walkPace");
+  if (v === "leisurely" || v === "normal" || v === "brisk") return v;
   return "normal";
 }
 
@@ -824,59 +790,10 @@ class ErrorBoundary extends Component {
 }
 
 // ── Recent Searches ───────────────────────────────────────────────────────
-
-const RECENT_KEY = "walkpath:recentSearches";
-export const RECENT_MAX = 10;
-
-export function loadRecentSearches() {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-export function saveRecentSearch(originOrStops, destination) {
-  try {
-    let stops;
-    if (Array.isArray(originOrStops)) {
-      stops = originOrStops.slice(0, MAX_STOPS).map(String);
-    } else {
-      stops = [String(originOrStops), String(destination)];
-    }
-    if (stops.length < 2) return null;
-    const existing = loadRecentSearches();
-    const sig = stops.join("");
-    const entry = {
-      stops,
-      origin: stops[0],
-      destination: stops[stops.length - 1],
-      timestamp: Date.now(),
-    };
-    const sigOf = (r) => (Array.isArray(r.stops) ? r.stops : [r.origin, r.destination]).join("");
-    const deduped = existing.filter(r => sigOf(r) !== sig);
-    const updated = [entry, ...deduped].slice(0, RECENT_MAX);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(updated));
-    return updated;
-  } catch {
-    return null;
-  }
-}
-
-export function recentEntryStops(entry) {
-  if (Array.isArray(entry?.stops) && entry.stops.length >= 2) return entry.stops;
-  if (entry?.origin && entry?.destination) return [entry.origin, entry.destination];
-  return [];
-}
-
-export function formatRecentChip(stops) {
-  if (!stops?.length) return "";
-  if (stops.length <= 4) return stops.join(" → ");
-  return `${stops[0]} → … → ${stops[stops.length - 1]} (${stops.length} stops)`;
-}
+// Implementation lives in ./lib/recentSearches.js (RECENT_KEY, loadRecentSearches,
+// saveRecentSearch, clearRecentSearches, recentEntryStops, formatRecentChip,
+// RECENT_MAX). The lib symbols are imported at the top of this file and
+// re-exported there for App.test.jsx.
 
 function RecentSearches({ searches, onSelect, onClear }) {
   if (!searches.length) return null;
@@ -910,54 +827,6 @@ function RecentSearches({ searches, onSelect, onClear }) {
 
 // ── Step log (Multi-Day Step Accumulator) ────────────────────────────────
 
-const STEP_LOG_KEY = "walkpath:stepLog";
-export const STEP_LOG_TTL_DAYS = 7;
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function pruneExpired(entries, now = Date.now()) {
-  const cutoff = now - STEP_LOG_TTL_DAYS * DAY_MS;
-  return entries.filter(e => typeof e?.timestamp === "number" && e.timestamp >= cutoff);
-}
-
-export function loadStepLog() {
-  try {
-    const raw = localStorage.getItem(STEP_LOG_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    const pruned = pruneExpired(parsed);
-    if (pruned.length !== parsed.length) {
-      try { localStorage.setItem(STEP_LOG_KEY, JSON.stringify(pruned)); } catch { /* ignore */ }
-    }
-    return pruned;
-  } catch {
-    return [];
-  }
-}
-
-export function logWalk({ steps, miles, origin, destination }) {
-  try {
-    const existing = loadStepLog();
-    const now = Date.now();
-    const entry = {
-      timestamp: now,
-      date: new Date(now).toISOString().slice(0, 10),
-      steps: Number(steps) || 0,
-      miles: Number(miles) || 0,
-      origin: String(origin ?? ""),
-      destination: String(destination ?? ""),
-    };
-    const updated = [entry, ...existing];
-    localStorage.setItem(STEP_LOG_KEY, JSON.stringify(updated));
-    return entry;
-  } catch {
-    return null;
-  }
-}
-
-export function clearStepLog() {
-  try { localStorage.removeItem(STEP_LOG_KEY); } catch { /* ignore */ }
-}
 
 function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
   const [open, setOpen] = useState(false);
@@ -1032,17 +901,11 @@ function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
 // ── App ───────────────────────────────────────────────────────────────────
 
 function loadAccessPrefs() {
-  try {
-    const raw = localStorage.getItem("walkpath:accessPrefs");
-    if (!raw) return { avoidStairs: false, preferPedestrian: false };
-    const parsed = JSON.parse(raw);
-    return {
-      avoidStairs: !!parsed.avoidStairs,
-      preferPedestrian: !!parsed.preferPedestrian,
-    };
-  } catch {
-    return { avoidStairs: false, preferPedestrian: false };
-  }
+  const parsed = loadJSON("walkpath:accessPrefs", {});
+  return {
+    avoidStairs: !!parsed?.avoidStairs,
+    preferPedestrian: !!parsed?.preferPedestrian,
+  };
 }
 
 export default function App() {
@@ -1097,21 +960,15 @@ export default function App() {
   const [dailyGoal, setDailyGoalState] = useState(() => loadDailyGoal());
   const [walkPace, setWalkPace]         = useState(loadStoredPace);
 
-  const initialPrefs = loadAccessPrefs();
-  const [avoidStairs, setAvoidStairs]           = useState(initialPrefs.avoidStairs);
-  const [preferPedestrian, setPreferPedestrian] = useState(initialPrefs.preferPedestrian);
+  const [avoidStairs, setAvoidStairs]           = useState(() => loadAccessPrefs().avoidStairs);
+  const [preferPedestrian, setPreferPedestrian] = useState(() => loadAccessPrefs().preferPedestrian);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(
-        "walkpath:accessPrefs",
-        JSON.stringify({ avoidStairs, preferPedestrian }),
-      );
-    } catch { /* ignore quota / privacy mode */ }
+    saveJSON("walkpath:accessPrefs", { avoidStairs, preferPedestrian });
   }, [avoidStairs, preferPedestrian]);
 
   useEffect(() => {
-    try { localStorage.setItem("walkpath:walkPace", walkPace); } catch { /* ignore */ }
+    safeSet("walkpath:walkPace", walkPace);
   }, [walkPace]);
 
   const [result, setResult]           = useState(null);
@@ -1193,13 +1050,8 @@ export default function App() {
 
   const handleGoalChange = useCallback((val) => {
     setDailyGoalState(val);
-    try {
-      if (val != null) {
-        localStorage.setItem("walkpath:dailyGoal", String(val));
-      } else {
-        localStorage.removeItem("walkpath:dailyGoal");
-      }
-    } catch { /* ignore quota / privacy mode */ }
+    if (val != null) safeSet("walkpath:dailyGoal", String(val));
+    else             safeRemove("walkpath:dailyGoal");
   }, []);
 
   function handleSwap() {
@@ -1292,7 +1144,7 @@ export default function App() {
   }
 
   function handleClearRecent() {
-    try { localStorage.removeItem(RECENT_KEY); } catch { /* ignore */ }
+    safeRemove(RECENT_KEY);
     setRecentSearches([]);
   }
 
@@ -1331,27 +1183,33 @@ export default function App() {
     setPickMode(prev => prev === stopId ? null : stopId);
   }
 
-  const handleMapPick = useCallback(async (lat, lon) => {
+  const resolveStopLabel = useCallback(async (lat, lon) => {
+    try {
+      const res = await fetchWithTimeout(
+        `${BACKEND_URL}/reverse-geocode?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`,
+      );
+      const data = await res.json();
+      if (res.ok && typeof data?.label === "string") {
+        return data.label.trim().slice(0, 200) || null;
+      }
+    } catch { /* network or parse failure — caller falls back to coords */ }
+    return null;
+  }, []);
+
+  const handleMapPick = useCallback((lat, lon, label) => {
     const targetId = pickMode; // capture before clearing
     setPickMode(null);
     if (!targetId) return;
 
-    const coordStr = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-    setStopValue(targetId, coordStr);
-
-    try {
-      const res = await fetchWithTimeout(`${BACKEND_URL}/reverse-geocode?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`);
-      const data = await res.json();
-      if (res.ok && typeof data?.label === "string") {
-        const label = data.label.trim().slice(0, 200);
-        if (label) setStopValue(targetId, label);
-      }
-    } catch {
+    if (label) {
+      setStopValue(targetId, label);
+    } else {
+      setStopValue(targetId, `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
       setToastMsg("Couldn't name that spot — using coordinates");
       clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setToastMsg(""), 3500);
     }
-  }, [pickMode]);  // setStopValue is stable; BACKEND_URL, setters captured
+  }, [pickMode]);
 
   return (
     <div className="app">
@@ -1598,6 +1456,7 @@ export default function App() {
             activeTurnIndex={activeTurnIndex}
             pickMode={pickMode}
             onPickPoint={handleMapPick}
+            resolveLabel={resolveStopLabel}
           />
         </div>
 

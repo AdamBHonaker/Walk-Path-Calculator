@@ -1,6 +1,13 @@
 export const WALK_PATH_COLOR  = "#2d7a3e";
 export const TURN_COLOR_ACTIVE = "#4caf77";
 
+// Shared map defaults — used by both MapView and RouteCard so the two
+// renderings can never drift on tile provider or default framing.
+export const MAP_STYLE_URL =
+  import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
+export const DEFAULT_MAP_CENTER = [-87.654, 41.966]; // Uptown, Chicago
+export const DEFAULT_MAP_ZOOM   = 13;
+
 // Backend returns [lat, lon]; GeoJSON / MapLibre expects [lon, lat].
 export const toGeo = ([lat, lon]) => [lon, lat];
 
@@ -67,20 +74,19 @@ export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerI
 
   const { path, origin_coords, dest_coords } = result;
 
-  const { geoPath, bounds } = path.reduce(
-    ({ geoPath, bounds }, pt) => {
-      const [lon, lat] = toGeo(pt);
-      geoPath.push([lon, lat]);
-      return {
-        geoPath,
-        bounds: [
-          [Math.min(bounds[0][0], lon), Math.min(bounds[0][1], lat)],
-          [Math.max(bounds[1][0], lon), Math.max(bounds[1][1], lat)],
-        ],
-      };
-    },
-    { geoPath: [], bounds: [[Infinity, Infinity], [-Infinity, -Infinity]] },
-  );
+  const geoPath = [];
+  let minLon = Infinity, minLat = Infinity;
+  let maxLon = -Infinity, maxLat = -Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const lat = path[i][0];
+    const lon = path[i][1];
+    geoPath.push([lon, lat]);
+    if (lon < minLon) minLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lon > maxLon) maxLon = lon;
+    if (lat > maxLat) maxLat = lat;
+  }
+  const bounds = [[minLon, minLat], [maxLon, maxLat]];
 
   trackSource(map, "walk-path", {
     type: "geojson",
@@ -185,4 +191,13 @@ export function lockMapGestures(map) {
   map.doubleClickZoom.disable();
   map.touchZoomRotate.disable();
   map.keyboard.disable();
+}
+
+export function unlockMapGestures(map) {
+  map.scrollZoom.enable();
+  map.dragPan.enable();
+  map.dragRotate.enable();
+  map.doubleClickZoom.enable();
+  map.touchZoomRotate.enable();
+  map.keyboard.enable();
 }

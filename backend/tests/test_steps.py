@@ -62,7 +62,7 @@ class TestCaloriesFromMinutes:
         assert calories_from_minutes(0) == 0
 
     def test_thirty_minutes(self):
-        # 30 × 4.3 = 129
+        # MET 3.5 (normal) × 70 kg × 3.5 / 200 × 30 ≈ 128.6 → rounds to 129
         assert calories_from_minutes(30) == 129
 
     def test_returns_int(self):
@@ -70,6 +70,18 @@ class TestCaloriesFromMinutes:
 
     def test_non_negative(self):
         assert calories_from_minutes(-5) == 0
+
+    def test_brisk_pace_burns_more_than_normal(self):
+        assert calories_from_minutes(30, pace="brisk") > calories_from_minutes(30, pace="normal")
+
+    def test_leisurely_pace_burns_less_than_normal(self):
+        assert calories_from_minutes(30, pace="leisurely") < calories_from_minutes(30, pace="normal")
+
+    def test_heavier_weight_burns_more(self):
+        assert calories_from_minutes(30, weight_kg=100) > calories_from_minutes(30, weight_kg=60)
+
+    def test_unknown_pace_falls_back_to_normal(self):
+        assert calories_from_minutes(30, pace="sprint") == calories_from_minutes(30, pace="normal")
 
 
 class TestDailyGoalPct:

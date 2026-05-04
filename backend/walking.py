@@ -21,7 +21,7 @@ import igraph as ig
 import numpy as np
 from scipy.spatial import cKDTree
 
-from utils import haversine_miles as _haversine_miles, WALKING_SPEED_MPH
+from utils import haversine_miles as _haversine_miles, WALKING_SPEED_MPH, SERVICE_HIGHWAY_TYPES
 
 GRAPH_PATH  = Path(__file__).parent / "street_graph.graphml"
 IGRAPH_PATH = Path(__file__).parent / "street_graph_igraph.pkl"
@@ -37,10 +37,23 @@ _DIRECTION_FULL = {
     "S":  "South",     "SW": "Southwest", "W":  "West",      "NW": "Northwest",
 }
 
-_SERVICE_HIGHWAY_TYPES = {"service", "alley"}
-
 FLAVORS: tuple[str, ...] = ("fastest", "fewest_turns", "greenest")
 DEFAULT_FLAVOR = "fastest"
+
+# LRU cache sizes for the routing pipeline. Both route caches share a value
+# because their entries evict together (a miss in one implies a miss in the other).
+_NEAREST_NODE_CACHE_SIZE = 2048
+_ROUTE_CACHE_SIZE        = 1536
+
+# Pace presets — these MUST match the values accepted by the API contract
+# (steps.PACE_TO_MPH). Used to convert canonical 3 mph minutes into
+# user-paced minutes at the response layer.
+_PACE_TO_MPH = {"leisurely": 2.0, "normal": 3.0, "brisk": 4.0}
+
+# Penalty (metres) added to "highway=steps" edges when avoid_stairs=True.
+# Large enough to deter routing through stairs whenever any alternative exists,
+# while remaining finite so isolated stair-only segments stay reachable.
+_AVOID_STAIRS_PENALTY_M = 10_000.0
 
 # Per-edge fixed penalty for "fewest_turns" — adds a constant cost to every
 # edge so routes with many short connector segments (which imply more turns)
@@ -154,14 +167,14 @@ def _load_graph() -> "ig.Graph | None":
         if "highway" in G.es.attributes():
             to_delete = [
                 e.index for e in G.es
-                if (e["highway"] or "") in _SERVICE_HIGHWAY_TYPES
+                if (e["highway"] or "") in SERVICE_HIGHWAY_TYPES
             ]
             if to_delete:
                 G.delete_edges(to_delete)
                 logger.info("Filtered %s service/alley edges", f"{len(to_delete):,}")
 
-        lons = np.array([v["x"] for v in G.vs], dtype=np.float64)
-        lats = np.array([v["y"] for v in G.vs], dtype=np.float64)
+        lons = np.asarray(G.vs["x"], dtype=np.float64)
+        lats = np.asarray(G.vs["y"], dtype=np.float64)
         _vertex_lats = lats
         _vertex_lons = lons
 
@@ -184,7 +197,7 @@ def _load_graph() -> "ig.Graph | None":
     return _graph_cache
 
 
-@lru_cache(maxsize=2048)
+@lru_cache(maxsize=_NEAREST_NODE_CACHE_SIZE)
 def _get_nearest_node_quantized(lat_q: int, lon_q: int) -> "int | None":
     if _load_graph() is None:
         return None
@@ -245,7 +258,7 @@ def _get_flavor_weights(flavor: str) -> "list[float] | str":
     return weights
 
 
-@lru_cache(maxsize=1536)
+@lru_cache(maxsize=_ROUTE_CACHE_SIZE)
 def _get_shortest_path_by_node(
     orig_idx: int,
     dest_idx: int,
@@ -441,12 +454,20 @@ def _build_path(
                 u_lat = _vertex_lats[u]
                 du_start = (geom_coords[0][0] - u_lon)**2 + (geom_coords[0][1] - u_lat)**2
                 du_end   = (geom_coords[-1][0] - u_lon)**2 + (geom_coords[-1][1] - u_lat)**2
-                if du_start > du_end:
-                    geom_coords = geom_coords[::-1]
-                first = (geom_coords[0][1], geom_coords[0][0])
+                # Iterate forward or reverse without copying the geometry list.
+                reverse = du_start > du_end
+                n = len(geom_coords)
+                head_idx = n - 1 if reverse else 0
+                head_lon, head_lat = geom_coords[head_idx][0], geom_coords[head_idx][1]
+                first = (head_lat, head_lon)
                 last  = result_coords[-1] if result_coords else None
-                start = 1 if last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9 else 0
-                for lon, lat in geom_coords[start:]:
+                skip_first = bool(last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9)
+                if reverse:
+                    rng = range(n - 2, -1, -1) if skip_first else range(n - 1, -1, -1)
+                else:
+                    rng = range(1, n) if skip_first else range(n)
+                for j in rng:
+                    lon, lat = geom_coords[j][0], geom_coords[j][1]
                     result_coords.append((lat, lon))
             else:
                 if not result_coords:
@@ -464,18 +485,24 @@ def _build_path(
 # Single shared cache — resolves OPT-005 (stampede) and OPT-006 (uncoordinated eviction)
 # ---------------------------------------------------------------------------
 
-@lru_cache(maxsize=1536)
+@lru_cache(maxsize=_ROUTE_CACHE_SIZE)
 def _compute_route_quantized(
     olat_q: int, olon_q: int, dlat_q: int, dlon_q: int,
     flavor: str = DEFAULT_FLAVOR,
 ) -> "tuple[tuple, tuple, float]":
     olat, olon = olat_q / 1e5, olon_q / 1e5
     dlat, dlon = dlat_q / 1e5, dlon_q / 1e5
-    return (
-        _build_path(olat, olon, dlat, dlon, flavor),
-        _build_directions(olat, olon, dlat, dlon, flavor),
-        _build_minutes(olat, olon, dlat, dlon, flavor),
-    )
+    path = _build_path(olat, olon, dlat, dlon, flavor)
+    directions = _build_directions(olat, olon, dlat, dlon, flavor)
+    # Derive minutes from the per-step distance_meters already summed inside
+    # _build_directions, avoiding a second full epath traversal. Falls back to
+    # _build_minutes only when directions are empty (degenerate path).
+    if directions:
+        total_meters = sum(d["distance_meters"] for d in directions)
+        minutes = round(total_meters / WALKING_SPEED_MPS / 60, 1)
+    else:
+        minutes = _build_minutes(olat, olon, dlat, dlon, flavor)
+    return (path, directions, minutes)
 
 
 def _compute_route(
@@ -498,6 +525,176 @@ def _compute_route(
         round(dest_lat * 1e5),   round(dest_lon * 1e5),
         flavor,
     )
+
+
+def pace_minutes_factor(pace: str) -> float:
+    """Multiplicative factor that converts canonical 3 mph minutes to user-paced minutes."""
+    pace_mph = _PACE_TO_MPH.get(pace, WALKING_SPEED_MPH)
+    return WALKING_SPEED_MPH / pace_mph
+
+
+def _shortest_path_with_avoid_stairs(
+    orig_idx: int, dest_idx: int, flavor: str,
+) -> "tuple[tuple[int, ...], tuple[int, ...]] | None":
+    """Uncached Dijkstra with a per-edge step-avoidance penalty layered on `flavor`."""
+    G = _load_graph()
+    if G is None:
+        return None
+    base = _get_flavor_weights(flavor)
+    if isinstance(base, str):
+        weights = [float(e["length"] or 0.0) for e in G.es]
+    else:
+        weights = list(base)
+    if "highway" in G.es.attributes():
+        for i, e in enumerate(G.es):
+            if (e["highway"] or "") == "steps":
+                weights[i] += _AVOID_STAIRS_PENALTY_M
+    try:
+        result = G.get_shortest_paths(orig_idx, to=dest_idx, weights=weights, output="epath")
+        if not result or not result[0]:
+            return None
+        epath = result[0]
+        vpath = [orig_idx]
+        for eid in epath:
+            e = G.es[eid]
+            nxt = e.target if e.source == vpath[-1] else e.source
+            vpath.append(nxt)
+        return (tuple(vpath), tuple(epath))
+    except Exception:
+        return None
+
+
+def compute_route_with_prefs(
+    origin_lat: float,
+    origin_lon: float,
+    dest_lat: float,
+    dest_lon: float,
+    flavor: str = DEFAULT_FLAVOR,
+    avoid_stairs: bool = False,
+    prefer_pedestrian: bool = False,
+) -> "tuple[tuple, tuple, float]":
+    """
+    Routing variant that honours `avoid_stairs` and `prefer_pedestrian`.
+
+    `prefer_pedestrian` is satisfied by routing under the existing `greenest`
+    flavor (which already discounts footway/path/cycleway edges), so it just
+    forces that flavor when set. `avoid_stairs` requires bespoke per-edge
+    weights, so when it is set we run an uncached Dijkstra with stair penalties
+    layered on top of the chosen flavor.
+
+    Falls back to the cached `_compute_route` path when neither pref is set.
+    """
+    if prefer_pedestrian:
+        flavor = "greenest"
+    if not avoid_stairs:
+        return _compute_route(origin_lat, origin_lon, dest_lat, dest_lon, flavor)
+
+    if _load_graph() is None:
+        return (
+            _build_path(origin_lat, origin_lon, dest_lat, dest_lon, flavor),
+            _build_directions(origin_lat, origin_lon, dest_lat, dest_lon, flavor),
+            _build_minutes(origin_lat, origin_lon, dest_lat, dest_lon, flavor),
+        )
+
+    orig_idx = _get_nearest_node(origin_lat, origin_lon)
+    dest_idx = _get_nearest_node(dest_lat, dest_lon)
+    if orig_idx is None or dest_idx is None:
+        return (
+            ((origin_lat, origin_lon), (dest_lat, dest_lon)),
+            (),
+            _haversine_walk_minutes(origin_lat, origin_lon, dest_lat, dest_lon),
+        )
+
+    path = _shortest_path_with_avoid_stairs(orig_idx, dest_idx, flavor)
+    if path is None:
+        return _compute_route(origin_lat, origin_lon, dest_lat, dest_lon, flavor)
+
+    vpath, epath = path
+    G = _load_graph()
+    length_m = sum(G.es[e]["length"] or 0.0 for e in epath)
+    minutes  = round(length_m / WALKING_SPEED_MPS / 60, 1)
+
+    coords: list[tuple[float, float]] = []
+    for eid, u, v in zip(epath, vpath, vpath[1:]):
+        geom = G.es[eid]["geometry"]
+        if geom:
+            u_lon, u_lat = _vertex_lons[u], _vertex_lats[u]
+            du_start = (geom[0][0]  - u_lon)**2 + (geom[0][1]  - u_lat)**2
+            du_end   = (geom[-1][0] - u_lon)**2 + (geom[-1][1] - u_lat)**2
+            seq = geom[::-1] if du_start > du_end else geom
+            first = (seq[0][1], seq[0][0])
+            last  = coords[-1] if coords else None
+            start = 1 if last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9 else 0
+            for lon, lat in seq[start:]:
+                coords.append((lat, lon))
+        else:
+            if not coords:
+                coords.append((_vertex_lats[u], _vertex_lons[u]))
+            coords.append((_vertex_lats[v], _vertex_lons[v]))
+
+    # Re-build directions from the same vpath/epath we just computed; reusing
+    # _build_directions would re-run the cached Dijkstra and return the
+    # stairs-included path, defeating avoid_stairs.
+    directions = _directions_from_path(vpath, epath)
+    return (tuple(coords) if coords else ((origin_lat, origin_lon), (dest_lat, dest_lon)),
+            directions, minutes)
+
+
+def _directions_from_path(vpath: tuple, epath: tuple) -> tuple:
+    """Build the same direction-step tuples as _build_directions from a known vpath/epath."""
+    G = _load_graph()
+    if G is None or len(vpath) < 2:
+        return ()
+
+    raw: list[tuple[str, str, float, int, int]] = []
+    for eid, u, v in zip(epath, vpath, vpath[1:]):
+        edge = G.es[eid]
+        attrs = edge.attributes()
+        name = _edge_attr(attrs, "name").strip()
+        path_type = (
+            _highway_path_type(_edge_attr(attrs, "highway"), _edge_attr(attrs, "footway"))
+            if not name else ""
+        )
+        raw.append((name, path_type, edge["length"] or 0.0, u, v))
+
+    def _cardinal(lat1, lon1, lat2, lon2):
+        import math as _m
+        deg = _m.degrees(_m.atan2(lon2 - lon1, lat2 - lat1)) % 360
+        dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+        return dirs[round(deg / 45) % 8]
+
+    steps: list[dict] = []
+    i = 0
+    while i < len(raw):
+        name, path_type = raw[i][0], raw[i][1]
+        total_length = 0.0
+        edge_count = 0
+        start_v = raw[i][3]
+        end_v = raw[i][4]
+        while i < len(raw) and raw[i][0] == name and raw[i][1] == path_type:
+            total_length += raw[i][2]
+            edge_count   += 1
+            end_v = raw[i][4]
+            i += 1
+        lat1, lon1 = _vertex_lats[start_v], _vertex_lons[start_v]
+        lat2, lon2 = _vertex_lats[end_v],   _vertex_lons[end_v]
+        minutes = round(total_length / WALKING_SPEED_MPS / 60, 1)
+        cardinal = _cardinal(lat1, lon1, lat2, lon2)
+        avg_edge_m = total_length / edge_count
+        is_long  = avg_edge_m >= _BLOCK_TYPE_THRESHOLD
+        block_m  = _LONG_BLOCK_METERS if is_long else _SHORT_BLOCK_METERS
+        blocks   = max(0.5, round(total_length / block_m * 2) / 2)
+        steps.append({
+            "street":         name,
+            "path_type":      path_type,
+            "direction":      cardinal,
+            "direction_full": _DIRECTION_FULL.get(cardinal, cardinal),
+            "blocks":         blocks,
+            "block_type":     "long" if is_long else "short",
+            "minutes":        minutes,
+            "distance_meters": round(total_length, 1),
+        })
+    return tuple(steps)
 
 
 def walk_paths_alternatives(

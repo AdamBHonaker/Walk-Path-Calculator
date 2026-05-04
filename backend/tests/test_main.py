@@ -237,3 +237,97 @@ class TestMultiStopRoutes:
         detail = resp.json()["detail"]
         assert isinstance(detail, dict)
         assert detail["stop_index"] == 2
+
+
+class TestReverseGeocode:
+    """Coverage for GET /reverse-geocode — bbox validation, response shape, caching."""
+
+    def test_in_bounds_returns_label_and_source(self):
+        # Wrigleyville coordinates → should match the "wrigleyville" neighborhood
+        resp = client.get("/reverse-geocode", params={"lat": 41.9476, "lon": -87.6553})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, dict)
+        assert "label" in data and isinstance(data["label"], str)
+        assert "source" in data and data["source"] in {"neighborhood", "google", "coordinates"}
+
+    def test_near_neighborhood_resolves_to_neighborhood_source(self):
+        # Within 200 m of Logan Square's pin
+        resp = client.get("/reverse-geocode", params={"lat": 41.9290, "lon": -87.7000})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["source"] == "neighborhood"
+        assert "logan" in data["label"].lower()
+
+    def test_north_of_chicago_rejected(self):
+        # Above CHICAGO_NORTH (42.02)
+        resp = client.get("/reverse-geocode", params={"lat": 42.5, "lon": -87.7})
+        assert resp.status_code == 422
+
+    def test_west_of_chicago_rejected(self):
+        # West of CHICAGO_WEST (-87.94)
+        resp = client.get("/reverse-geocode", params={"lat": 41.9, "lon": -88.5})
+        assert resp.status_code == 422
+
+    def test_missing_lat_lon_params_rejected(self):
+        resp = client.get("/reverse-geocode")
+        assert resp.status_code == 422
+
+
+class TestRoutePersonalization:
+    """Coverage for the personalization fields wired through /route."""
+
+    def test_pace_brisk_yields_fewer_minutes_than_normal(self):
+        body = {"origin": "Wrigleyville", "destination": "Logan Square"}
+        normal = client.post("/route", json={**body, "pace": "normal"}).json()
+        brisk  = client.post("/route", json={**body, "pace": "brisk"}).json()
+        # Same distance, faster pace → fewer minutes.
+        assert brisk["total_minutes"] < normal["total_minutes"]
+        # Distance is pace-independent (same route).
+        assert abs(brisk["total_miles"] - normal["total_miles"]) < 0.05
+        # Both echo the requested pace.
+        assert normal["pace"] == "normal"
+        assert brisk["pace"]  == "brisk"
+
+    def test_weight_kg_personalises_calories(self):
+        body = {"origin": "Wrigleyville", "destination": "Logan Square"}
+        default = client.post("/route", json=body).json()
+        heavy   = client.post("/route", json={**body, "weight_kg": 120}).json()
+        # Heavier walker → more calories (same distance, MET-based scaling).
+        assert heavy["calories_approx"] > default["calories_approx"]
+        assert heavy["personalized_calories"] is True
+        assert default["personalized_calories"] is False
+
+    def test_invalid_pace_rejected(self):
+        resp = client.post("/route", json={
+            "origin": "Wrigleyville",
+            "destination": "Logan Square",
+            "pace": "sprint",
+        })
+        assert resp.status_code == 422
+
+    def test_invalid_weight_kg_rejected(self):
+        resp = client.post("/route", json={
+            "origin": "Wrigleyville",
+            "destination": "Logan Square",
+            "weight_kg": 1000,
+        })
+        assert resp.status_code == 422
+
+    def test_daily_goal_changes_pct(self):
+        body = {"origin": "Wrigleyville", "destination": "Logan Square"}
+        default = client.post("/route", json=body).json()
+        custom  = client.post("/route", json={**body, "daily_goal": 5000}).json()
+        # Same step count vs a smaller goal → larger pct.
+        assert custom["daily_goal_pct"] > default["daily_goal_pct"]
+
+    def test_avoid_stairs_returns_custom_flavor(self):
+        resp = client.post("/route", json={
+            "origin": "Wrigleyville",
+            "destination": "Logan Square",
+            "avoid_stairs": True,
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["available_flavors"] == ["custom"]
+        assert data["routes"][0]["flavor"] == "custom"

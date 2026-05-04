@@ -1346,6 +1346,125 @@
   backdrop-filter: blur(4px);
 }
 
+.map-pick-marker {
+  position: relative;
+  width: 28px;
+  height: 40px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.map-pick-marker-pin {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  background: #e53935;
+  border: 3px solid #ffffff;
+  border-radius: 50% 50% 50% 0;
+  transform: translateX(-50%) rotate(-45deg);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.55);
+}
+
+.map-pick-marker-pin::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  background: #ffffff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.map-pick-marker-pulse {
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 14px;
+  height: 6px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 50%;
+  transform: translateX(-50%);
+  filter: blur(2px);
+  animation: pick-marker-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pick-marker-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1);   opacity: 0.55; }
+  50%      { transform: translateX(-50%) scale(1.4); opacity: 0.25; }
+}
+
+.map-pick-confirm {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(340px, calc(100% - 24px));
+  padding: 12px 14px;
+  background: rgba(10, 26, 15, 0.95);
+  border: 1px solid var(--color-green-primary);
+  border-radius: 10px;
+  color: var(--color-green-light);
+  backdrop-filter: blur(4px);
+  z-index: 10;
+}
+
+.map-pick-confirm-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #d8efe0;
+  word-break: break-word;
+}
+
+.map-pick-confirm-sub {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #8fb8a0;
+}
+
+.map-pick-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.map-pick-confirm-btn {
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border: 1px solid var(--color-green-primary);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.map-pick-confirm-btn--cancel {
+  background: transparent;
+  color: var(--color-green-light);
+}
+
+.map-pick-confirm-btn--cancel:hover {
+  background: rgba(26, 56, 38, 0.6);
+}
+
+.map-pick-confirm-btn--ok {
+  background: var(--color-green-primary);
+  color: #0a1a0f;
+}
+
+.map-pick-confirm-btn--ok:hover:not(:disabled) {
+  background: #4caf77;
+}
+
+.map-pick-confirm-btn--ok:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 
 .toast {

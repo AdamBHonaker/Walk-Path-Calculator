@@ -19,6 +19,8 @@ load_dotenv()
 from walking import (
     _compute_route,
     walk_paths_alternatives,
+    compute_route_with_prefs,
+    pace_minutes_factor,
     WALKING_SPEED_MPH,
     _load_graph,
     _get_flavor_weights,
@@ -33,11 +35,25 @@ from steps import (
     calories_from_minutes,
     daily_goal_pct,
     DEFAULT_STEP_LENGTH_FT,
+    DEFAULT_PACE,
+    PACE_TO_MET,
 )
 
 _METERS_PER_MILE = 1609.34
 # Two points within ~0.07 miles of each other are treated as the same location
 _SAME_LOCATION_DEG2: float = 0.001 ** 2
+
+# Per-endpoint rate limits. Overridable via env vars so deploys can tune
+# without a code change (e.g. to relax limits during load testing).
+RATE_LIMIT_HEALTH          = os.getenv("RATE_LIMIT_HEALTH",          "60/minute")
+RATE_LIMIT_REVERSE_GEOCODE = os.getenv("RATE_LIMIT_REVERSE_GEOCODE", "30/minute")
+RATE_LIMIT_ROUTE           = os.getenv("RATE_LIMIT_ROUTE",           "10/minute")
+
+# Only honor X-Forwarded-Proto when explicitly told we sit behind a trusted
+# reverse proxy (Railway, Cloudflare, etc.). Without this guard, an attacker
+# hitting a directly-exposed instance over HTTP could set the header to coax
+# an HSTS response and downgrade future plaintext access.
+_TRUST_PROXY_HEADERS = os.getenv("TRUST_PROXY_HEADERS", "").lower() in ("1", "true", "yes")
 
 _extra_origins = os.getenv("ALLOWED_ORIGINS", "")
 ALLOWED_ORIGINS = [
@@ -83,7 +99,9 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":
+    if request.url.scheme == "https" or (
+        _TRUST_PROXY_HEADERS and request.headers.get("x-forwarded-proto") == "https"
+    ):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
@@ -98,12 +116,37 @@ class RouteRequest(BaseModel):
     origin: str | None = Field(default=None, max_length=200)
     destination: str | None = Field(default=None, max_length=200)
     height_inches: float | None = None
+    # Personalization + routing-preference fields. Each is optional; the response
+    # falls back to neutral defaults when omitted.
+    weight_kg: float | None = None
+    daily_goal: int | None = Field(default=None, ge=1_000, le=100_000)
+    pace: str | None = None
+    avoid_stairs: bool = False
+    prefer_pedestrian: bool = False
 
     @field_validator("height_inches")
     @classmethod
     def validate_height(cls, v: float | None) -> float | None:
         if v is not None and not (36 <= v <= 108):  # 3 ft to 9 ft — sanity range
             raise ValueError("height_inches must be between 36 and 108")
+        return v
+
+    @field_validator("weight_kg")
+    @classmethod
+    def validate_weight(cls, v: float | None) -> float | None:
+        # 30 kg (small child) to 300 kg — UI allows 66–661 lb so this is the
+        # outer envelope; we tolerate slightly outside the UI range.
+        if v is not None and not (30 <= v <= 300):
+            raise ValueError("weight_kg must be between 30 and 300")
+        return v
+
+    @field_validator("pace")
+    @classmethod
+    def validate_pace(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        if v not in PACE_TO_MET:
+            raise ValueError(f"pace must be one of {sorted(PACE_TO_MET)}")
         return v
 
     @model_validator(mode="after")
@@ -128,13 +171,13 @@ class RouteRequest(BaseModel):
 
 
 @app.get("/health")
-@limiter.limit("60/minute")
+@limiter.limit(RATE_LIMIT_HEALTH)
 async def health(request: Request):
     return {"status": "ok"}
 
 
 @app.get("/reverse-geocode")
-@limiter.limit("30/minute")
+@limiter.limit(RATE_LIMIT_REVERSE_GEOCODE)
 async def reverse_geocode(request: Request, lat: float, lon: float):
     if not (CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST):
         raise HTTPException(status_code=422, detail="Location is outside the Chicago coverage area.")
@@ -183,7 +226,7 @@ def _stitch_legs(legs_raw: list[dict]) -> tuple[list, list[tuple[int, int]]]:
 
 
 @app.post("/route")
-@limiter.limit("10/minute")
+@limiter.limit(RATE_LIMIT_ROUTE)
 async def route(request: Request, payload: RouteRequest):
     loop = asyncio.get_running_loop()
 
@@ -230,12 +273,21 @@ async def route(request: Request, payload: RouteRequest):
         else DEFAULT_STEP_LENGTH_FT
     )
 
+    pace            = payload.pace or DEFAULT_PACE
+    pace_factor     = pace_minutes_factor(pace)
+    weight_kg       = payload.weight_kg
+    daily_goal      = payload.daily_goal or 10_000
+    personalized_calories = weight_kg is not None
+    has_routing_prefs = bool(payload.avoid_stairs or payload.prefer_pedestrian)
+
     def _enrich_directions(directions, leg_index: int | None = None):
         out = []
         for d in directions:
-            seg_miles = d["distance_meters"] / _METERS_PER_MILE
+            seg_miles   = d["distance_meters"] / _METERS_PER_MILE
+            seg_minutes = round(d.get("minutes", 0.0) * pace_factor, 1)
             entry = {
                 **d,
+                "minutes":        seg_minutes,
                 "distance_miles": round(seg_miles, 3),
                 "steps":          steps_from_miles(seg_miles, step_len),
             }
@@ -245,18 +297,19 @@ async def route(request: Request, payload: RouteRequest):
         return out
 
     def _summarize_alt(alt: dict) -> dict:
-        total_minutes = alt["minutes"]
-        total_miles   = total_minutes * WALKING_SPEED_MPH / 60.0
+        # alt["minutes"] is computed at canonical 3 mph in walking.py — rescale here.
+        total_minutes = round(alt["minutes"] * pace_factor, 1)
+        total_miles   = round(total_minutes / pace_factor * WALKING_SPEED_MPH / 60.0, 2)
         total_steps   = steps_from_miles(total_miles, step_len)
         return {
             "flavor":          alt["flavor"],
             "path":            alt["path"],
             "directions":      _enrich_directions(alt["directions"]),
-            "total_miles":     round(total_miles, 2),
+            "total_miles":     total_miles,
             "total_minutes":   total_minutes,
             "total_steps":     total_steps,
-            "calories_approx": calories_from_minutes(total_minutes),
-            "daily_goal_pct":  daily_goal_pct(total_steps),
+            "calories_approx": calories_from_minutes(total_minutes, weight_kg, pace),
+            "daily_goal_pct":  daily_goal_pct(total_steps, daily_goal),
         }
 
     # Coordinate shapes shared across both response branches.
@@ -268,12 +321,27 @@ async def route(request: Request, payload: RouteRequest):
     personalized     = payload.height_inches is not None
 
     if not is_multi:
-        # 2-stop: keep existing alternative-routes behavior unchanged.
-        alternatives = await loop.run_in_executor(
-            None, walk_paths_alternatives, *resolved[0], *resolved[1],
-        )
+        if has_routing_prefs:
+            # Custom routing prefs (avoid_stairs / prefer_pedestrian) bypass the
+            # alternative-routes pipeline and return a single tailored route.
+            path, directions, minutes = await loop.run_in_executor(
+                None, compute_route_with_prefs,
+                *resolved[0], *resolved[1],
+                DEFAULT_FLAVOR, payload.avoid_stairs, payload.prefer_pedestrian,
+            )
+            alternatives = [{
+                "flavor": "custom",
+                "path": [list(pt) for pt in path],
+                "directions": list(directions),
+                "minutes": minutes,
+            }]
+        else:
+            alternatives = await loop.run_in_executor(
+                None, walk_paths_alternatives, *resolved[0], *resolved[1],
+            )
         routes = [_summarize_alt(alt) for alt in alternatives]
         default = next((r for r in routes if r["flavor"] == DEFAULT_FLAVOR), routes[0])
+        available_flavors = ["custom"] if has_routing_prefs else list(FLAVORS)
         return {
             "stops":              stops_out,
             "stop_coords":        stop_coords_out,
@@ -281,8 +349,10 @@ async def route(request: Request, payload: RouteRequest):
             "dest_coords":        dest_out,
             "step_length_inches": step_length_in,
             "personalized":       personalized,
+            "personalized_calories": personalized_calories,
+            "pace":               pace,
             "default_flavor":     default["flavor"],
-            "available_flavors":  list(FLAVORS),
+            "available_flavors":  available_flavors,
             "routes":             routes,
             # Legacy mirror of the default route.
             "total_miles":        default["total_miles"],
@@ -298,9 +368,16 @@ async def route(request: Request, payload: RouteRequest):
     async def _compute_leg(i: int) -> dict:
         olat, olon = resolved[i]
         dlat, dlon = resolved[i + 1]
-        path, directions, minutes = await loop.run_in_executor(
-            None, _compute_route, olat, olon, dlat, dlon, DEFAULT_FLAVOR,
-        )
+        if has_routing_prefs:
+            path, directions, minutes = await loop.run_in_executor(
+                None, compute_route_with_prefs,
+                olat, olon, dlat, dlon, DEFAULT_FLAVOR,
+                payload.avoid_stairs, payload.prefer_pedestrian,
+            )
+        else:
+            path, directions, minutes = await loop.run_in_executor(
+                None, _compute_route, olat, olon, dlat, dlon, DEFAULT_FLAVOR,
+            )
         return {
             "path":       [list(pt) for pt in path],
             "directions": list(directions),
@@ -309,7 +386,7 @@ async def route(request: Request, payload: RouteRequest):
             "to_label":   stops[i + 1],
         }
 
-    legs_raw = list(await asyncio.gather(*[_compute_leg(i) for i in range(len(resolved) - 1)]))
+    legs_raw = await asyncio.gather(*[_compute_leg(i) for i in range(len(resolved) - 1)])
 
     full_path, leg_slices = _stitch_legs(legs_raw)
 
@@ -317,19 +394,16 @@ async def route(request: Request, payload: RouteRequest):
     all_directions: list[dict] = []
     total_minutes = 0.0
     total_miles   = 0.0
-    total_steps   = 0
-    total_calories = 0
     for i, leg in enumerate(legs_raw):
-        leg_minutes = leg["minutes"]
-        leg_miles   = leg_minutes * WALKING_SPEED_MPH / 60.0
+        # leg["minutes"] is canonical 3 mph; rescale to user pace.
+        leg_minutes = leg["minutes"] * pace_factor
+        leg_miles   = leg["minutes"] * WALKING_SPEED_MPH / 60.0  # distance is pace-independent
         leg_steps   = steps_from_miles(leg_miles, step_len)
-        leg_cal     = calories_from_minutes(leg_minutes)
+        leg_cal     = calories_from_minutes(leg_minutes, weight_kg, pace)
         leg_dirs    = _enrich_directions(leg["directions"], leg_index=i)
         all_directions.extend(leg_dirs)
         total_minutes += leg_minutes
         total_miles   += leg_miles
-        total_steps   += leg_steps
-        total_calories += leg_cal
         legs_out.append({
             "from_label":      leg["from_label"],
             "to_label":        leg["to_label"],
@@ -340,17 +414,23 @@ async def route(request: Request, payload: RouteRequest):
             "path_slice":      list(leg_slices[i]),
         })
 
+    # Compute totals from the unrounded sums so multi-stop matches 2-stop's
+    # round-of-sum semantics (vs. the prior sum-of-rounded-legs, which drifted
+    # by ±N steps where N = leg count).
+    total_steps    = steps_from_miles(total_miles, step_len)
+    total_calories = calories_from_minutes(total_minutes, weight_kg, pace)
     total_minutes_r = round(total_minutes, 1)
 
+    flavor_label = "custom" if has_routing_prefs else DEFAULT_FLAVOR
     full_route = {
-        "flavor":          DEFAULT_FLAVOR,
+        "flavor":          flavor_label,
         "path":            full_path,
         "directions":      all_directions,
         "total_miles":     round(total_miles, 2),
         "total_minutes":   total_minutes_r,
         "total_steps":     total_steps,
         "calories_approx": total_calories,
-        "daily_goal_pct":  daily_goal_pct(total_steps),
+        "daily_goal_pct":  daily_goal_pct(total_steps, daily_goal),
         "legs":            legs_out,
     }
 
@@ -362,8 +442,10 @@ async def route(request: Request, payload: RouteRequest):
         "dest_coords":        dest_out,
         "step_length_inches": step_length_in,
         "personalized":       personalized,
-        "default_flavor":     DEFAULT_FLAVOR,
-        "available_flavors":  [DEFAULT_FLAVOR],   # only fastest for multi-stop in v1
+        "personalized_calories": personalized_calories,
+        "pace":               pace,
+        "default_flavor":     flavor_label,
+        "available_flavors":  [flavor_label],   # only one flavor for multi-stop
         "routes":             [full_route],
         "legs":               legs_out,
         "total_miles":        full_route["total_miles"],

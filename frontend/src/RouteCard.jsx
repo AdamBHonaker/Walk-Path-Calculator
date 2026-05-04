@@ -1,9 +1,12 @@
 import { useEffect, useRef, forwardRef } from "react";
 import maplibregl from "maplibre-gl";
-import { renderWalkRoute, lockMapGestures } from "./mapHelpers.js";
+import {
+  renderWalkRoute,
+  lockMapGestures,
+  MAP_STYLE_URL,
+  DEFAULT_MAP_CENTER,
+} from "./mapHelpers.js";
 import { safePaceLabel } from "./App.jsx";
-
-const MAP_STYLE = import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 
 const RouteCard = forwardRef(function RouteCard(
   { result, originLabel, destLabel, onMapReady },
@@ -25,8 +28,8 @@ const RouteCard = forwardRef(function RouteCard(
 
     const map = new maplibregl.Map({
       container,
-      style: MAP_STYLE,
-      center: [-87.654, 41.966],
+      style: MAP_STYLE_URL,
+      center: DEFAULT_MAP_CENTER,
       zoom: 12,
       preserveDrawingBuffer: true,
       attributionControl: false,

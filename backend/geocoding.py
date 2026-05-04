@@ -41,7 +41,7 @@ _geocode_lock = threading.Lock()
 _http_session = requests.Session()
 
 _geocode_unsaved: int = 0      # entries added since last write
-_GEOCODE_SAVE_EVERY: int = 5   # write to disk every N new entries
+_GEOCODE_SAVE_EVERY: int = 50  # write to disk every N new entries; atexit handler flushes the rest
 
 
 def _load_geocode_cache() -> dict:
@@ -68,7 +68,7 @@ def _save_geocode_cache(cache: dict) -> None:
         tmp.write_text(
             json.dumps(
                 {k: list(v) if isinstance(v, tuple) else v for k, v in cache.items()},
-                indent=2, ensure_ascii=False,
+                ensure_ascii=False, separators=(",", ":"),
             ),
             encoding="utf-8",
         )
@@ -402,10 +402,14 @@ def fuzzy_match_neighborhood(query: str) -> "tuple[tuple[float, float] | None, s
     else:
         candidate_keys = set(NEIGHBORHOOD_COORDS.keys())
 
+    # Keep the constant query in seq2 so its b2j index is built once and reused
+    # across all candidates; only seq1 changes per iteration.
+    matcher = SequenceMatcher(None, "", query)
     best_score = 0.0
     best_key: str | None = None
     for key in candidate_keys:
-        score = SequenceMatcher(None, query, key).ratio()
+        matcher.set_seq1(key)
+        score = matcher.ratio()
         if score > best_score:
             best_score = score
             best_key = key
@@ -437,8 +441,15 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
     # Lock released here — network I/O happens without holding the lock so
     # concurrent uncached queries don't serialise behind each other's round-trip.
 
+    # Statuses that represent a definitive negative answer or a persistent
+    # configuration failure — caching None for these prevents the same bad
+    # query (or a misconfigured API key) from hammering Google indefinitely.
+    _PERSISTENT_FAILURE_STATUSES = {
+        "ZERO_RESULTS", "REQUEST_DENIED", "INVALID_REQUEST",
+    }
+
     coords: "tuple[float, float] | None" = None
-    zero_results = False
+    cache_negative = False
     try:
         resp = _http_session.get(
             _GOOGLE_GEOCODE_URL,
@@ -458,8 +469,8 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
         else:
             status = data.get("status")
             logger.warning("Google returned status '%s' for %s", status, _redact(query))
-            if status == "ZERO_RESULTS":
-                zero_results = True
+            if status in _PERSISTENT_FAILURE_STATUSES:
+                cache_negative = True
     except Exception as exc:
         logger.error("Google geocoding failed for %s: %s", _redact(query), exc)
 
@@ -470,7 +481,7 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
             if coords is not None:
                 _geocode_cache[query] = coords
                 _flush_geocode_if_needed()
-            elif zero_results:
+            elif cache_negative:
                 _geocode_cache[query] = None
                 _flush_geocode_if_needed()
     return coords
