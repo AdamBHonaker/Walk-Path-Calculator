@@ -43,6 +43,7 @@ Walk-Path-Calculator/
 ```bash
 cd backend
 pip install -r requirements.txt
+pip install -r requirements-dev.txt   # local dev: adds pytest + test client deps
 cp .env.example .env          # add GOOGLE_MAPS_API_KEY if routing street addresses
 ```
 
