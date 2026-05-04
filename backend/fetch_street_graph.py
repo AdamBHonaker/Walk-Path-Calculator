@@ -331,14 +331,22 @@ if __name__ == "__main__":
         download_and_save(verbose=verbose)
         sys.exit(0)
 
-    if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("CI"):
+    non_interactive = (
+        os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("CI")
+        or not sys.stdin.isatty()
+    )
+    if non_interactive:
         if not graphml_usable:
             print("Non-interactive environment, graph missing -- downloading.\n")
             if GRAPH_PATH.exists():
                 GRAPH_PATH.unlink()
             download_and_save(verbose=verbose)
+        elif not pickle_usable:
+            print("Non-interactive environment, graphml present but pickle missing -- rebuilding pickle.\n")
+            _rebuild_pickle_from_graphml()
         else:
-            print("Non-interactive environment, graph present -- keeping it. (Pass --force to re-download.)")
+            print("Non-interactive environment, graph + pickle present -- keeping them. (Pass --force to re-download.)")
         sys.exit(0)
 
     print("What would you like to do?")
