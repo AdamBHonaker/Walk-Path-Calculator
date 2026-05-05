@@ -18,6 +18,8 @@ Chunked plans for upcoming major features, followed by ideas deferred until post
 | 1 | Neighborhood Explorer (Isochrone) | Structural | High |
 | 2 | Multi-City Support | Structural | Very High |
 
+**Bolt-On Backend Fixes:** all shipped 2026-05-05 — see `FEATURE_HISTORY.md`.
+
 ---
 
 # Chunked Implementation Plans
@@ -191,4 +193,3 @@ Every v1 city supports all three flavors (`fastest`, `fewest_turns`, `greenest`)
     - `GET /cities` is called before any graph has finished loading: respond from the static `cities.py` registry — do not block on graph load.
     - A new city is added between deploys (registry has it, `localStorage.active_city` is still set to an old city the user previously chose): keep the user's existing choice; the new city only appears in the dropdown.
 
----

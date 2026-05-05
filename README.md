@@ -1,6 +1,6 @@
-# Walk Path Calculator
+# Passage
 
-A walking route calculator for Chicago that shows exact step counts alongside turn-by-turn directions — built to encourage walking over transit.
+A walking route calculator for Chicago that shows exact step counts alongside turn-by-turn directions — built to encourage walking over transit. Editorial broadsheet voice via the Wayfarer design system.
 
 ## Features
 
@@ -9,7 +9,7 @@ A walking route calculator for Chicago that shows exact step counts alongside tu
 - Turn-by-turn directions with per-segment steps, distance, and time
 - Multi-stop routing: 2–8 ordered stops stitched into one continuous walk
 - Three route flavors for 2-stop trips: `fastest`, `fewest_turns`, and `greenest` (prefers footways/paths)
-- Interactive MapLibre map with the walk path drawn in green and turn markers
+- Interactive MapLibre map with the walk route drawn in ink (ember on the share card) and turn markers
 - Pick-on-map: click anywhere in Chicago to set an origin/destination
 - Shareable route card (PNG export)
 - Rideshare cost & CO₂ comparison vs. walking
@@ -18,7 +18,7 @@ A walking route calculator for Chicago that shows exact step counts alongside tu
 ## Project Structure
 
 ```
-Walk-Path-Calculator/
+Passage/
 ├── backend/                  # Python FastAPI
 │   ├── main.py               # POST /route, GET /health, GET /reverse-geocode
 │   ├── walking.py            # Street network routing
@@ -33,21 +33,27 @@ Walk-Path-Calculator/
 ├── docs/                     # Living feature/bug/debt logs
 └── frontend/                 # React + Vite + MapLibre GL
     ├── src/
-    │   ├── App.jsx                  # Main UI (form, step hero, directions)
-    │   ├── MapView.jsx              # Walk path + turn marker rendering
-    │   ├── RouteCard.jsx            # Shareable route card (PNG export)
+    │   ├── App.jsx                  # Main UI orchestration (form, hero, share modal)
+    │   ├── MapView.jsx              # Live map + line-trim-offset draw-in animation
+    │   ├── components/              # Extracted UI: Masthead, Footer, DirectionLedger,
+    │   │                            #   RouteFlavorTabs, CompareDispatch, ShareDispatch,
+    │   │                            #   PersonalizeModal
+    │   ├── wayfarer/                # Wayfarer design system (tokens, themes, primitives,
+    │   │                            #   forms, icons, walkpath-icons)
     │   ├── compareEstimates.js      # Rideshare cost/CO₂ comparison
-    │   ├── mapHelpers.js            # Map config, gesture lock/unlock, GeoJSON helpers
+    │   ├── mapHelpers.js            # Map config, route paint, GeoJSON helpers
     │   ├── calorieEquiv.js          # Maps calories → food-equivalent strings
     │   ├── lib/
     │   │   ├── storage.js           # Safe localStorage wrappers
     │   │   ├── recentSearches.js    # Persisted recent-routes list
-    │   │   └── stepLog.js           # 7-day step log persistence
+    │   │   ├── stepLog.js           # 7-day step log persistence
+    │   │   └── directionFormat.js   # formatStepLabel / formatBlocks / formatSteps
     │   ├── App.css / index.css
     │   ├── main.jsx
     │   ├── test-setup.js
     │   └── *.test.{jsx,js}
     └── public/
+        └── fonts/                   # Self-hosted Fraunces, Inter, JetBrains Mono
 ```
 
 ## Setup

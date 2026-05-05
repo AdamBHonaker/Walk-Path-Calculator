@@ -331,3 +331,243 @@ class TestRoutePersonalization:
         data = resp.json()
         assert data["available_flavors"] == ["custom"]
         assert data["routes"][0]["flavor"] == "custom"
+
+
+class TestGeocodeBboxRejection:
+    """Coverage for Bolt-On A: queries that resolve to coordinates outside
+    Chicago's bbox return HTTP 422 with a structured 'not in Chicago' error,
+    rather than 200 with a nonsensical route or 400 with a generic 'not found'."""
+
+    def test_explicit_coords_north_of_chicago_returns_422(self):
+        # 42.5° N is well above CHICAGO_NORTH (42.02).
+        resp = client.post("/route", json={
+            "origin": "42.5, -87.7",
+            "destination": "Logan Square",
+        })
+        assert resp.status_code == 422
+        detail = resp.json().get("detail")
+        assert isinstance(detail, dict)
+        assert "isn't in Chicago" in detail["message"]
+        assert detail["stop_index"] == 0
+
+    def test_explicit_coords_south_of_chicago_returns_422(self):
+        # 41.0° N is below CHICAGO_SOUTH (41.64).
+        resp = client.post("/route", json={
+            "origin": "Wrigleyville",
+            "destination": "41.0, -87.7",
+        })
+        assert resp.status_code == 422
+        detail = resp.json().get("detail")
+        assert isinstance(detail, dict)
+        assert detail["stop_index"] == 1
+
+    def test_resolve_location_raises_for_outside_coords(self):
+        """Direct unit test of the geocoding-layer contract."""
+        from geocoding import resolve_location, LocationOutsideChicagoError
+        with pytest.raises(LocationOutsideChicagoError) as exc_info:
+            resolve_location("42.5, -87.7")
+        assert exc_info.value.coords == (42.5, -87.7)
+
+    def test_resolve_location_returns_coords_for_inside_pair(self):
+        """Sanity: in-bbox coord pairs still resolve, no exception."""
+        from geocoding import resolve_location
+        coords = resolve_location("41.95, -87.65")
+        assert coords == (41.95, -87.65)
+
+
+class TestFuzzyMatchRegression:
+    """Coverage for Bolt-On B: the fuzzy-match threshold (`_FUZZY_THRESHOLD`)
+    must reject confusable non-Chicago place names while still accepting
+    legitimate typos. This is the canonical regression set; if you change the
+    threshold, every assertion here must still hold."""
+
+    @pytest.fixture(autouse=True)
+    def _clear_fuzzy_cache(self):
+        from geocoding import fuzzy_match_neighborhood
+        fuzzy_match_neighborhood.cache_clear()
+
+    # ── Negatives: must NOT fuzzy-match ────────────────────────────────────
+    def test_huntington_does_not_match(self):
+        from geocoding import fuzzy_match_neighborhood
+        coords, key = fuzzy_match_neighborhood("huntington")
+        assert coords is None
+        assert key is None
+
+    def test_huntington_wv_does_not_match(self):
+        from geocoding import fuzzy_match_neighborhood
+        coords, key = fuzzy_match_neighborhood("huntington wv")
+        assert coords is None
+
+    def test_times_square_does_not_match(self):
+        # NYC place; must fall through to Google (which then gets bbox-rejected).
+        from geocoding import fuzzy_match_neighborhood
+        coords, key = fuzzy_match_neighborhood("times square")
+        assert coords is None
+
+    def test_pilsn_does_not_match(self):
+        # Too mangled — should fall through, not silently match Pilsen.
+        from geocoding import fuzzy_match_neighborhood
+        coords, key = fuzzy_match_neighborhood("pilsn")
+        assert coords is None
+
+    # ── Positives: must fuzzy-match the intended neighborhood ──────────────
+    def test_wriggleyville_matches_wrigleyville(self):
+        from geocoding import fuzzy_match_neighborhood
+        coords, key = fuzzy_match_neighborhood("wriggleyville")
+        assert key == "wrigleyville"
+
+    def test_logn_square_matches_logan_square(self):
+        # Single-character typo on the first word of a multi-word neighborhood.
+        from geocoding import fuzzy_match_neighborhood
+        coords, key = fuzzy_match_neighborhood("logn square")
+        assert key == "logan square"
+
+    def test_broonzeville_matches_bronzeville(self):
+        from geocoding import fuzzy_match_neighborhood
+        coords, key = fuzzy_match_neighborhood("broonzeville")
+        assert key == "bronzeville"
+
+    # ── End-to-end via resolve_location: abbreviation expansion path ───────
+    def test_logan_sq_abbreviation_resolves(self):
+        # "Logan Sq" hits _normalize_street_abbr → "logan square" → exact match.
+        # Documents that this path does NOT depend on the fuzzy matcher.
+        from geocoding import resolve_location
+        coords = resolve_location("Logan Sq")
+        assert coords == (41.929, -87.7)
+
+
+class TestGeocoderCircuitBreaker:
+    """Coverage for Bolt-On C: when Google returns 429 / OVER_QUERY_LIMIT,
+    the breaker opens for a cool-off period. Subsequent street-address
+    queries skip Google entirely and raise a structured 503; neighborhood
+    queries continue to succeed because they short-circuit before Google."""
+
+    @pytest.fixture(autouse=True)
+    def _isolate_breaker_state(self, monkeypatch):
+        # Reset breaker before & after each test; clear cache for the synthetic
+        # query so we exercise the network path. Force an API key so the
+        # cached `not _GOOGLE_API_KEY` early-return doesn't short-circuit.
+        import geocoding
+        geocoding._circuit_reset_for_test()
+        monkeypatch.setattr(geocoding, "_GOOGLE_API_KEY", "test-key")
+        # Ensure the synthetic query is never pre-cached.
+        for q in ("__breaker_test_query__", "__breaker_test_query__, chicago, il"):
+            geocoding._geocode_cache.pop(q, None)
+        yield
+        geocoding._circuit_reset_for_test()
+        for q in ("__breaker_test_query__", "__breaker_test_query__, chicago, il"):
+            geocoding._geocode_cache.pop(q, None)
+
+    @staticmethod
+    def _mock_429_response():
+        """Build a Mock that quacks like a `requests.Response` returning 429."""
+        from unittest.mock import Mock
+        resp = Mock()
+        resp.status_code = 429
+        resp.content = b'{"status":"OVER_QUERY_LIMIT","results":[]}'
+        resp.json = lambda: {"status": "OVER_QUERY_LIMIT", "results": []}
+        return resp
+
+    def test_429_trips_breaker_and_raises_degraded(self, monkeypatch):
+        import geocoding
+        from geocoding import geocode_google, GeocoderDegradedError
+        mock = self._mock_429_response()
+        monkeypatch.setattr(geocoding._http_session, "get", lambda *a, **kw: mock)
+
+        with pytest.raises(GeocoderDegradedError):
+            geocode_google("__breaker_test_query__")
+        assert geocoding._circuit_is_open() is True
+
+    def test_subsequent_calls_during_cooloff_skip_network(self, monkeypatch):
+        """Verify that once the breaker is open, geocode_google never reaches the
+        mocked HTTP get on follow-up calls — it short-circuits."""
+        import geocoding
+        from geocoding import geocode_google, GeocoderDegradedError
+
+        call_count = {"n": 0}
+        def counting_get(*a, **kw):
+            call_count["n"] += 1
+            return self._mock_429_response()
+        monkeypatch.setattr(geocoding._http_session, "get", counting_get)
+
+        # First call trips the breaker (1 network call).
+        with pytest.raises(GeocoderDegradedError):
+            geocode_google("__breaker_test_query__")
+        assert call_count["n"] == 1
+
+        # Subsequent uncached query — must NOT hit the network.
+        with pytest.raises(GeocoderDegradedError):
+            geocode_google("__breaker_test_query_other__")
+        assert call_count["n"] == 1, "breaker should have skipped the network call"
+
+    def test_neighborhood_queries_succeed_during_cooloff(self, monkeypatch):
+        """Names in NEIGHBORHOOD_COORDS resolve before the Google fallback,
+        so they continue to work even while the breaker is open."""
+        import geocoding
+        from geocoding import resolve_location, _circuit_trip_429
+
+        # Force the breaker open without making a real call.
+        _circuit_trip_429()
+        assert geocoding._circuit_is_open() is True
+
+        # If anything reaches the network, fail loudly.
+        def boom(*a, **kw):
+            raise AssertionError("Should not reach Google for a neighborhood query")
+        monkeypatch.setattr(geocoding._http_session, "get", boom)
+
+        coords = resolve_location("Wrigleyville")
+        assert coords == (41.9476, -87.6553)
+
+    def test_probe_after_cooloff_succeeds(self, monkeypatch):
+        """When time advances past the cool-off, the next call probes Google.
+        On success, the breaker closes and consecutive_trips resets."""
+        import geocoding
+        from geocoding import geocode_google, _circuit_trip_429
+
+        _circuit_trip_429()
+        assert geocoding._circuit_is_open() is True
+
+        # Simulate the cool-off having elapsed.
+        original_time = geocoding.time.time
+        monkeypatch.setattr(geocoding.time, "time",
+                            lambda: original_time() + _circuit_inflated_cooloff())
+
+        from unittest.mock import Mock
+        ok_resp = Mock()
+        ok_resp.status_code = 200
+        ok_resp.content = b'{"status":"OK"}'
+        ok_resp.json = lambda: {
+            "status": "OK",
+            "results": [{"geometry": {"location": {"lat": 41.9, "lng": -87.65}}}],
+        }
+        monkeypatch.setattr(geocoding._http_session, "get", lambda *a, **kw: ok_resp)
+
+        coords = geocode_google("__breaker_test_query__")
+        assert coords == (41.9, -87.65)
+        assert geocoding._circuit_consecutive_trips == 0
+        assert geocoding._circuit_is_open() is False
+
+    def test_main_returns_503_on_breaker_open(self, monkeypatch):
+        """End-to-end: when the breaker is open and a stop forces Google,
+        /route returns HTTP 503 with the friendly message."""
+        import geocoding
+        from geocoding import _circuit_trip_429
+
+        _circuit_trip_429()
+        # Use a query that's neither a coord pair nor a known neighborhood —
+        # a synthetic string forces the Google fallback path.
+        resp = client.post("/route", json={
+            "origin": "1234 W Synthetic Test Street",
+            "destination": "Logan Square",
+        })
+        assert resp.status_code == 503
+        detail = resp.json().get("detail")
+        assert isinstance(detail, dict)
+        assert "overloaded" in detail["message"]
+
+
+def _circuit_inflated_cooloff() -> float:
+    """Helper for `test_probe_after_cooloff_succeeds` — advance well past
+    the initial 60 s cool-off without hard-coding the constant."""
+    import geocoding
+    return geocoding._CIRCUIT_INITIAL_COOLOFF_S + 1.0

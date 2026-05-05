@@ -1,0 +1,195 @@
+/* ============================================================
+   WAYFARER — Design Tokens
+   ------------------------------------------------------------
+   A small, sturdy set of variables for any project that wants
+   the Wayfarer feel: editorial, paper-stock, lightly weathered,
+   evocative of journey and quiet adventure.
+
+   Consume by linking this file at the top of your HTML:
+     <link rel="stylesheet" href="tokens.css" />
+   Or paste the :root block into your own stylesheet.
+   ============================================================ */
+
+:root {
+  /* ── Paper & ink ──────────────────────────────────────────
+     The Wayfarer surface is a sheet of cream paper, printed
+     with dark ink. Backgrounds are warm; foregrounds are deep
+     but never pure black — pure black on cream looks brittle. */
+  --paper:        #f2ece0;   /* primary background — cream */
+  --paper-deep:   #e9e1d1;   /* secondary surface — folio */
+  --paper-bright: #fffbef;   /* featured cards — bright stock */
+
+  --ink:          #171310;   /* primary type, rule lines */
+  --ink-soft:     #4a3f32;   /* body copy on cream */
+  --mute:         #7a6a54;   /* labels, italic asides */
+  --mute-fog:     #a89a82;   /* hairlines, deprioritised */
+
+  /* ── Accents ─────────────────────────────────────────────
+     A small red for consequence. A navy for notice. A field
+     green for "all clear." A warm gilt for celebration.
+     Use sparingly — accents earn their colour. */
+  --ember:    #9c2a1a;   /* rust red — live state, alerts, the recommended mark */
+  --harbor:   #1a4d6f;   /* navy — notices, advisories */
+  --field:    #1f6d3b;   /* green — clear, complete, on schedule */
+  --gilt:     #b8862a;   /* warm gold — celebration, milestones (use sparingly) */
+
+  /* ── Cartographic neutrals ───────────────────────────────
+     Pale washes for water, land, foliage on schematic maps
+     and illustrative panels. */
+  --mist:  #cedde2;   /* pale blue — water, sky, distance */
+  --moss:  #cbd4c5;   /* pale green — parks, terrain, foliage */
+
+  /* ── Type stack ──────────────────────────────────────────
+     Three families. Serif leads, sans labels, mono for figures.
+     Fraunces is the voice; Inter is the wayfinding; JetBrains
+     Mono is the timetable. */
+  --font-serif: "Fraunces", "GT Sectra", "Playfair Display", Georgia, serif;
+  --font-sans:  "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono:  "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  /* ── Type scale ──────────────────────────────────────────
+     A modest, editorial scale. Display sizes are italic-friendly. */
+  --fs-display: 48px;
+  --fs-headline: 28px;
+  --fs-title: 22px;
+  --fs-subhead: 18px;
+  --fs-body: 15px;
+  --fs-small: 13px;
+  --fs-caption: 11px;
+  --fs-caps: 10px;          /* used with letter-spacing 2px, uppercase */
+
+  --lh-tight: 0.95;
+  --lh-snug:  1.2;
+  --lh-body:  1.5;
+
+  /* ── Spacing ─────────────────────────────────────────────
+     A 4px-base scale; editorial generosity at the larger end. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ── Rules ───────────────────────────────────────────────
+     Editorial rules instead of borders where possible. */
+  --rule:        1px solid var(--ink);
+  --rule-thick:  2px solid var(--ink);
+  --rule-hair:   1px solid var(--mute-fog);
+  --rule-dash:   1px dashed var(--mute-fog);
+
+  /* ── Radii ───────────────────────────────────────────────
+     Wayfarer is squarer than most modern systems. Sharp corners
+     read as letterpress. Use the larger radii sparingly, for
+     pills and avatars. */
+  --r-0: 0;
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-pill: 999px;
+
+  /* ── Shadows ─────────────────────────────────────────────
+     Wayfarer uses rules, not shadows, for hierarchy. The one
+     allowed shadow is a faint paper-lift for elevated cards. */
+  --lift: 0 1px 0 rgba(26,21,16,0.08), 0 6px 18px rgba(26,21,16,0.06);
+
+  /* ── Motion ──────────────────────────────────────────────
+     Slow, considered. Nothing in Wayfarer should feel snappy. */
+  --ease-walk: cubic-bezier(.22, .61, .36, 1);
+  --dur-quick: 180ms;
+  --dur-considered: 320ms;
+  --dur-flicker: 3.4s;       /* the lamp-step cycle */
+}
+
+/* ── Optional: paper-grain background utility ─────────────────
+   Add class="paper-grain" to any element to give it the cream-
+   stock dotted texture. Use class="paper-grain paper-bright"
+   for the bright-card variant. */
+.paper-grain {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(rgba(26,21,16,0.035) 1px, transparent 1px),
+    radial-gradient(rgba(26,21,16,0.025) 1px, transparent 1px);
+  background-size: 3px 3px, 7px 7px;
+  background-position: 0 0, 1px 2px;
+}
+.paper-grain.paper-bright {
+  background-color: var(--paper-bright);
+  background-image: radial-gradient(rgba(26,21,16,0.03) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+/* ── Rule utilities ─────────────────────────────────────────── */
+.wf-rule       { height: 1px; background: var(--ink); }
+.wf-rule-thick { height: 2px; background: var(--ink); }
+.wf-rule-double {
+  height: 5px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+.wf-rule-dash { border-top: 1px dashed var(--mute-fog); height: 0; }
+
+/* ── Caps label ─────────────────────────────────────────────
+   The Wayfarer signpost — small, wide-tracked, uppercase sans.
+   Use to label sections, plates, and folios. */
+.wf-caps {
+  font-family: var(--font-sans);
+  font-size: var(--fs-caps);
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.wf-caps--ink    { color: var(--ink); }
+.wf-caps--ember  { color: var(--ember); }
+.wf-caps--harbor { color: var(--harbor); }
+.wf-caps--field  { color: var(--field); }
+
+/* ── Lamp (the live-state flicker) ──────────────────────────
+   A small dot that flickers on a 3.4s step cycle. Conveys
+   "live" without shouting. Reduced-motion safe. */
+@keyframes wf-flicker {
+  0%, 100% { opacity: 1; }
+  45% { opacity: 1; }
+  50% { opacity: 0.35; }
+  55% { opacity: 0.9; }
+  60% { opacity: 0.5; }
+  65% { opacity: 1; }
+}
+.wf-lamp {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 6px var(--ember), 0 0 0 1.5px var(--paper);
+  animation: wf-flicker var(--dur-flicker) infinite step-end;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-lamp { animation: none; opacity: 0.85; }
+}
+
+/* ── Special dispatch (advisory frame) ──────────────────────
+   The double-rule editorial frame for advisories, dispatches,
+   and anything that wants to read like a printed notice. */
+.wf-dispatch {
+  position: relative;
+  border: 3px double var(--ink);
+  padding: 12px 14px;
+  background: var(--paper-bright);
+}
+.wf-dispatch::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(26,21,16,0.18);
+  pointer-events: none;
+}
+
+/* ── Tabular numerals (for timetables, figures) ─────────────── */
+.wf-tnum { font-variant-numeric: tabular-nums; }
+
+/* ── Hidden scrollbar (for editorial scroll regions) ────────── */
+.wf-scroll::-webkit-scrollbar { display: none; }
+.wf-scroll { scrollbar-width: none; }

@@ -25,7 +25,7 @@ COPY . .
 
 # Download the street graph and build the fast igraph artifact from it
 RUN curl -fL -o street_graph.graphml \
-    "https://github.com/AdamBHonaker/Walk-Path-Calculator/releases/download/street-graph/street_graph.graphml" \
+    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/street_graph.graphml" \
     && python fetch_street_graph.py
 
 # Expose the port FastAPI will run on

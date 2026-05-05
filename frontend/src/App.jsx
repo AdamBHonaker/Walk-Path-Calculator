@@ -1,11 +1,32 @@
-import { useState, useRef, useEffect, useCallback, useMemo, memo, Component, Fragment } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo, Component } from "react";
 import "./App.css";
 import MapView from "./MapView.jsx";
-import RouteCard from "./RouteCard.jsx";
-import { summarize } from "./compareEstimates.js";
+import { ShareDispatch } from "./components/ShareDispatch.jsx";
 import { haversineMeters } from "./mapHelpers.js";
 import { calorieEquivalent } from "./calorieEquiv.js";
 import { safeGet, safeSet, safeRemove, loadJSON, saveJSON } from "./lib/storage.js";
+import { Masthead } from "./components/Masthead.jsx";
+import { Footer } from "./components/Footer.jsx";
+import { PersonalizeModal } from "./components/PersonalizeModal.jsx";
+import { DirectionLedger } from "./components/DirectionLedger.jsx";
+import { RouteFlavorTabs } from "./components/RouteFlavorTabs.jsx";
+import { CompareDispatch } from "./components/CompareDispatch.jsx";
+import { LoadingSkeleton } from "./components/LoadingSkeleton.jsx";
+import { ErrorDispatch } from "./components/ErrorDispatch.jsx";
+import { WeeklySummaryPanel } from "./components/WeeklySummaryPanel.jsx";
+import { TweaksPanel } from "./components/TweaksPanel.jsx";
+import { WPIcon } from "./wayfarer/walkpath-icons.jsx";
+import { WFIcon } from "./wayfarer/icons.jsx";
+import { WFCheck, WFRadio } from "./wayfarer/forms.jsx";
+import { formatSteps } from "./lib/directionFormat.js";
+import {
+  PACE_LABELS,
+  safePaceLabel,
+  motivationMessage,
+  formatDirectionsText,
+} from "./lib/routeFormat.js";
+
+export { formatBlocks } from "./lib/directionFormat.js";
 import {
   RECENT_KEY,
   RECENT_MAX,
@@ -35,6 +56,10 @@ export {
   loadStepLog,
   logWalk,
   clearStepLog,
+  PACE_LABELS,
+  safePaceLabel,
+  motivationMessage,
+  formatDirectionsText,
 };
 
 function normalizeBackendUrl(rawUrl) {
@@ -60,6 +85,18 @@ function resolveBackendUrl() {
 
 const BACKEND_URL = resolveBackendUrl();
 const FETCH_TIMEOUT_MS = 10_000;
+
+// Floor on how long the loading skeleton stays mounted, even when the fetch
+// resolves quickly. Without this, on localhost (~80 ms round-trip) the skeleton
+// flashes for one frame and the user perceives an instant transition that
+// reads as a glitch. 450ms gives the shimmer enough time to land at least one
+// full sweep so the skeleton registers as a deliberate state.
+const MIN_LOADING_MS = 450;
+function ensureMinLoadingDuration(start) {
+  const remaining = MIN_LOADING_MS - (performance.now() - start);
+  if (remaining > 0) return new Promise(r => setTimeout(r, remaining));
+  return Promise.resolve();
+}
 
 function fetchWithTimeout(input, init = {}, timeoutMs = FETCH_TIMEOUT_MS) {
   const externalSignal = init.signal;
@@ -109,31 +146,9 @@ function makeStopId() {
   return `stop-${_stopIdCounter}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-const FT_OPTIONS = [4, 5, 6, 7];
-const IN_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
-
-// ── Helpers ───────────────────────────────────────────────────────────────
-
-function formatSteps(n) {
-  return n != null ? n.toLocaleString() : "–";
-}
-
-export function formatBlocks(blocks, blockType) {
-  const t = blockType === "long" ? "long block" : "short block";
-  return `${blocks} ${blocks === 1 ? t : t + "s"}`;
-}
-
-export function motivationMessage(steps) {
-  if (steps < 1500) return "A great short walk. Every step counts toward your health!";
-  if (steps < 4000) return "A solid neighborhood walk — this is exactly what daily health looks like.";
-  if (steps < 7000) return "You're racking up serious steps. This beats a car ride every time.";
-  if (steps < 10000) return "Almost a full day's goal in one trip — this walk is genuinely good for you.";
-  return "Over 10,000 steps in a single walk! That's extraordinary. Your body will thank you.";
-}
 
 // ── Step goal section ─────────────────────────────────────────────────────
 
-const GOAL_PRESETS = [5_000, 7_500, 10_000, 15_000, 20_000];
 
 export function loadDailyGoal() {
   const raw = safeGet("walkpath:dailyGoal");
@@ -142,80 +157,6 @@ export function loadDailyGoal() {
   return n >= 1_000 && n <= 100_000 ? n : null;
 }
 
-const StepGoalInput = memo(function StepGoalInput({ dailyGoal, onChange }) {
-  const [open, setOpen] = useState(false);
-
-  function handlePreset(val) {
-    onChange(val);
-  }
-
-  function handleNumberInput(e) {
-    const n = parseInt(e.target.value, 10);
-    if (n >= 1_000 && n <= 100_000) onChange(n);
-  }
-
-  function handleClear() {
-    onChange(null);
-  }
-
-  return (
-    <div className="height-section">
-      <button
-        type="button"
-        className="height-toggle"
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-      >
-        <span>
-          {dailyGoal != null
-            ? `Daily goal: ${dailyGoal.toLocaleString()} steps`
-            : "Set your daily step goal (optional)"}
-        </span>
-        <span className="height-toggle-chevron">{open ? "▲" : "▼"}</span>
-      </button>
-
-      {open && (
-        <>
-          <div className="goal-body">
-            <div className="goal-presets">
-              {GOAL_PRESETS.map(p => (
-                <button
-                  key={p}
-                  type="button"
-                  className={`goal-preset-btn${dailyGoal === p ? " goal-preset-btn--active" : ""}`}
-                  onClick={() => handlePreset(p)}
-                >
-                  {p.toLocaleString()}
-                </button>
-              ))}
-            </div>
-            <div className="goal-custom">
-              <input
-                type="number"
-                className="goal-number-input"
-                placeholder="Custom (1,000–100,000)"
-                value={dailyGoal != null ? String(dailyGoal) : ""}
-                min={1_000}
-                max={100_000}
-                step={500}
-                onChange={handleNumberInput}
-                aria-label="Custom daily step goal"
-              />
-              {dailyGoal != null && (
-                <button type="button" className="goal-clear-btn" onClick={handleClear}>
-                  Reset
-                </button>
-              )}
-            </div>
-          </div>
-          <p className="height-hint">
-            Controls the % progress bar shown after each route.
-          </p>
-        </>
-      )}
-    </div>
-  );
-});
 
 function useTurnCoords(path, directions) {
   return useMemo(() => {
@@ -268,179 +209,17 @@ export function lbToKg(lb) {
   return lb / 2.20462;
 }
 
-function kgToLb(kg) {
-  return kg * 2.20462;
-}
 
-// ── Weight section ────────────────────────────────────────────────────────
-
-const WeightInput = memo(function WeightInput({ weightKg, onWeightChange }) {
-  const [open, setOpen] = useState(false);
-  const [unit, setUnit] = useState(() => safeGet("walkpath:weightUnit") || "lb");
-  const [inputVal, setInputVal] = useState("");
-
-  function handleUnitToggle() {
-    const newUnit = unit === "lb" ? "kg" : "lb";
-    const num = parseFloat(inputVal);
-    if (!Number.isNaN(num) && num > 0) {
-      const converted =
-        unit === "lb" ? Math.round(lbToKg(num)) : Math.round(kgToLb(num));
-      setInputVal(String(converted));
-    }
-    setUnit(newUnit);
-    safeSet("walkpath:weightUnit", newUnit);
-  }
-
-  function handleChange(e) {
-    const val = e.target.value;
-    setInputVal(val);
-    const num = parseFloat(val);
-    if (!Number.isNaN(num) && num > 0) {
-      onWeightChange(unit === "lb" ? lbToKg(num) : num);
-    } else {
-      onWeightChange(null);
-    }
-  }
-
-  const hasWeight = weightKg != null;
-  const displayWeight = hasWeight
-    ? unit === "lb"
-      ? `${Math.round(kgToLb(weightKg))} lb`
-      : `${Math.round(weightKg)} kg`
-    : null;
-
-  return (
-    <div className="height-section">
-      <button
-        type="button"
-        className="height-toggle"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span>
-          {hasWeight
-            ? `Your weight: ${displayWeight} (personalized calories)`
-            : "Add your weight for personalized calories (optional)"}
-        </span>
-        <span className="height-toggle-chevron">{open ? "▲" : "▼"}</span>
-      </button>
-
-      {open && (
-        <>
-          <div className="weight-inputs">
-            <input
-              type="number"
-              className="weight-number-input"
-              value={inputVal}
-              onChange={handleChange}
-              min={unit === "lb" ? 66 : 30}
-              max={unit === "lb" ? 661 : 300}
-              placeholder={unit === "lb" ? "lbs" : "kg"}
-              aria-label={`Weight in ${unit === "lb" ? "pounds" : "kilograms"}`}
-            />
-            <button
-              type="button"
-              className="weight-unit-toggle"
-              onClick={handleUnitToggle}
-            >
-              {unit === "lb" ? "lb → kg" : "kg → lb"}
-            </button>
-          </div>
-          <p className="height-hint">
-            Used to calculate how many calories you burned.
-          </p>
-        </>
-      )}
-    </div>
-  );
-});
-
-// ── Height section ────────────────────────────────────────────────────────
-
-const HeightInput = memo(function HeightInput({ heightFt, heightIn, onChange }) {
-  const [open, setOpen] = useState(false);
-
-  function handleFt(e) {
-    onChange(e.target.value, heightIn);
-  }
-
-  function handleIn(e) {
-    onChange(heightFt, e.target.value);
-  }
-
-  const hasHeight = heightFt !== null;
-
-  return (
-    <div className="height-section">
-      <button
-        type="button"
-        className="height-toggle"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <span>
-          {hasHeight
-            ? `Your height: ${heightFt}′ ${heightIn}″ (personalized steps)`
-            : "Add your height for personalized steps (optional)"}
-        </span>
-        <span className="height-toggle-chevron">{open ? "▲" : "▼"}</span>
-      </button>
-
-      {open && (
-        <>
-          <div className="height-inputs">
-            <div className="height-selects">
-              <select
-                value={heightFt ?? ""}
-                onChange={handleFt}
-                aria-label="Height feet"
-              >
-                <option value="" disabled>ft</option>
-                {FT_OPTIONS.map(f => (
-                  <option key={f} value={f}>{f} ft</option>
-                ))}
-              </select>
-              <select
-                value={heightIn ?? ""}
-                onChange={handleIn}
-                aria-label="Height inches"
-                disabled={heightFt === null}
-              >
-                <option value="" disabled>in</option>
-                {IN_OPTIONS.map(i => (
-                  <option key={i} value={i}>{i} in</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <p className="height-hint">
-            Uses a biomechanical formula to estimate your personal stride length.
-          </p>
-        </>
-      )}
-    </div>
-  );
-});
+// (HeightInput / WeightInput / StepGoalInput were inline accordions; their
+//  controls now live in components/PersonalizeModal.jsx.)
 
 // ── Pace section ──────────────────────────────────────────────────────────
 
 const PACE_OPTIONS = [
-  { value: "leisurely", label: "Leisurely", detail: "2 mph" },
-  { value: "normal",    label: "Normal",    detail: "3 mph" },
-  { value: "brisk",     label: "Brisk",     detail: "4 mph" },
+  { value: "leisurely", label: "Strolling", detail: "2 mph" },
+  { value: "normal",    label: "Steady",    detail: "3 mph" },
+  { value: "brisk",     label: "Earnest",   detail: "4 mph" },
 ];
-
-export const PACE_LABELS = {
-  leisurely: "Leisurely · 2 mph",
-  normal:    "Normal · 3 mph",
-  brisk:     "Brisk · 4 mph",
-};
-
-export function safePaceLabel(pace) {
-  return Object.prototype.hasOwnProperty.call(PACE_LABELS, pace)
-    ? PACE_LABELS[pace]
-    : null;
-}
 
 export function loadStoredPace() {
   const v = safeGet("walkpath:walkPace");
@@ -451,191 +230,40 @@ export function loadStoredPace() {
 const PaceSelector = memo(function PaceSelector({ pace, onChange }) {
   return (
     <div className="pace-selector">
-      <div className="pace-selector-label">Walking pace</div>
-      <div className="pace-options">
+      <div className="pace-selector-label">
+        <WPIcon name="pace" size={12} />
+        <span>Manner of walking</span>
+      </div>
+      <div className="pace-options" role="radiogroup" aria-label="Manner of walking">
         {PACE_OPTIONS.map(({ value, label, detail }) => (
-          <button
+          <WFRadio
             key={value}
-            type="button"
-            className={`pace-btn${pace === value ? " pace-btn--active" : ""}`}
-            onClick={() => onChange(value)}
-            aria-pressed={pace === value}
-          >
-            <span className="pace-btn-label">{label}</span>
-            <span className="pace-btn-detail">{detail}</span>
-          </button>
+            checked={pace === value}
+            onChange={() => onChange(value)}
+            name="pace"
+            label={
+              <>
+                <span style={{ fontStyle: "italic", fontWeight: 600 }}>{label}</span>
+                <span style={{
+                  fontFamily: "var(--wf-mono)",
+                  fontSize: 11,
+                  color: "var(--mute)",
+                  marginLeft: 6,
+                }}>· {detail}</span>
+              </>
+            }
+          />
         ))}
       </div>
     </div>
   );
 });
 
-function pathTypePhrase(pathType) {
-  switch (pathType) {
-    case "crosswalk":        return "through the crosswalk";
-    case "steps":            return "up the steps";
-    case "pedestrian plaza": return "through the pedestrian plaza";
-    case "bike path":        return "along the bike path";
-    case "footway":          return "along the footway";
-    case "trail":            return "along the trail";
-    default:                 return "along the path";
-  }
-}
-
 // ── Direction list ────────────────────────────────────────────────────────
 
-function formatStepLabel(step, i) {
-  if (step.street) return `${i === 0 ? "Start on" : "Continue on"} ${step.street}`;
-  return `${i === 0 ? "Walk" : "Continue"}${step.direction_full ? ` ${step.direction_full}` : ""} ${pathTypePhrase(step.path_type)}`;
-}
+// (Inline DirectionList moved to components/DirectionLedger.jsx.)
 
-export function formatDirectionsText(directions, result) {
-  const header = `Walk Path Directions\n${result.total_miles} mi · ${result.total_minutes} min · ${result.total_steps.toLocaleString()} steps`;
-  const steps = directions.map((step, i) => {
-    let streetLine = formatStepLabel(step, i);
-    if (step.street && step.direction_full) streetLine += ` heading ${step.direction_full}`;
-    return `${i + 1}. ${streetLine} — ${formatBlocks(step.blocks, step.block_type)} · ${step.minutes} min · ${step.steps.toLocaleString()} steps`;
-  });
-  return [header, "", ...steps, "", "Arrive at destination."].join("\n");
-}
-
-function DirectionList({ directions = [], result, activeTurnIndex = null, onStepClick = null, legs = null }) {
-  const [showAll, setShowAll] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const visible = showAll ? directions : directions.slice(0, 5);
-  const hasMore = directions.length > 5;
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(formatDirectionsText(directions, result));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { /* clipboard unavailable */ }
-  }
-
-  return (
-    <div className="directions-section">
-      <div className="directions-heading">
-        <span>Turn-by-turn directions</span>
-        <div className="directions-actions">
-          {result && (
-            <button
-              type="button"
-              className={`copy-directions-btn${copied ? " copy-directions-btn--copied" : ""}`}
-              onClick={handleCopy}
-            >
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          )}
-          {hasMore && (
-            <button
-              type="button"
-              className="directions-toggle-all"
-              onClick={() => setShowAll(v => !v)}
-            >
-              {showAll ? "Show fewer" : `Show all ${directions.length} steps`}
-            </button>
-          )}
-        </div>
-      </div>
-
-      <ol className="direction-list">
-        {visible.map((step, i) => {
-          const prev = i > 0 ? visible[i - 1] : null;
-          const showLegDivider =
-            legs && step.leg_index != null &&
-            (prev == null
-              ? step.leg_index > 0
-              : prev.leg_index !== step.leg_index);
-          const legLabel = showLegDivider
-            ? legs[step.leg_index]?.to_label ?? `Stop ${step.leg_index + 1}`
-            : null;
-          return (
-            <Fragment key={`${step.street ?? step.path_type ?? "step"}-${i}`}>
-              {showLegDivider && (
-                <li className="direction-leg-divider" aria-hidden="false">
-                  → Stop {step.leg_index + 1}: {legLabel}
-                </li>
-              )}
-              <li
-                className={[
-                  "direction-item",
-                  onStepClick ? "direction-item--clickable" : "",
-                  i === activeTurnIndex ? "direction-item--active" : "",
-                ].filter(Boolean).join(" ")}
-                onClick={() => onStepClick?.(i)}
-                role={onStepClick ? "button" : undefined}
-                tabIndex={onStepClick ? 0 : undefined}
-                onKeyDown={onStepClick ? (e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onStepClick(i); }
-                } : undefined}
-              >
-                <span className="direction-num">{i + 1}</span>
-                <span className="direction-body">
-                  <span className="direction-street">
-                    {formatStepLabel(step, i)}
-                  </span>
-                  <div className="direction-detail">
-                    {step.street && step.direction_full && `Head ${step.direction_full} · `}
-                    {formatBlocks(step.blocks, step.block_type)}
-                    {" · "}{step.minutes} min
-                  </div>
-                </span>
-                <span className="direction-steps">
-                  {formatSteps(step.steps)} steps
-                </span>
-              </li>
-            </Fragment>
-          );
-        })}
-      </ol>
-    </div>
-  );
-}
-
-// ── Alternative-route flavor tabs ─────────────────────────────────────────
-
-const FLAVOR_LABELS = {
-  fastest:      { label: "Fastest",      icon: "⚡", detail: "Shortest walk" },
-  fewest_turns: { label: "Fewest turns", icon: "↔",  detail: "Simpler path"  },
-  greenest:     { label: "Greenest",     icon: "🌳", detail: "More off-street" },
-};
-
-export function safeFlavorLabel(flavor) {
-  return Object.prototype.hasOwnProperty.call(FLAVOR_LABELS, flavor)
-    ? FLAVOR_LABELS[flavor].label
-    : flavor;
-}
-
-const RouteFlavorTabs = memo(function RouteFlavorTabs({ routes, activeFlavor, onChange }) {
-  if (!routes || routes.length < 2) return null;
-  return (
-    <div className="flavor-tabs" role="tablist" aria-label="Route alternatives">
-      {routes.map(r => {
-        const meta = FLAVOR_LABELS[r.flavor] ?? { label: r.flavor, icon: "•", detail: "" };
-        const active = r.flavor === activeFlavor;
-        return (
-          <button
-            key={r.flavor}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            className={`flavor-tab${active ? " flavor-tab--active" : ""}`}
-            onClick={() => onChange(r.flavor)}
-          >
-            <span className="flavor-tab-icon">{meta.icon}</span>
-            <span className="flavor-tab-body">
-              <span className="flavor-tab-label">{meta.label}</span>
-              <span className="flavor-tab-detail">
-                {r.total_miles} mi · {r.total_minutes} min · {r.total_steps.toLocaleString()} steps
-              </span>
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-});
+// (Inline RouteFlavorTabs moved to components/RouteFlavorTabs.jsx.)
 
 // ── Step hero card ────────────────────────────────────────────────────────
 
@@ -647,7 +275,8 @@ function StepHero({ result, dailyGoal, onShare }) {
     elevation_gain_ft,
   } = result;
 
-  const barWidth = Math.min(daily_goal_pct, 100);
+  const pct = Number.isFinite(daily_goal_pct) ? daily_goal_pct : 0;
+  const barWidth = Math.min(pct, 100);
   const effectiveGoal = (dailyGoal ?? 10_000).toLocaleString();
   const calorieEquiv = calorieEquivalent(calories_approx);
 
@@ -658,15 +287,15 @@ function StepHero({ result, dailyGoal, onShare }) {
 
       <div className="step-hero-stats">
         <span className="stat-chip">
-          <span className="stat-chip-icon">📍</span>
+          <span className="stat-chip-icon"><WPIcon name="ruler" size={12} /></span>
           {total_miles} mi
         </span>
         <span className="stat-chip">
-          <span className="stat-chip-icon">⏱</span>
+          <span className="stat-chip-icon"><WPIcon name="hourglass" size={12} /></span>
           {total_minutes} min
         </span>
         <span className="stat-chip">
-          <span className="stat-chip-icon">🔥</span>
+          <span className="stat-chip-icon"><WPIcon name="calorie-sigil" size={12} /></span>
           ~{calories_approx} cal
           {personalized_calories && (
             <span className="stat-chip-badge">personalized</span>
@@ -674,13 +303,13 @@ function StepHero({ result, dailyGoal, onShare }) {
         </span>
         {elevation_gain_ft > 10 && (
           <span className="stat-chip">
-            <span className="stat-chip-icon">↑</span>
+            <span className="stat-chip-icon"><WPIcon name="elevation" size={12} /></span>
             {Math.round(elevation_gain_ft)} ft
           </span>
         )}
         {safePaceLabel(result.pace) && (
           <span className="stat-chip">
-            <span className="stat-chip-icon">🚶</span>
+            <span className="stat-chip-icon"><WPIcon name="stride" size={12} /></span>
             {safePaceLabel(result.pace)}
           </span>
         )}
@@ -691,22 +320,25 @@ function StepHero({ result, dailyGoal, onShare }) {
       )}
 
       <div className="goal-bar-wrap">
-        <div className="goal-bar-label">Daily {effectiveGoal} step goal</div>
+        <div className="goal-bar-label">Daily measure · {effectiveGoal.toLocaleString()} steps</div>
         <div className="goal-bar-track">
           <div className="goal-bar-fill" style={{ width: `${barWidth}%` }} />
         </div>
-        <div className="goal-bar-caption">{daily_goal_pct}% of daily goal</div>
+        <div className="goal-bar-caption">{pct}% of daily measure</div>
       </div>
 
       <p className="step-note">
         {personalized
-          ? `Personalized to your ${step_length_inches}″ stride length`
-          : `Using average ${step_length_inches}″ stride · add your height above for a personalized count`}
+          ? `Measured to your ${step_length_inches}″ stride.`
+          : `Using an average ${step_length_inches}″ stride. Add your particulars for a more honest count.`}
       </p>
 
       {onShare && (
         <button type="button" className="share-card-btn" onClick={onShare}>
-          📤 Share route card
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <WPIcon name="printer" size={14} />
+            Print dispatch
+          </span>
         </button>
       )}
     </div>
@@ -715,55 +347,9 @@ function StepHero({ result, dailyGoal, onShare }) {
 
 // ── Compare-vs-alternatives panel ─────────────────────────────────────────
 
-function ComparePanel({ miles, walkMinutes, calories }) {
-  if (!miles || miles <= 0.1) return null;
-  const { driveMin, transitMin, costUsd, co2Kg } = summarize(miles, walkMinutes);
-  const driveDelta = Math.round(walkMinutes - driveMin);
-  const transitDelta = Math.round(walkMinutes - transitMin);
+// (Inline ComparePanel moved to components/CompareDispatch.jsx.)
 
-  return (
-    <div className="compare-panel" aria-label="Comparison vs other transportation">
-      <div className="compare-heading">Worth walking?</div>
-      <ul className="compare-list">
-        <li className="compare-item">
-          <span className="compare-icon">💵</span>
-          <span>~${costUsd.toFixed(0)} saved vs. a ride</span>
-        </li>
-        <li className="compare-item">
-          <span className="compare-icon">🚗</span>
-          <span>{driveDelta} min slower than driving</span>
-        </li>
-        <li className="compare-item">
-          <span className="compare-icon">🚌</span>
-          <span>{transitDelta > 0 ? `${transitDelta} min slower than transit` : "About as fast as transit"}</span>
-        </li>
-        <li className="compare-item">
-          <span className="compare-icon">🌱</span>
-          <span>{co2Kg.toFixed(2)} kg CO₂ avoided</span>
-        </li>
-        {calories > 0 && (
-          <li className="compare-item">
-            <span className="compare-icon">🔥</span>
-            <span>~{calories} cal you&apos;d otherwise miss</span>
-          </li>
-        )}
-      </ul>
-    </div>
-  );
-}
-
-// ── Loading skeleton ──────────────────────────────────────────────────────
-
-function LoadingSkeleton() {
-  return (
-    <div className="skeleton-wrapper" aria-busy="true" aria-label="Loading route">
-      <div className="skeleton skeleton-line skeleton-line--long" />
-      <div className="skeleton skeleton-line skeleton-line--medium" />
-      <div className="skeleton skeleton-card" />
-      <div className="skeleton skeleton-line skeleton-line--short" />
-    </div>
-  );
-}
+// (Inline LoadingSkeleton moved to components/LoadingSkeleton.jsx.)
 
 // ── Error boundary ────────────────────────────────────────────────────────
 
@@ -780,9 +366,9 @@ class ErrorBoundary extends Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="error" role="alert">
-          Something went wrong displaying your route — try a new search.
-        </div>
+        <ErrorDispatch
+          error="Something went wrong displaying your route — try a new search."
+        />
       );
     }
     return this.props.children;
@@ -801,9 +387,9 @@ function RecentSearches({ searches, onSelect, onClear }) {
   return (
     <div className="recent-searches">
       <div className="recent-searches-header">
-        <span className="recent-searches-label">Recent routes</span>
+        <span className="recent-searches-label">Lately Walked</span>
         <button type="button" className="recent-clear-btn" onClick={onClear}>
-          Clear history
+          Clear
         </button>
       </div>
       <div className="recent-chips">
@@ -825,79 +411,6 @@ function RecentSearches({ searches, onSelect, onClear }) {
   );
 }
 
-// ── Step log (Multi-Day Step Accumulator) ────────────────────────────────
-
-
-function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
-  const [open, setOpen] = useState(false);
-
-  const totals = useMemo(() => {
-    let steps = 0;
-    let miles = 0;
-    for (const e of log) {
-      steps += Number(e.steps) || 0;
-      miles += Number(e.miles) || 0;
-    }
-    return { steps, miles };
-  }, [log]);
-
-  if (!log.length) return null;
-
-  const weeklyGoal = (dailyGoal ?? 10_000) * 7;
-  const weeklyPct = Math.min(100, Math.round((totals.steps / weeklyGoal) * 100));
-
-  return (
-    <div className="weekly-summary">
-      <button
-        type="button"
-        className="weekly-summary-toggle"
-        onClick={() => setOpen(v => !v)}
-        aria-expanded={open}
-      >
-        <span>
-          This week: {totals.steps.toLocaleString()} steps · {totals.miles.toFixed(1)} mi
-        </span>
-        <span className="weekly-summary-chevron">{open ? "▲" : "▼"}</span>
-      </button>
-
-      {open && (
-        <div className="weekly-summary-body">
-          <div className="goal-bar-wrap">
-            <div className="goal-bar-label">
-              Weekly goal: {weeklyGoal.toLocaleString()} steps
-            </div>
-            <div className="goal-bar-track">
-              <div className="goal-bar-fill" style={{ width: `${weeklyPct}%` }} />
-            </div>
-            <div className="goal-bar-caption">{weeklyPct}% of weekly goal</div>
-          </div>
-
-          <ol className="weekly-log-list">
-            {log.map(e => (
-              <li key={e.timestamp} className="weekly-log-item">
-                <span className="weekly-log-date">{e.date}</span>
-                <span className="weekly-log-route">
-                  {e.origin} → {e.destination}
-                </span>
-                <span className="weekly-log-steps">
-                  {Number(e.steps).toLocaleString()} steps
-                </span>
-              </li>
-            ))}
-          </ol>
-
-          <button type="button" className="weekly-clear-btn" onClick={onClear}>
-            Clear log
-          </button>
-          <p className="weekly-summary-hint">
-            Entries auto-expire after 7 days.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── App ───────────────────────────────────────────────────────────────────
 
 function loadAccessPrefs() {
@@ -909,14 +422,23 @@ function loadAccessPrefs() {
 }
 
 export default function App() {
+  // Parse URL params and access prefs once on mount; downstream initializers
+  // and the auto-fetch effect read from these refs instead of re-parsing.
+  const initialUrlParamsRef = useRef(null);
+  if (initialUrlParamsRef.current === null) initialUrlParamsRef.current = readUrlParams();
+  const initialUrlParams = initialUrlParamsRef.current;
+
+  const initialAccessRef = useRef(null);
+  if (initialAccessRef.current === null) initialAccessRef.current = loadAccessPrefs();
+  const initialAccess = initialAccessRef.current;
+
   const [stops, setStops] = useState(() => {
-    const p = readUrlParams();
-    if (p.stops?.length) {
-      return p.stops.map(v => ({ id: makeStopId(), value: v }));
+    if (initialUrlParams.stops?.length) {
+      return initialUrlParams.stops.map(v => ({ id: makeStopId(), value: v }));
     }
     return [
-      { id: makeStopId(), value: p.from || "" },
-      { id: makeStopId(), value: p.to   || "" },
+      { id: makeStopId(), value: initialUrlParams.from || "" },
+      { id: makeStopId(), value: initialUrlParams.to   || "" },
     ];
   });
 
@@ -951,17 +473,17 @@ export default function App() {
     setStops(prev => prev.slice().reverse().map(s => ({ ...s, id: makeStopId() })));
   }
 
-  const [heightFt, setHeightFt]       = useState(() => readUrlParams().hft);
-  const [heightIn, setHeightIn]       = useState(() => {
-    const { hft, hin } = readUrlParams();
-    return hft != null ? hin : null;
-  });
+  const [heightFt, setHeightFt]       = useState(() => initialUrlParams.hft);
+  const [heightIn, setHeightIn]       = useState(() =>
+    initialUrlParams.hft != null ? initialUrlParams.hin : null,
+  );
   const [weightKg, setWeightKg]       = useState(null);
   const [dailyGoal, setDailyGoalState] = useState(() => loadDailyGoal());
   const [walkPace, setWalkPace]         = useState(loadStoredPace);
 
-  const [avoidStairs, setAvoidStairs]           = useState(() => loadAccessPrefs().avoidStairs);
-  const [preferPedestrian, setPreferPedestrian] = useState(() => loadAccessPrefs().preferPedestrian);
+  const [avoidStairs, setAvoidStairs]           = useState(initialAccess.avoidStairs);
+  const [preferPedestrian, setPreferPedestrian] = useState(initialAccess.preferPedestrian);
+  const [personalizeOpen, setPersonalizeOpen]   = useState(false);
 
   useEffect(() => {
     saveJSON("walkpath:accessPrefs", { avoidStairs, preferPedestrian });
@@ -1030,7 +552,7 @@ export default function App() {
 
   // Auto-submit once on mount when the page loads with URL-encoded route params
   useEffect(() => {
-    const p = readUrlParams();
+    const p = initialUrlParams;
     if (p.stops?.length) {
       fetchRoute(p.stops);
     } else if (p.from && p.to) {
@@ -1062,10 +584,13 @@ export default function App() {
   async function fetchRoute(stopsList) {
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    const signal = abortRef.current.signal;
 
     setLoading(true);
     setError("");
     setResult(null);
+
+    const loadStart = performance.now();
 
     const height_inches =
       heightFt !== null && heightIn !== null
@@ -1092,10 +617,14 @@ export default function App() {
           avoid_stairs:      avoidStairs,
           prefer_pedestrian: preferPedestrian,
         }),
-        signal: abortRef.current.signal,
+        signal,
       });
 
       if (!res.ok) {
+        // 429 (rate limiter) and 503 (circuit breaker, Bolt-On C) both signal
+        // "geocoding is degraded — try again later." Prefer the backend's
+        // structured detail.message when present so the breaker's friendly
+        // "try a Chicago neighborhood name" copy comes through.
         let msg = `Service error (${res.status})`;
         try {
           const d = await res.json();
@@ -1103,12 +632,22 @@ export default function App() {
             msg = d.detail.message;
           } else if (typeof d.detail === "string") {
             msg = d.detail;
+          } else if (res.status === 429) {
+            msg = "The geocoding service is rate-limited — try again in a minute.";
           }
-        } catch { /* not json */ }
+        } catch {
+          if (res.status === 429) {
+            msg = "The geocoding service is rate-limited — try again in a minute.";
+          }
+        }
         throw new Error(msg);
       }
 
-      setResult(await res.json());
+      const data = await res.json();
+
+      // URL + recents reflect the submitted request — write them immediately,
+      // before the min-loading delay holds the skeleton, so deep-link state is
+      // correct even if the user navigates away mid-skeleton.
       const urlP = new URLSearchParams();
       if (multi) {
         urlP.set("stops", cleanStops.join("|"));
@@ -1121,11 +660,19 @@ export default function App() {
       history.replaceState(null, "", `?${urlP.toString()}`);
       const updatedRecents = saveRecentSearch(cleanStops);
       if (updatedRecents) setRecentSearches(updatedRecents);
+
+      await ensureMinLoadingDuration(loadStart);
+      if (signal.aborted) return;
+      setResult(data);
     } catch (err) {
-      if (err.name === "AbortError") return;
+      if (err.name === "AbortError" || signal.aborted) return;
+      await ensureMinLoadingDuration(loadStart);
+      if (signal.aborted) return;
       setError(err.message || "Something went wrong. Please try again.");
     } finally {
-      setLoading(false);
+      // Only flip loading off if this fetch hasn't been superseded — keeps the
+      // newer fetch's skeleton from being clobbered when an aborted one resolves.
+      if (!signal.aborted) setLoading(false);
     }
   }
 
@@ -1169,7 +716,9 @@ export default function App() {
       const dataUrl = await toPng(cardRef.current, { pixelRatio: 3 });
       const a = document.createElement("a");
       a.href = dataUrl;
-      const slug = `${origin}-to-${destination}`.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const slugStops = stopValues.map(v => v.trim()).filter(Boolean);
+      const slugSource = slugStops.length >= 2 ? slugStops.join("-to-") : `${origin}-to-${destination}`;
+      const slug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       a.download = `walk-${slug}.png`;
       a.click();
     } catch (err) {
@@ -1205,31 +754,19 @@ export default function App() {
       setStopValue(targetId, label);
     } else {
       setStopValue(targetId, `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
-      setToastMsg("Couldn't name that spot — using coordinates");
+      setToastMsg("That spot has no name we know — using coordinates.");
       clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setToastMsg(""), 3500);
     }
   }, [pickMode]);
 
   return (
-    <div className="app">
+    <div className="app paper-grain">
+      <Masthead />
       <div className="layout">
 
         {/* ── Left panel ── */}
         <div className="panel-cards">
-          <header className="header">
-            <div className="header-top">
-              <h1 className="app-title">
-                <span className="app-title-icon">🚶</span>
-                Walk Path
-              </h1>
-              <span className="city-pill">
-                📍 Chicago, IL
-              </span>
-            </div>
-            <p className="tagline">Real walking directions with exact step counts</p>
-          </header>
-
           <main className="main">
             <form className="form" onSubmit={handleSubmit}>
               <div className="stops-group">
@@ -1266,10 +803,10 @@ export default function App() {
                           type="button"
                           className={`pick-map-btn${pickMode === stop.id ? " pick-map-btn--active" : ""}`}
                           onClick={() => handlePickToggle(stop.id)}
-                          title={pickMode === stop.id ? "Cancel pick" : "Click map to set this stop"}
+                          title={pickMode === stop.id ? "Cancel pick" : "Set point on map"}
                           aria-label={pickMode === stop.id ? "Cancel pick mode" : `Set ${label} by clicking map`}
                         >
-                          📍
+                          <WPIcon name="crosshair" size={14} />
                         </button>
                       </div>
                       <div className="stop-row-actions">
@@ -1281,7 +818,7 @@ export default function App() {
                           aria-label={`Move ${label} up`}
                           title="Move up"
                         >
-                          ↑
+                          <WFIcon name="chevron-up" size={14} />
                         </button>
                         <button
                           type="button"
@@ -1291,7 +828,7 @@ export default function App() {
                           aria-label={`Move ${label} down`}
                           title="Move down"
                         >
-                          ↓
+                          <WFIcon name="chevron-down" size={14} />
                         </button>
                         {canRemove && (
                           <button
@@ -1301,7 +838,7 @@ export default function App() {
                             aria-label={`Remove ${label}`}
                             title="Remove stop"
                           >
-                            ✕
+                            <WFIcon name="x" size={14} />
                           </button>
                         )}
                       </div>
@@ -1317,9 +854,14 @@ export default function App() {
                     disabled={stops.length >= MAX_STOPS}
                     aria-label="Add another stop"
                   >
-                    {stops.length >= MAX_STOPS
-                      ? `Maximum ${MAX_STOPS} stops`
-                      : "＋ Add stop"}
+                    {stops.length >= MAX_STOPS ? (
+                      `Maximum ${MAX_STOPS} stops`
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <WFIcon name="plus" size={14} />
+                        Add stop
+                      </span>
+                    )}
                   </button>
                   <button
                     type="button"
@@ -1329,26 +871,63 @@ export default function App() {
                     title="Reverse the order of all stops"
                     disabled={stops.some(s => !s.value.trim())}
                   >
-                    ↕ Reverse
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <WPIcon name="swap" size={14} />
+                      Reverse
+                    </span>
                   </button>
                 </div>
               </div>
 
-              <HeightInput
-                heightFt={heightFt}
-                heightIn={heightIn}
-                onChange={handleHeightChange}
-              />
-
-              <WeightInput
-                weightKg={weightKg}
-                onWeightChange={handleWeightChange}
-              />
-
-              <StepGoalInput
-                dailyGoal={dailyGoal}
-                onChange={handleGoalChange}
-              />
+              <button
+                type="button"
+                className="personalize-trigger"
+                onClick={() => setPersonalizeOpen(true)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                  gap: 4,
+                  width: "100%",
+                  padding: "10px 12px",
+                  background: "transparent",
+                  border: "1px solid var(--mute-fog)",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  margin: "8px 0",
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--wf-sans)",
+                    fontSize: 10,
+                    fontWeight: 800,
+                    letterSpacing: 2,
+                    textTransform: "uppercase",
+                    color: "var(--mute)",
+                  }}
+                >
+                  Personalize
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--wf-serif)",
+                    fontStyle: "italic",
+                    fontSize: 14,
+                    color: "var(--ink)",
+                  }}
+                >
+                  {(() => {
+                    const parts = [];
+                    if (heightFt != null && heightIn != null) parts.push(`${heightFt}′ ${heightIn}″`);
+                    if (weightKg != null) parts.push(`${Math.round(weightKg * 2.20462)} lb`);
+                    if (dailyGoal != null) parts.push(`${dailyGoal.toLocaleString()} step measure`);
+                    return parts.length > 0
+                      ? parts.join(", ") + " ▸"
+                      : "Add your particulars for a more honest count ▸";
+                  })()}
+                </span>
+              </button>
 
               <PaceSelector
                 pace={walkPace}
@@ -1356,27 +935,41 @@ export default function App() {
               />
 
               <fieldset className="access-prefs">
-                <legend>Route preferences</legend>
-                <label className="access-pref">
-                  <input
-                    type="checkbox"
-                    checked={avoidStairs}
-                    onChange={e => setAvoidStairs(e.target.checked)}
-                  />
-                  <span>Avoid stairs</span>
-                </label>
-                <label className="access-pref">
-                  <input
-                    type="checkbox"
-                    checked={preferPedestrian}
-                    onChange={e => setPreferPedestrian(e.target.checked)}
-                  />
-                  <span>Prefer pedestrian paths</span>
-                </label>
+                <legend>Considerations</legend>
+                <WFCheck
+                  checked={avoidStairs}
+                  onChange={e => setAvoidStairs(e.target.checked)}
+                  label="Avoid stairs and steep ascents"
+                />
+                <WFCheck
+                  checked={preferPedestrian}
+                  onChange={e => setPreferPedestrian(e.target.checked)}
+                  label="Prefer pedestrian ways and footpaths"
+                />
               </fieldset>
 
-              <button type="submit" className="btn-route" disabled={loading}>
-                {loading ? "Finding route…" : "Get walking route"}
+              <button
+                type="submit"
+                className="btn-route"
+                disabled={loading}
+                style={{
+                  width: "100%",
+                  padding: "13px 16px",
+                  fontSize: 15,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  fontFamily: "var(--wf-serif)",
+                  fontStyle: "italic",
+                  background: "var(--ink)",
+                  color: "var(--paper)",
+                  border: "1px solid var(--ink)",
+                  cursor: loading ? "wait" : "pointer",
+                }}
+              >
+                <WPIcon name="stride" size={16} />
+                {loading ? "Plotting your route…" : "Commence the journey"}
               </button>
             </form>
 
@@ -1393,7 +986,14 @@ export default function App() {
             />
 
             {error && (
-              <div className="error" role="alert">{error}</div>
+              <ErrorDispatch
+                error={error}
+                onRetry={() => {
+                  const cleaned = stopValues.map(v => v.trim());
+                  if (cleaned.some(v => !v)) return;
+                  fetchRoute(cleaned);
+                }}
+              />
             )}
 
             {loading && <LoadingSkeleton />}
@@ -1409,14 +1009,13 @@ export default function App() {
                 )}
                 {isMultiStop && (
                   <div className="multi-stop-note" role="note">
-                    Multi-stop routes use the fastest flavor. Alternative routes
-                    (fewest turns / greenest) are available for 2-stop walks only.
+                    Multi-stop walks use the fastest path. Alternatives (fewest turns, greenest) are offered for two-stop walks.
                   </div>
                 )}
 
                 <StepHero result={viewResult} dailyGoal={dailyGoal} onShare={handleOpenShare} />
 
-                <ComparePanel
+                <CompareDispatch
                   miles={viewResult.total_miles}
                   walkMinutes={viewResult.total_minutes}
                   calories={viewResult.calories_approx}
@@ -1429,19 +1028,22 @@ export default function App() {
                   disabled={walkLogged}
                   aria-label={walkLogged ? "Walk logged" : "Log this walk"}
                 >
-                  {walkLogged ? "✓ Logged this walk" : "＋ Log this walk"}
+                  {walkLogged
+                    ? <><WFIcon name="check" size={14} /> Logged this walk</>
+                    : <><WFIcon name="plus" size={14} /> Log this walk</>}
                 </button>
 
                 <div className="motivation">
                   {motivationMessage(viewResult.total_steps)}
                 </div>
 
-                <DirectionList
+                <DirectionLedger
                   directions={viewResult.directions}
                   result={viewResult}
                   activeTurnIndex={activeTurnIndex}
                   onStepClick={setActiveTurnIndex}
                   legs={isMultiStop ? (result.legs ?? null) : null}
+                  formatDirectionsText={formatDirectionsText}
                 />
               </ErrorBoundary>
             )}
@@ -1461,6 +1063,20 @@ export default function App() {
         </div>
 
       </div>
+
+      <Footer />
+
+      <PersonalizeModal
+        open={personalizeOpen}
+        onClose={() => setPersonalizeOpen(false)}
+        heightFt={heightFt}
+        heightIn={heightIn}
+        weightKg={weightKg}
+        dailyGoal={dailyGoal}
+        onChangeHeight={handleHeightChange}
+        onChangeWeight={handleWeightChange}
+        onChangeGoal={handleGoalChange}
+      />
 
       {/* ── Share modal ── */}
       {showShareModal && viewResult && (
@@ -1484,7 +1100,7 @@ export default function App() {
               </button>
             </div>
             <div className="share-modal-card-wrap">
-              <RouteCard
+              <ShareDispatch
                 ref={cardRef}
                 result={viewResult}
                 originLabel={origin}
@@ -1513,6 +1129,7 @@ export default function App() {
         </div>
       )}
 
+      <TweaksPanel />
     </div>
   );
 }

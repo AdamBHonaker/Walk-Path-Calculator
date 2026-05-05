@@ -1,11 +1,15 @@
-# Walk-Path-Calculator
+# Passage
 
-A walking route calculator for Chicago that shows exact step counts alongside turn-by-turn directions, encouraging users to walk rather than take other transportation.
+A walking route calculator for Chicago that shows exact step counts alongside turn-by-turn directions, encouraging users to walk rather than take other transportation. Editorial broadsheet voice via the Wayfarer design system.
+
+> **Note on naming.** Several internal identifiers (localStorage keys prefixed `walkpath:`, the `WPIcon` component, the `walkpath-icons.jsx` filename, MapLibre `walk-path` source IDs) keep the old prefix to avoid orphaning user data and cascading import churn. The user-facing brand is **Passage**.
+
+> **Wayfarer design-system migration: Phase 1 complete as of 2026-05-05.** All checkpoints landed (foundation, primary components extracted, share card, loading/error states, map paint, project rename, voice rewrites, Cream/Dusk theme toggle, a11y sweep, final verification — 142/142 tests passing). See [`frontend/handoff/HANDOFF.md`](frontend/handoff/HANDOFF.md) "Phase 1 Progress" for completed checkpoints, spec departures, and decisions made outside the original spec.
 
 ## Project Structure
 
 ```
-Walk-Path-Calculator/
+Passage/
 ├── backend/              # Python FastAPI
 │   ├── main.py           # POST /route, GET /health, GET /reverse-geocode
 │   ├── walking.py        # Street network routing (ported from CTA-Transit-PWA)
@@ -21,21 +25,26 @@ Walk-Path-Calculator/
 │
 └── frontend/             # React + Vite + MapLibre GL
     ├── src/
-    │   ├── App.jsx                # Main UI (form, step hero, directions)
-    │   ├── MapView.jsx            # Walk path + turn markers rendering
-    │   ├── RouteCard.jsx          # Shareable route card (PNG export)
+    │   ├── App.jsx                # Main UI orchestration (form, hero, share modal)
+    │   ├── MapView.jsx            # Live map + line-trim-offset draw-in animation
+    │   ├── components/            # Masthead, Footer, DirectionLedger, RouteFlavorTabs,
+    │   │                          #   CompareDispatch, ShareDispatch, PersonalizeModal
+    │   ├── wayfarer/              # Wayfarer design system (tokens, themes, primitives,
+    │   │                          #   forms, icons, walkpath-icons)
     │   ├── compareEstimates.js    # Ride-share vs. walk cost/CO2 comparison
-    │   ├── mapHelpers.js          # Map config, gesture lock/unlock, GeoJSON helpers
+    │   ├── mapHelpers.js          # Map config, route paint (ink/ember), GeoJSON helpers
     │   ├── calorieEquiv.js        # Maps calories → food-equivalent strings
     │   ├── lib/
     │   │   ├── storage.js         # Safe localStorage wrappers (try/catch in one place)
     │   │   ├── recentSearches.js  # Persisted recent-routes list
-    │   │   └── stepLog.js         # 7-day step log persistence
+    │   │   ├── stepLog.js         # 7-day step log persistence
+    │   │   └── directionFormat.js # formatStepLabel / formatBlocks / formatSteps
     │   ├── App.css / index.css
     │   ├── main.jsx
     │   ├── test-setup.js
     │   └── *.test.{jsx,js}
     └── public/
+        └── fonts/                 # Self-hosted Fraunces, Inter, JetBrains Mono
 ```
 
 ## Running Locally

@@ -11,6 +11,42 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
+### 2026-05-05 · Reverse-geocode coordinate fallback poisoned cache (BUG-RG-FALLBACK)
+
+**File:** `backend/geocoding.py`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `reverse_geocode_point` wrote its `result` to `_geocode_cache` for every code path, including the `{"label": "lat, lon", "source": "coordinates"}` fallback that fires when `_reverse_geocode_google` returns `None` (transient network error, missing `GOOGLE_MAPS_API_KEY`, Google 5xx, etc.). Because `_geocode_cache` is also persisted to `geocode_cache.json`, a single transient failure permanently poisoned that lat/lon: every subsequent click returned the raw coordinate string instead of an address even after Google recovered.
+
+**How it was resolved:** Skip the cache write entirely when `result["source"] == "coordinates"`. Authoritative answers (`"neighborhood"` and `"google"`) are still cached and persisted as before; only the fallback is now treated as ephemeral.
+
+---
+
+### 2026-05-05 · Persistent geocode cache lost writes under multi-worker deploys (BUG-CACHE-MULTIPROC)
+
+**File:** `backend/geocoding.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `_geocode_cache` is loaded into each process at import time and serialised via atomic `tmp.replace(...)` — atomic but last-writer-wins. Under any multi-worker config (`uvicorn --workers 2+`, `gunicorn -w N`), each worker held its own dict; whichever flushed last overwrote the cache file with its private subset and silently discarded entries other workers learned. Single-worker deploys (current Railway config) were unaffected, but the project was one config flag away from data loss.
+
+**How it was resolved:** `_save_geocode_cache` now performs merge-on-write: it re-reads the on-disk JSON immediately before serializing and unions it with the in-memory cache (in-memory wins on conflict). Reads happen under `_geocode_write_lock`, so concurrent flushes within a single process remain serialized. Cross-process safety is now eventual-consistent rather than last-writer-wins.
+
+---
+
+### 2026-05-05 · 2-stop `total_miles` drifted ~0.01 mi via double-rounding (BUG-MILES-DRIFT)
+
+**File:** `backend/main.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `_summarize_alt` rounded `total_minutes = round(alt["minutes"] * pace_factor, 1)` and then derived `total_miles = round(total_minutes / pace_factor * WALKING_SPEED_MPH / 60.0, 2)` from that already-quantised value. At brisk pace (`pace_factor = 0.75`) the recovery error pushed rounded mileage by ±0.01 mi and step counts drifted in the same direction. The multi-stop branch already computed leg miles from unrounded canonical minutes.
+
+**How it was resolved:** Compute `total_miles` directly from the unrounded `alt["minutes"] * WALKING_SPEED_MPH / 60.0` and derive `total_minutes` independently. Mirrors the multi-stop logic and removes the pace-dependent drift.
+
+---
+
 ### 2026-05-04 · Frontend personalization fields silently dropped by backend
 
 **Files:** `backend/main.py`, `backend/walking.py`, `backend/steps.py`, `backend/tests/test_main.py`, `backend/tests/test_steps.py`
@@ -147,6 +183,8 @@ Total test count after changes: **115 tests, all passing**.
 **What the debt was:** The `wayfarer/` subdirectory contained an internal design system (primitives, forms, icons, tokens, themes — 1,381 lines of `.jsx` and `.css` total) that was never imported by any application file. `CLAUDE.md` documented it as "Internal design system", which made it look load-bearing while in practice none of `App.jsx`, `MapView.jsx`, `RouteCard.jsx`, `index.css`, `App.css`, or `main.jsx` referenced it.
 
 **How it was resolved:** Deleted the entire `frontend/src/wayfarer/` directory. Updated the project-tree section of `CLAUDE.md` to remove the wayfarer mention and replace it with the new `lib/` layout (storage, recentSearches, stepLog) and the freshly extracted `calorieEquiv.js`.
+
+> **Note (2026-05-05):** The `frontend/src/wayfarer/` directory was re-introduced the following day as the foundation of Wayfarer Phase 1 and is now load-bearing again (imported by every component in `src/components/` and by `main.jsx`). See [`frontend/handoff/HANDOFF.md`](../../frontend/handoff/HANDOFF.md). This entry is preserved for historical accuracy.
 
 ---
 
@@ -456,6 +494,79 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 ---
 
 ## Efficiency Improvements Implemented
+
+### 2026-05-05 · `readUrlParams()` parsed `window.location.search` four times on mount (OPT-008)
+
+**File:** [frontend/src/App.jsx](frontend/src/App.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `readUrlParams()` was invoked four separate times during `App`'s initial render — once each in the `stops`, `heightFt`, and `heightIn` `useState` initializers, and again inside the auto-fetch `useEffect`. Each call constructed a fresh `URLSearchParams`, re-ran `parseStopsParam`, and re-validated `hft`/`hin`.
+
+**Implemented:** Captured the parsed params once via a `useRef` (`initialUrlParamsRef`) populated lazily on first render. The three `useState` initializers and the auto-fetch effect now read from the cached object. One parse instead of four.
+
+---
+
+### 2026-05-05 · `loadAccessPrefs()` ran twice on mount (OPT-009)
+
+**File:** [frontend/src/App.jsx](frontend/src/App.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** Two separate `useState` initializers (`avoidStairs`, `preferPedestrian`) each called `loadAccessPrefs()`, performing two `localStorage.getItem` reads + two `JSON.parse` calls for what is fundamentally one stored object.
+
+**Implemented:** Cached the parsed prefs in a `useRef` (`initialAccessRef`) on first render and used the same object to seed both `useState`s. One read + one parse per cold load.
+
+---
+
+### 2026-05-05 · Map sources/layers torn down and rebuilt on every route swap (OPT-010)
+
+**Files:** [frontend/src/mapHelpers.js](frontend/src/mapHelpers.js), [frontend/src/MapView.jsx](frontend/src/MapView.jsx)
+
+**Impact:** 🟡 Medium
+
+**Category:** Rendering / Inefficient Data Structure
+
+**What was inefficient:** Each route render in `MapView` ran `clearLayers(...)` then `renderWalkRoute(...)`, removing every source (`walk-path`, `walk-turns`, `walk-stops`, `walk-origin`, `walk-dest`) and re-adding it. MapLibre re-uploaded GPU buffers on every flavor swap. Endpoint markers were similarly torn down and re-mounted (full `createRoot` per `WFFromMark`/`WFToMark`) on each swap.
+
+**Implemented:**
+- Added `upsertGeoSource`, `ensureLayer`, and `dropTracked` helpers in `mapHelpers.js`. `renderWalkRoute` now detects existing sources via `map.getSource(...)` and calls `setData` instead of `addSource` when present, and only adds layers when not already present (`map.getLayer`). Sources whose category disappears between renders (e.g. `walk-stops` going from multi-stop to 2-stop) are explicitly removed via `dropTracked`.
+- `MapView.render` no longer calls `clearLayers`. Endpoint markers are stored as `{from, to}` slots and repositioned in place via `marker.setLngLat`; they're only created on first appearance.
+- Marker disposal moved to a dedicated unmount-only effect so React roots are released exactly once when the component unmounts, rather than on every render cleanup.
+
+---
+
+### 2026-05-05 · `WPIcon` shipped three never-used icons (OPT-011)
+
+**File:** [frontend/src/wayfarer/walkpath-icons.jsx](frontend/src/wayfarer/walkpath-icons.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Bundle Size
+
+**What was inefficient:** `WPIcon` shipped 17 inline SVG bodies as branches of one `switch`, three of which (`purse`, `leaf`, `chicago-grid`) had no callsites in the project. Tree-shaking can't help across switch branches, so every page bundle paid for them.
+
+**Implemented:** Removed the unused `purse`, `leaf`, and `chicago-grid` cases from the switch and from the exported `WP_ICON_NAMES` list. The full named-export refactor for further code-splitting was deferred — most remaining icons (14 of 14) are used somewhere, so the additional churn risk outweighs the marginal bundle savings.
+
+---
+
+### 2026-05-05 · `ShareDispatch` imported helpers from `App.jsx` (OPT-012)
+
+**Files:** [frontend/src/components/ShareDispatch.jsx](frontend/src/components/ShareDispatch.jsx), [frontend/src/lib/routeFormat.js](frontend/src/lib/routeFormat.js) (new), [frontend/src/App.jsx](frontend/src/App.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Unnecessary Import
+
+**What was inefficient:** `ShareDispatch` imported `safePaceLabel` and `motivationMessage` from `App.jsx`, dragging the entire App module — including its `BACKEND_URL = resolveBackendUrl()` top-level side effect — into any path that loaded the share card. This blocked future code-splitting that could lazy-load the share modal.
+
+**Implemented:** Created `frontend/src/lib/routeFormat.js` containing `PACE_LABELS`, `safePaceLabel`, `motivationMessage`, and `formatDirectionsText`. Both `App.jsx` and `ShareDispatch.jsx` now import from there. `App.jsx` re-exports the symbols so `App.test.jsx`'s existing imports keep working.
+
+---
 
 ### 2026-04-28 · Array literals allocated on every render in `HeightInput` (OPT-001)
 

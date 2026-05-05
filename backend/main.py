@@ -27,7 +27,7 @@ from walking import (
     FLAVORS,
     DEFAULT_FLAVOR,
 )
-from geocoding import resolve_location, reverse_geocode_point
+from geocoding import resolve_location, reverse_geocode_point, LocationOutsideChicagoError, GeocoderDegradedError
 from utils import CHICAGO_SOUTH, CHICAGO_NORTH, CHICAGO_WEST, CHICAGO_EAST
 from steps import (
     step_length_from_height,
@@ -233,11 +233,28 @@ async def route(request: Request, payload: RouteRequest):
     stops = payload.stops
     is_multi = len(stops) > 2
 
-    # Resolve all stops concurrently.
+    # Resolve all stops concurrently. `return_exceptions=True` lets us surface
+    # a per-stop "not in Chicago" 422 with the offending stop's index instead
+    # of taking gather's first-raise-wins behavior, which loses that index.
     resolved = await asyncio.gather(*[
         loop.run_in_executor(None, resolve_location, s) for s in stops
-    ])
+    ], return_exceptions=True)
     for i, coords in enumerate(resolved):
+        if isinstance(coords, LocationOutsideChicagoError):
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": f"'{stops[i]}' isn't in Chicago. Try a Chicago neighborhood, landmark, or street address.",
+                    "stop_index": i,
+                },
+            )
+        if isinstance(coords, GeocoderDegradedError):
+            raise HTTPException(
+                status_code=503,
+                detail={"message": GeocoderDegradedError.DEFAULT_MESSAGE},
+            )
+        if isinstance(coords, BaseException):
+            raise coords  # unexpected — let FastAPI's 500 handler surface it
         if not coords:
             raise HTTPException(
                 status_code=400,
@@ -298,8 +315,11 @@ async def route(request: Request, payload: RouteRequest):
 
     def _summarize_alt(alt: dict) -> dict:
         # alt["minutes"] is computed at canonical 3 mph in walking.py — rescale here.
+        # Compute miles from the unrounded canonical minutes (matches the multi-stop
+        # branch); deriving miles from the already-rounded total_minutes introduces
+        # pace-dependent drift of ±0.01 mi at brisk pace.
+        total_miles   = round(alt["minutes"] * WALKING_SPEED_MPH / 60.0, 2)
         total_minutes = round(alt["minutes"] * pace_factor, 1)
-        total_miles   = round(total_minutes / pace_factor * WALKING_SPEED_MPH / 60.0, 2)
         total_steps   = steps_from_miles(total_miles, step_len)
         return {
             "flavor":          alt["flavor"],

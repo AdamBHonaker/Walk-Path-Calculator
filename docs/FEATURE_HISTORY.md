@@ -28,6 +28,57 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Weight Input for Calories | Bolt-On | 2026-05-02 |
 | Pace Customization | Bolt-On | 2026-05-02 |
 | Waypoints / Multi-Stop Routes | Structural | 2026-05-02 |
+| Reject geocodes outside the Chicago bbox | Bolt-On | 2026-05-05 |
+| Tighten geocoder fuzzy-match threshold | Bolt-On | 2026-05-05 |
+| Cache + back off on Google Maps 429s | Bolt-On | 2026-05-05 |
+
+---
+
+## Reject geocodes outside the Chicago bbox
+**Type:** Bolt-On | **Area:** Backend | **Shipped:** 2026-05-05
+
+`resolve_location()` now validates every successful coordinate (whether from neighborhood match, fuzzy match, or Google Maps fallback) against Chicago's bbox. Coordinates outside the bbox raise `LocationOutsideChicagoError`, which `main.py` converts to HTTP 422 with `{"message": "'<query>' isn't in Chicago. Try a Chicago neighborhood, landmark, or street address.", "stop_index": i}`. Previously, queries that resolved to real out-of-state places (e.g., explicit lat/lon outside the bbox, or Google returning genuine out-of-state coords) silently snapped to the bbox edge and returned a nonsensical route.
+
+- New helper `chicago_bbox_contains(lat, lon)` in [backend/utils.py](backend/utils.py) — single-source-of-truth bbox membership check.
+- `resolve_location()` factored into a thin wrapper around `_resolve_location_inner()` so the bbox check applies to every code path.
+- `/route` uses `asyncio.gather(..., return_exceptions=True)` so a per-stop bbox failure surfaces with the offending `stop_index` instead of being lost behind gather's first-raise-wins semantics.
+- 4 new tests in `TestGeocodeBboxRejection` covering explicit-coord rejection (north/south of bbox), the unit contract on `resolve_location`, and the in-bbox happy path.
+
+**Residual:** when Google's bbox-bias parameter causes the API to return a Chicago coordinate for an out-of-state query (e.g., "Huntington WV" mapped to 41.88, -87.63 in our local cache), this fix can't catch it — the cached coord is in-bbox. Tightening the bias and/or cache invalidation would be a follow-up.
+
+---
+
+## Tighten geocoder fuzzy-match threshold
+**Type:** Bolt-On | **Area:** Backend | **Shipped:** 2026-05-05
+
+The fuzzy-match step in `resolve_location()` is now guarded by an explicit regression test set, locking in the calibrated `_FUZZY_THRESHOLD = 0.95` value. Previously the threshold sat in [backend/geocoding.py](backend/geocoding.py) without test coverage, so a future tweak could have silently re-admitted false-positive matches like "huntington" → "uptown" or rejected legitimate typos like "broonzeville" → "bronzeville".
+
+- 8 new tests in `TestFuzzyMatchRegression` (in [backend/tests/test_main.py](backend/tests/test_main.py)) covering the canonical set:
+  - **Negatives:** `huntington`, `huntington wv`, `times square`, `pilsn` must NOT fuzzy-match.
+  - **Positives:** `wriggleyville` → wrigleyville, `logn square` → logan square, `broonzeville` → bronzeville must match.
+  - **Abbreviation path:** `Logan Sq` resolves end-to-end via `_normalize_street_abbr` (not fuzzy), documenting that abbreviations don't depend on the fuzzy threshold.
+- Comment added to `_FUZZY_THRESHOLD` calling out the calibration window (0.94 admits false positives; 0.96 rejects legitimate typos).
+
+---
+
+## Cache + back off on Google Maps 429s
+**Type:** Bolt-On | **Area:** Backend + Frontend | **Shipped:** 2026-05-05
+
+A circuit breaker now fronts the Google Geocoding API. When Google returns HTTP 429 or API status `OVER_QUERY_LIMIT`, the breaker opens for an exponentially-increasing cool-off (60s → 120s → 240s, capped at 300s). During the cool-off, `geocode_google()` raises `GeocoderDegradedError` without making a network call; `main.py` converts that to HTTP 503 with `{"message": "The geocoding service is overloaded — try a Chicago neighborhood name (e.g., 'Wrigleyville') instead."}`. The first call after cool-off is a probe — success closes the breaker and resets the backoff; another 429 doubles it.
+
+The first two layers from the spec (aggressive cache writes, in-memory dict fronting the file cache) were already in place — `_geocode_cache` is checked at the top of `geocode_google` before any network I/O, and disk writes are batched every 50 entries with an `atexit` flusher. No additional `lru_cache` was needed.
+
+**Backend:**
+- New `GeocoderDegradedError` exception in [backend/geocoding.py](backend/geocoding.py).
+- Module-level breaker state (`_circuit_open_until`, `_circuit_consecutive_trips`) guarded by `_circuit_lock`.
+- Helpers `_circuit_is_open`, `_circuit_trip_429`, `_circuit_record_success`, plus a `_circuit_reset_for_test` hook for the test suite.
+- Cached results bypass the breaker (cache hits are free).
+- Neighborhood-name queries continue to succeed during cool-off because they short-circuit before reaching `geocode_google`.
+
+**Frontend:**
+- `fetchRoute` in [frontend/src/App.jsx](frontend/src/App.jsx) now reads `detail.message` from the response body for 429 *and* 503, so the breaker's structured friendly message reaches the user. Hardcoded "rate-limited" copy is the fallback when no body is present.
+
+**Tests:** 5 new cases in `TestGeocoderCircuitBreaker` covering: 429 trips the breaker; subsequent uncached calls skip the network entirely; neighborhood queries still resolve while degraded; probe-after-cooloff success closes the breaker; end-to-end `/route` returns HTTP 503 with the friendly message.
 
 ---
 

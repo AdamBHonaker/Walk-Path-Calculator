@@ -44,8 +44,8 @@ describe("motivationMessage", () => {
   });
 
   it("returns serious-steps message for 4000–6999 steps", () => {
-    expect(motivationMessage(4000)).toMatch(/serious steps/i);
-    expect(motivationMessage(6999)).toMatch(/serious steps/i);
+    expect(motivationMessage(4000)).toMatch(/serious walk/i);
+    expect(motivationMessage(6999)).toMatch(/serious walk/i);
   });
 
   it("returns almost-full-day message for 7000–9999 steps", () => {
@@ -54,8 +54,8 @@ describe("motivationMessage", () => {
   });
 
   it("returns over-10k message for 10000+ steps", () => {
-    expect(motivationMessage(10000)).toMatch(/10,000 steps/i);
-    expect(motivationMessage(15000)).toMatch(/10,000 steps/i);
+    expect(motivationMessage(10000)).toMatch(/ten thousand/i);
+    expect(motivationMessage(15000)).toMatch(/ten thousand/i);
   });
 });
 
@@ -75,19 +75,19 @@ describe("calorieEquivalent", () => {
   });
 
   it("picks exact match for banana at 90 cal", () => {
-    expect(calorieEquivalent(90)).toBe("≈ 1 banana");
+    expect(calorieEquivalent(90)).toBe("≈ 1 banana, returned to the day.");
   });
 
   it("picks half a banana for 45 cal", () => {
-    expect(calorieEquivalent(45)).toBe("≈ half a banana");
+    expect(calorieEquivalent(45)).toBe("≈ half a banana, returned to the day.");
   });
 
   it("uses plural for 2+ items", () => {
-    expect(calorieEquivalent(180)).toBe("≈ 2 bananas");
+    expect(calorieEquivalent(180)).toBe("≈ 2 bananas, returned to the day.");
   });
 
   it("picks exact match for can of soda at 150 cal", () => {
-    expect(calorieEquivalent(150)).toBe("≈ 1 can of soda");
+    expect(calorieEquivalent(150)).toBe("≈ 1 can of soda, returned to the day.");
   });
 });
 
@@ -130,17 +130,17 @@ describe("height-to-inches conversion in App", () => {
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
 
-    // Open height picker and select 5 ft 9 in
-    const heightToggle = screen.getByRole("button", { name: /add your height/i });
-    await user.click(heightToggle);
+    // Open the Personalize modal and select 5 ft 9 in
+    await user.click(screen.getByRole("button", { name: /add your particulars/i }));
 
     const ftSelect = screen.getByRole("combobox", { name: /height feet/i });
     const inSelect = screen.getByRole("combobox", { name: /height inches/i });
     await user.selectOptions(ftSelect, "5");
     await user.selectOptions(inSelect, "9");
 
-    // Submit
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    // Close modal and submit
+    await user.click(screen.getByRole("button", { name: /keep these particulars/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
 
@@ -173,7 +173,7 @@ describe("height-to-inches conversion in App", () => {
     await user.type(fromInput, "Lincoln Park");
     await user.type(toInput, "River North");
 
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
 
@@ -208,7 +208,7 @@ describe("handleSubmit error handling", () => {
     const [fromInput, toInput] = screen.getAllByRole("searchbox");
     await user.type(fromInput, "Nowhere");
     await user.type(toInput, "Somewhere");
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("Origin not found in Chicago")
@@ -224,7 +224,7 @@ describe("handleSubmit error handling", () => {
     const [fromInput, toInput] = screen.getAllByRole("searchbox");
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() =>
       expect(screen.getByRole("alert")).toHaveTextContent("Failed to fetch")
@@ -283,7 +283,7 @@ describe("animated route drawing", () => {
     const [fromInput, toInput] = screen.getAllByRole("searchbox");
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     // Unlock map button appears only when result != null — proves markers rendered
     // synchronously without waiting for any RAF callback to fire
@@ -305,7 +305,7 @@ describe("animated route drawing", () => {
     const [fromInput, toInput] = screen.getAllByRole("searchbox");
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /unlock map/i })).toBeInTheDocument()
@@ -369,17 +369,15 @@ describe("WeightInput sends weight_kg in kg", () => {
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
 
-    // Open weight input and enter 154 lbs
-    const weightToggle = screen.getByRole("button", {
-      name: /add your weight for personalized calories/i,
-    });
-    await user.click(weightToggle);
+    // Open the Personalize modal and enter 154 lbs
+    await user.click(screen.getByRole("button", { name: /add your particulars/i }));
 
     const weightInput = screen.getByRole("spinbutton", { name: /weight in pounds/i });
     await user.clear(weightInput);
     await user.type(weightInput, "154");
 
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /keep these particulars/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
 
@@ -397,7 +395,7 @@ describe("WeightInput sends weight_kg in kg", () => {
     await user.type(fromInput, "Lincoln Park");
     await user.type(toInput, "River North");
 
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
 
@@ -470,7 +468,7 @@ describe("URL-Encoded Route Sharing", () => {
     const [fromInput, toInput] = screen.getAllByRole("searchbox");
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
 
@@ -489,12 +487,12 @@ describe("URL-Encoded Route Sharing", () => {
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
 
-    const heightToggle = screen.getByRole("button", { name: /add your height/i });
-    await user.click(heightToggle);
+    await user.click(screen.getByRole("button", { name: /add your particulars/i }));
     await user.selectOptions(screen.getByRole("combobox", { name: /height feet/i }), "5");
     await user.selectOptions(screen.getByRole("combobox", { name: /height inches/i }), "9");
+    await user.click(screen.getByRole("button", { name: /keep these particulars/i }));
 
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
     await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
 
     const params = new URLSearchParams(window.location.search);
@@ -816,7 +814,7 @@ describe("alternative route flavor tabs", () => {
     const [fromInput, toInput] = screen.getAllByRole("searchbox");
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
-    await user.click(screen.getByRole("button", { name: /get walking route/i }));
+    await user.click(screen.getByRole("button", { name: /commence the journey/i }));
     await waitFor(() => expect(screen.getByRole("tab", { name: /Fastest/i })).toBeInTheDocument());
   }
 

@@ -1,0 +1,100 @@
+/* ============================================================
+   WAYFARER — Themes
+   ------------------------------------------------------------
+   Three theme variants beyond the default cream.
+
+   Activate by setting a class on <html> or any container:
+     <html class="theme-dusk">    — deep ink, lamplit
+     <html class="theme-vellum">  — bone-white, delicate
+     <html class="theme-field">   — cool grey-greens, outdoor
+
+   Tokens cascade — most components retune automatically.
+   ============================================================ */
+
+/* ── DUSK — deep ink, warmer ember and gilt ──────────────── */
+.theme-dusk {
+  --paper:        #1c1813;
+  --paper-deep:   #14110d;
+  --paper-bright: #25201a;
+
+  --ink:          #f0e6d2;
+  --ink-soft:     #c8bba0;
+  --mute:         #908269;
+  --mute-fog:     #4a4135;
+
+  --ember:    #d96a3e;   /* lamplight ember — warmer than rust */
+  --harbor:   #6e9bbf;   /* moonlit harbor */
+  --field:    #6fa86a;
+  --gilt:     #e0b35a;
+
+  --mist:  #2c4250;
+  --moss:  #2f4034;
+}
+
+.theme-dusk .paper-grain {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(rgba(240,230,210,0.04) 1px, transparent 1px),
+    radial-gradient(rgba(240,230,210,0.025) 1px, transparent 1px);
+}
+.theme-dusk .paper-grain.paper-bright {
+  background-color: var(--paper-bright);
+  background-image: radial-gradient(rgba(240,230,210,0.05) 1px, transparent 1px);
+}
+.theme-dusk .wf-lamp {
+  box-shadow: 0 0 8px var(--ember), 0 0 0 1.5px var(--paper);
+}
+
+/* ── VELLUM — bone-white, more delicate ──────────────────── */
+.theme-vellum {
+  --paper:        #faf6ec;
+  --paper-deep:   #f0ead9;
+  --paper-bright: #fffdf6;
+
+  --ink:          #2a241c;
+  --ink-soft:     #5d513f;
+  --mute:         #8a7c66;
+  --mute-fog:     #c4b89e;
+
+  --ember:    #b54730;
+  --harbor:   #2d627d;
+  --field:    #2f7a48;
+  --gilt:     #c89538;
+
+  --mist:  #dde7eb;
+  --moss:  #d8ddd1;
+}
+
+.theme-vellum .paper-grain {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(rgba(42,36,28,0.025) 1px, transparent 1px),
+    radial-gradient(rgba(42,36,28,0.015) 1px, transparent 1px);
+}
+
+/* ── FIELD — cool grey-greens, outdoor ───────────────────── */
+.theme-field {
+  --paper:        #e6e7df;
+  --paper-deep:   #d6d8cb;
+  --paper-bright: #f1f2eb;
+
+  --ink:          #1a221c;
+  --ink-soft:     #3e4a3f;
+  --mute:         #6b7a6c;
+  --mute-fog:     #a3ad9f;
+
+  --ember:    #a93b22;
+  --harbor:   #225772;
+  --field:    #2c6b3d;
+  --gilt:     #aa8127;
+
+  --mist:  #c2d2d6;
+  --moss:  #b9c4ad;
+}
+
+.theme-field .paper-grain {
+  background-color: var(--paper);
+  background-image:
+    radial-gradient(rgba(26,34,28,0.04) 1px, transparent 1px),
+    radial-gradient(rgba(26,34,28,0.025) 1px, transparent 1px);
+}

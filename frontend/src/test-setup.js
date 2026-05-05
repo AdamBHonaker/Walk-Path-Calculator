@@ -29,6 +29,12 @@ vi.mock("maplibre-gl", () => ({
       getCanvas() { return null; }
       setPaintProperty() {}
     },
+    Marker: class {
+      constructor() {}
+      setLngLat() { return this; }
+      addTo() { return this; }
+      remove() {}
+    },
   },
 }));
 

@@ -1,5 +1,5 @@
 """
-Location geocoding for Walk-Path-Calculator.
+Location geocoding for Passage.
 
 Resolution order for any query:
   1. Exact match against NEIGHBORHOOD_COORDS (instant, no network)
@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import threading
+import time
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
@@ -29,7 +30,83 @@ def _redact(query: str) -> str:
 
 import requests
 
-from utils import CHICAGO_BBOX_GOOGLE, CHICAGO_SOUTH, CHICAGO_NORTH, CHICAGO_WEST, CHICAGO_EAST, haversine_miles
+from utils import (
+    CHICAGO_BBOX_GOOGLE,
+    chicago_bbox_contains,
+    haversine_miles,
+)
+
+
+class LocationOutsideChicagoError(Exception):
+    """Raised when `resolve_location` finds real coordinates that fall outside
+    Chicago's bbox. Distinct from a None return (which means "not found")."""
+
+    def __init__(self, query: str, coords: "tuple[float, float]"):
+        super().__init__(f"{query!r} resolved to {coords}, outside Chicago bbox")
+        self.query = query
+        self.coords = coords
+
+
+class GeocoderDegradedError(Exception):
+    """Raised when the Google geocoder has recently returned 429 and the
+    circuit breaker is open. Neighborhood-name queries do not trip this —
+    only queries that would need to hit Google."""
+
+    DEFAULT_MESSAGE = (
+        "The geocoding service is overloaded — try a Chicago neighborhood "
+        "name (e.g., 'Wrigleyville') instead."
+    )
+
+
+# ── Circuit breaker for Google 429s ───────────────────────────────────────
+# When Google returns HTTP 429 (or API status OVER_QUERY_LIMIT), open the
+# breaker for an exponentially-increasing cool-off (60s → 120s → 240s, capped
+# at 5 min). During cool-off, `geocode_google` raises GeocoderDegradedError
+# without making a network call. The first call after cool-off is a probe;
+# success closes the breaker and resets backoff.
+_CIRCUIT_INITIAL_COOLOFF_S: float = 60.0
+_CIRCUIT_MAX_COOLOFF_S: float = 300.0
+_circuit_open_until: float = 0.0
+_circuit_consecutive_trips: int = 0
+_circuit_lock = threading.Lock()
+
+
+def _circuit_is_open() -> bool:
+    return time.time() < _circuit_open_until
+
+
+def _circuit_trip_429() -> None:
+    """Record a 429; open the breaker with exponential backoff."""
+    global _circuit_open_until, _circuit_consecutive_trips
+    with _circuit_lock:
+        _circuit_consecutive_trips += 1
+        cooloff = min(
+            _CIRCUIT_INITIAL_COOLOFF_S * (2 ** (_circuit_consecutive_trips - 1)),
+            _CIRCUIT_MAX_COOLOFF_S,
+        )
+        _circuit_open_until = time.time() + cooloff
+        logger.warning(
+            "Google geocoder 429 — circuit breaker open for %.0fs (trip=%d)",
+            cooloff, _circuit_consecutive_trips,
+        )
+
+
+def _circuit_record_success() -> None:
+    """Close the breaker after a successful probe."""
+    global _circuit_open_until, _circuit_consecutive_trips
+    with _circuit_lock:
+        if _circuit_consecutive_trips > 0:
+            logger.info("Google geocoder recovered — circuit breaker closed")
+        _circuit_open_until = 0.0
+        _circuit_consecutive_trips = 0
+
+
+def _circuit_reset_for_test() -> None:
+    """Test-only: force the breaker back to closed/zero state."""
+    global _circuit_open_until, _circuit_consecutive_trips
+    with _circuit_lock:
+        _circuit_open_until = 0.0
+        _circuit_consecutive_trips = 0
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +115,10 @@ _GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
 _GEOCODE_CACHE_PATH = Path(__file__).parent / "geocode_cache.json"
 _geocode_lock = threading.Lock()
+# Serializes disk writes so a background flush triggered while another is
+# still serializing can't race on tmp+rename. Distinct from `_geocode_lock`
+# (which guards the in-memory dict) to avoid blocking request threads on I/O.
+_geocode_write_lock = threading.Lock()
 _http_session = requests.Session()
 
 _geocode_unsaved: int = 0      # entries added since last write
@@ -63,36 +144,65 @@ def _load_geocode_cache() -> dict:
 
 
 def _save_geocode_cache(cache: dict) -> None:
-    tmp = _GEOCODE_CACHE_PATH.with_suffix(".tmp")
-    try:
-        tmp.write_text(
-            json.dumps(
-                {k: list(v) if isinstance(v, tuple) else v for k, v in cache.items()},
-                ensure_ascii=False, separators=(",", ":"),
-            ),
-            encoding="utf-8",
-        )
-        tmp.replace(_GEOCODE_CACHE_PATH)
-    except Exception as exc:
-        logger.error("Could not save geocode cache: %s", exc)
+    """Serialize and atomically write `cache` to disk. Safe to call from a
+    background thread; serialized via `_geocode_write_lock` so concurrent
+    flushes don't race on the tmp file.
+    """
+    with _geocode_write_lock:
+        # Merge-on-write: under multi-worker deploys each process holds its own
+        # copy of _geocode_cache, so plain last-writer-wins would discard entries
+        # other workers learned. Re-read the on-disk snapshot and union it with
+        # our cache (in-memory wins on conflict) before serializing.
+        merged = cache
+        if _GEOCODE_CACHE_PATH.exists():
+            try:
+                disk = _load_geocode_cache()
+                if disk:
+                    merged = {**disk, **cache}
+            except Exception as exc:
+                logger.warning("Could not merge existing geocode cache: %s", exc)
+        tmp = _GEOCODE_CACHE_PATH.with_suffix(".tmp")
+        try:
+            tmp.write_text(
+                json.dumps(
+                    {k: list(v) if isinstance(v, tuple) else v for k, v in merged.items()},
+                    ensure_ascii=False, separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            tmp.replace(_GEOCODE_CACHE_PATH)
+        except Exception as exc:
+            logger.error("Could not save geocode cache: %s", exc)
 
 
 _geocode_cache: dict = _load_geocode_cache()
 
 
 def _flush_geocode_if_needed() -> None:
-    """Increment unsaved counter and write cache every _GEOCODE_SAVE_EVERY entries."""
+    """Increment unsaved counter and asynchronously write cache every
+    _GEOCODE_SAVE_EVERY entries. Always called while `_geocode_lock` is held,
+    so the snapshot is consistent. The disk write happens off-thread so request
+    latency doesn't grow with cache size.
+    """
     global _geocode_unsaved
     _geocode_unsaved += 1
     if _geocode_unsaved >= _GEOCODE_SAVE_EVERY:
-        _save_geocode_cache(_geocode_cache)
+        snapshot = dict(_geocode_cache)
         _geocode_unsaved = 0
+        threading.Thread(
+            target=_save_geocode_cache, args=(snapshot,), daemon=True,
+        ).start()
 
 
 @_atexit.register
 def _flush_geocode_on_exit() -> None:
     if _geocode_unsaved > 0:
-        _save_geocode_cache(_geocode_cache)
+        # Snapshot under the read lock so we don't iterate a dict another
+        # thread is mutating; the write lock then waits on any in-flight
+        # background flush, ensuring this final write goes last.
+        with _geocode_lock:
+            snapshot = dict(_geocode_cache)
+        _save_geocode_cache(snapshot)
 
 
 # ---------------------------------------------------------------------------
@@ -370,6 +480,10 @@ def _normalize_street_abbr(query: str) -> str:
 _FUZZY_STOP_WORDS: frozenset[str] = frozenset(
     {"the", "of", "a", "an", "and", "at", "in", "on", "chicago"}
 )
+# 0.95 is calibrated against the regression set in test_main.py
+# `TestFuzzyMatchRegression`. Letting it slip below 0.94 starts admitting
+# false positives like "huntington" → "uptown" (the Bolt-On B bug); above
+# 0.96 starts rejecting legitimate typos like "broonzeville" → "bronzeville".
 _FUZZY_THRESHOLD = 0.95
 
 
@@ -428,6 +542,9 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
     Geocode a free-text query using Google Maps API, biased to Chicago.
     Results are cached in-memory and persisted to geocode_cache.json.
     Returns None if GOOGLE_MAPS_API_KEY is not set or geocoding fails.
+
+    Raises `GeocoderDegradedError` when the circuit breaker is open
+    (recent 429 from Google). Cached results bypass the breaker.
     """
     if query in _geocode_cache:
         return _geocode_cache[query]
@@ -440,6 +557,10 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
             return None
     # Lock released here — network I/O happens without holding the lock so
     # concurrent uncached queries don't serialise behind each other's round-trip.
+
+    # Circuit breaker check: skip network call entirely while degraded.
+    if _circuit_is_open():
+        raise GeocoderDegradedError(GeocoderDegradedError.DEFAULT_MESSAGE)
 
     # Statuses that represent a definitive negative answer or a persistent
     # configuration failure — caching None for these prevents the same bad
@@ -461,16 +582,31 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
             },
             timeout=5,
         )
-        data = resp.json()
-        if data.get("status") == "OK" and data.get("results"):
+        # 429 / OVER_QUERY_LIMIT trips the breaker. Tested both paths: Google
+        # may return the API-status alone (HTTP 200 with status=OVER_QUERY_LIMIT)
+        # or both together (HTTP 429 + status=OVER_QUERY_LIMIT).
+        data = resp.json() if resp.content else {}
+        api_status = data.get("status")
+        if resp.status_code == 429 or api_status == "OVER_QUERY_LIMIT":
+            _circuit_trip_429()
+            raise GeocoderDegradedError(GeocoderDegradedError.DEFAULT_MESSAGE)
+
+        if api_status == "OK" and data.get("results"):
             loc = data["results"][0]["geometry"]["location"]
             coords = (float(loc["lat"]), float(loc["lng"]))
             logger.info("Geocoded %s → %s", _redact(query), coords)
+            _circuit_record_success()
         else:
-            status = data.get("status")
-            logger.warning("Google returned status '%s' for %s", status, _redact(query))
-            if status in _PERSISTENT_FAILURE_STATUSES:
+            logger.warning("Google returned status '%s' for %s", api_status, _redact(query))
+            if api_status in _PERSISTENT_FAILURE_STATUSES:
                 cache_negative = True
+            # Any non-error API status is also a successful probe (the breaker
+            # cares about 429/OVER_QUERY_LIMIT, not about whether we found a
+            # match). Reset only if currently tripped to avoid pointless writes.
+            if api_status:
+                _circuit_record_success()
+    except GeocoderDegradedError:
+        raise
     except Exception as exc:
         logger.error("Google geocoding failed for %s: %s", _redact(query), exc)
 
@@ -499,14 +635,24 @@ def resolve_location(query: str) -> "tuple[float, float] | None":
 
     Tries in order: coordinate pair → exact neighborhood match → fuzzy match → Google Maps.
     Returns None if all fail.
+
+    Raises `LocationOutsideChicagoError` when a path resolves to real coordinates
+    that fall outside Chicago's bbox — e.g., Google geocoded "Huntington WV" to
+    its real location, or the user typed an explicit lat/lon outside Chicago.
+    Callers convert this to an HTTP 422 with a structured "not in Chicago" error.
     """
-    # Fast path: already a coordinate pair (e.g. from pick-on-map)
+    coords = _resolve_location_inner(query)
+    if coords is not None and not chicago_bbox_contains(*coords):
+        raise LocationOutsideChicagoError(query, coords)
+    return coords
+
+
+def _resolve_location_inner(query: str) -> "tuple[float, float] | None":
+    # Fast path: already a coordinate pair (e.g. from pick-on-map). The bbox
+    # check in `resolve_location` will reject pairs outside Chicago.
     m = _COORD_RE.match(query)
     if m:
-        lat, lon = float(m.group(1)), float(m.group(2))
-        if CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST:
-            return lat, lon
-        return None
+        return float(m.group(1)), float(m.group(2))
 
     q = query.strip().lower()
     q = _normalize_street_abbr(q)
@@ -613,8 +759,10 @@ def reverse_geocode_point(lat: float, lon: float) -> dict:
         else:
             result = {"label": f"{lat:.5f}, {lon:.5f}", "source": "coordinates"}
 
-    # 4. Write result under lock
-    with _geocode_lock:
-        _geocode_cache[cache_key] = result
-        _flush_geocode_if_needed()
+    # 4. Write result under lock — but skip the "coordinates" fallback so a
+    # transient Google failure doesn't permanently poison this lat/lon.
+    if result["source"] != "coordinates":
+        with _geocode_lock:
+            _geocode_cache[cache_key] = result
+            _flush_geocode_if_needed()
     return result

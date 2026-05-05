@@ -1,5 +1,9 @@
-export const WALK_PATH_COLOR  = "#2d7a3e";
-export const TURN_COLOR_ACTIVE = "#4caf77";
+// Wayfarer palette: ink for the route line, ember for the active turn.
+// Kept in sync with src/wayfarer/tokens.css so MapLibre paint values match
+// the rest of the design system. The share card overrides via the
+// `routeColor` parameter on renderWalkRoute().
+export const WALK_PATH_COLOR  = "#171310"; // var(--ink)
+export const TURN_COLOR_ACTIVE = "#9c2a1a"; // var(--ember)
 
 // Shared map defaults — used by both MapView and RouteCard so the two
 // renderings can never drift on tile provider or default framing.
@@ -69,7 +73,46 @@ function trackLayer(map, cfg, layerIds) {
   layerIds.push(cfg.id);
 }
 
-export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerIds, sourceIds, fitPadding = 60) {
+// Upsert a GeoJSON source: if it already exists, update its data via setData;
+// otherwise create and track it. Lets repeat renders reuse the GPU buffer
+// instead of tearing the source down and rebuilding it from scratch.
+function upsertGeoSource(map, id, data, sourceIds) {
+  const existing = map.getSource?.(id);
+  if (existing && typeof existing.setData === "function") {
+    existing.setData(data);
+    if (!sourceIds.includes(id)) sourceIds.push(id);
+    return;
+  }
+  trackSource(map, id, { type: "geojson", data }, sourceIds);
+}
+
+function ensureLayer(map, cfg, layerIds) {
+  if (map.getLayer?.(cfg.id)) {
+    if (!layerIds.includes(cfg.id)) layerIds.push(cfg.id);
+    return;
+  }
+  trackLayer(map, cfg, layerIds);
+}
+
+// Drop a source (and its dependent layer ids) if it was previously tracked.
+// Used when a previous render created e.g. walk-stops for a multi-stop route
+// and the new render is 2-stop, so the leftover source must be cleaned up.
+function dropTracked(map, ids, sourceIds, layerIds) {
+  for (const id of ids) {
+    const layerIdx = layerIds.indexOf(id);
+    if (layerIdx >= 0) {
+      try { map.removeLayer(id); } catch { /* already gone */ }
+      layerIds.splice(layerIdx, 1);
+    }
+    const sourceIdx = sourceIds.indexOf(id);
+    if (sourceIdx >= 0) {
+      try { map.removeSource(id); } catch { /* already gone */ }
+      sourceIds.splice(sourceIdx, 1);
+    }
+  }
+}
+
+export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerIds, sourceIds, fitPadding = 60, routeColor = WALK_PATH_COLOR, drawEndpointDots = true) {
   if (!result?.path?.length) return;
 
   const { path, origin_coords, dest_coords } = result;
@@ -88,31 +131,35 @@ export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerI
   }
   const bounds = [[minLon, minLat], [maxLon, maxLat]];
 
-  trackSource(map, "walk-path", {
-    type: "geojson",
-    data: { type: "Feature", geometry: { type: "LineString", coordinates: geoPath } },
-  }, sourceIds);
-  trackLayer(map, {
+  upsertGeoSource(
+    map, "walk-path",
+    { type: "Feature", geometry: { type: "LineString", coordinates: geoPath } },
+    sourceIds,
+  );
+  ensureLayer(map, {
     id: "walk-path-line", type: "line", source: "walk-path",
     layout: { "line-cap": "round", "line-join": "round" },
-    paint: { "line-color": WALK_PATH_COLOR, "line-width": 4 },
+    paint: { "line-color": routeColor, "line-width": 4 },
   }, layerIds);
 
   if (turnCoords?.length) {
-    trackSource(map, "walk-turns", {
-      type: "geojson",
-      data: buildTurnsGeoJson(turnCoords, activeTurnIndex),
-    }, sourceIds);
-    trackLayer(map, {
+    upsertGeoSource(
+      map, "walk-turns",
+      buildTurnsGeoJson(turnCoords, activeTurnIndex),
+      sourceIds,
+    );
+    ensureLayer(map, {
       id: "walk-turns-circle", type: "circle", source: "walk-turns",
       paint: {
         "circle-radius":       ["case", ["get", "active"], 8, 5],
-        "circle-color":        ["case", ["get", "active"], TURN_COLOR_ACTIVE, WALK_PATH_COLOR],
+        "circle-color":        ["case", ["get", "active"], TURN_COLOR_ACTIVE, routeColor],
         "circle-stroke-width": 2,
         "circle-stroke-color": "#ffffff",
         "circle-opacity":      ["case", ["get", "active"], 1, 0.75],
       },
     }, layerIds);
+  } else {
+    dropTracked(map, ["walk-turns-circle", "walk-turns"], sourceIds, layerIds);
   }
 
   // Numbered markers for intermediate stops (multi-stop routes only).
@@ -123,20 +170,21 @@ export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerI
       properties: { label: String(i + 1) },
       geometry: { type: "Point", coordinates: toGeo(c) },
     }));
-    trackSource(map, "walk-stops", {
-      type: "geojson",
-      data: { type: "FeatureCollection", features: intermediates },
-    }, sourceIds);
-    trackLayer(map, {
+    upsertGeoSource(
+      map, "walk-stops",
+      { type: "FeatureCollection", features: intermediates },
+      sourceIds,
+    );
+    ensureLayer(map, {
       id: "walk-stops-circle", type: "circle", source: "walk-stops",
       paint: {
         "circle-radius": 11,
-        "circle-color": WALK_PATH_COLOR,
+        "circle-color": routeColor,
         "circle-stroke-width": 2,
         "circle-stroke-color": "#ffffff",
       },
     }, layerIds);
-    trackLayer(map, {
+    ensureLayer(map, {
       id: "walk-stops-label", type: "symbol", source: "walk-stops",
       layout: {
         "text-field": ["get", "label"],
@@ -147,36 +195,44 @@ export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerI
         "text-color": "#ffffff",
       },
     }, layerIds);
+  } else {
+    dropTracked(map, ["walk-stops-label", "walk-stops-circle", "walk-stops"], sourceIds, layerIds);
   }
 
-  if (origin_coords) {
+  if (drawEndpointDots && origin_coords) {
     const pt = toGeo(origin_coords);
-    trackSource(map, "walk-origin", {
-      type: "geojson",
-      data: { type: "Feature", geometry: { type: "Point", coordinates: pt } },
-    }, sourceIds);
-    trackLayer(map, {
+    upsertGeoSource(
+      map, "walk-origin",
+      { type: "Feature", geometry: { type: "Point", coordinates: pt } },
+      sourceIds,
+    );
+    ensureLayer(map, {
       id: "walk-origin-circle", type: "circle", source: "walk-origin",
       paint: {
-        "circle-radius": 9, "circle-color": WALK_PATH_COLOR,
+        "circle-radius": 9, "circle-color": routeColor,
         "circle-stroke-width": 2, "circle-stroke-color": "#ffffff",
       },
     }, layerIds);
+  } else if (!drawEndpointDots) {
+    dropTracked(map, ["walk-origin-circle", "walk-origin"], sourceIds, layerIds);
   }
 
-  if (dest_coords) {
+  if (drawEndpointDots && dest_coords) {
     const pt = toGeo(dest_coords);
-    trackSource(map, "walk-dest", {
-      type: "geojson",
-      data: { type: "Feature", geometry: { type: "Point", coordinates: pt } },
-    }, sourceIds);
-    trackLayer(map, {
+    upsertGeoSource(
+      map, "walk-dest",
+      { type: "Feature", geometry: { type: "Point", coordinates: pt } },
+      sourceIds,
+    );
+    ensureLayer(map, {
       id: "walk-dest-circle", type: "circle", source: "walk-dest",
       paint: {
-        "circle-radius": 9, "circle-color": "#1a1a1a",
+        "circle-radius": 9, "circle-color": routeColor,
         "circle-stroke-width": 2, "circle-stroke-color": "#ffffff",
       },
     }, layerIds);
+  } else if (!drawEndpointDots) {
+    dropTracked(map, ["walk-dest-circle", "walk-dest"], sourceIds, layerIds);
   }
 
   if (geoPath.length > 0) {

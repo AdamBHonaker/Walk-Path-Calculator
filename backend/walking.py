@@ -94,6 +94,49 @@ _kdtree_to_vertex: "np.ndarray | None" = None
 _graph_load_failed: bool = False
 _flavor_weights: dict[str, list[float]] = {}
 
+# Per-edge attribute columns, normalized once at graph load. igraph stores
+# attributes column-wise internally; bulk reads avoid per-edge Python↔igraph
+# crossings during routing. All lists are indexed by edge id and stay in sync
+# with the post-filter graph.
+_edge_names:      "list[str]   | None" = None
+_edge_highways:   "list[str]   | None" = None
+_edge_footways:   "list[str]   | None" = None
+_edge_lengths:    "list[float] | None" = None
+_edge_geometries: "list        | None" = None
+
+# Cache of weight vectors used by routing variants that layer extra penalties
+# on top of a flavor (currently only avoid_stairs). Keyed by (flavor, variant).
+_combined_weights: dict[tuple[str, str], list[float]] = {}
+
+
+def _normalize_edge_str(v) -> str:
+    """Match `_edge_attr` semantics for a single bulk-read attribute value."""
+    if isinstance(v, list):
+        return v[0] if v else ""
+    return v or ""
+
+
+def _populate_edge_caches(G: "ig.Graph") -> None:
+    """Materialize per-edge attribute columns once after the graph is loaded
+    and service edges are filtered. Subsequent routing reads index these lists
+    instead of doing per-edge igraph attribute lookups."""
+    global _edge_names, _edge_highways, _edge_footways, _edge_lengths, _edge_geometries
+    n = G.ecount()
+    attrs = G.es.attributes()
+    raw_names    = G.es["name"]     if "name"     in attrs else [""]   * n
+    raw_highways = G.es["highway"]  if "highway"  in attrs else [""]   * n
+    raw_footways = G.es["footway"]  if "footway"  in attrs else [""]   * n
+    raw_lengths  = G.es["length"]   if "length"   in attrs else [0.0]  * n
+    raw_geoms    = G.es["geometry"] if "geometry" in attrs else [None] * n
+    _edge_names      = [_normalize_edge_str(v) for v in raw_names]
+    _edge_highways   = [_normalize_edge_str(v) for v in raw_highways]
+    _edge_footways   = [_normalize_edge_str(v) for v in raw_footways]
+    _edge_lengths    = [float(v) if v else 0.0 for v in raw_lengths]
+    _edge_geometries = list(raw_geoms)
+    # Invalidate any cached weight vectors derived from a prior graph load.
+    _flavor_weights.clear()
+    _combined_weights.clear()
+
 
 def _parse_geometry_inplace(G: ig.Graph) -> None:
     """Convert geometry WKT strings to coordinate lists [(lon, lat), ...] in-place."""
@@ -192,6 +235,7 @@ def _load_graph() -> "ig.Graph | None":
             logger.warning("Snapping restricted to giant component (%s of %s vertices, %s orphans excluded)", f"{len(valid_idx):,}", f"{G.vcount():,}", f"{orphans:,}")
         _kdtree_to_vertex = valid_idx
         _coord_kdtree = cKDTree(np.column_stack([lons[valid_idx], lats[valid_idx]]))
+        _populate_edge_caches(G)
         _graph_cache = G
 
     return _graph_cache
@@ -229,18 +273,18 @@ def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "list[float] | str":
     if flavor == "fastest":
         return "length"
 
-    weights: list[float] = []
+    lengths = _edge_lengths
+    if lengths is None:
+        return "length"
+
     if flavor == "fewest_turns":
-        for e in G.es:
-            weights.append((e["length"] or 0.0) + _TURN_PENALTY_M)
-        return weights
+        return [L + _TURN_PENALTY_M for L in lengths]
     if flavor == "greenest":
-        has_highway = "highway" in G.es.attributes()
-        for e in G.es:
-            length = e["length"] or 0.0
-            hw = _edge_attr(e.attributes(), "highway") if has_highway else ""
-            weights.append(length * _GREEN_DISCOUNT if hw in _GREEN_HIGHWAYS else length)
-        return weights
+        highways = _edge_highways or [""] * len(lengths)
+        return [
+            L * _GREEN_DISCOUNT if h in _GREEN_HIGHWAYS else L
+            for L, h in zip(lengths, highways)
+        ]
 
     return "length"
 
@@ -329,11 +373,62 @@ def _build_minutes(
         if path is None:
             raise RuntimeError("path unavailable")
         _, epath = path
-        length_m = sum(G.es[e]["length"] or 0.0 for e in epath)
+        lengths = _edge_lengths
+        if lengths is not None:
+            length_m = sum(lengths[e] for e in epath)
+        else:
+            length_m = sum(G.es[e]["length"] or 0.0 for e in epath)
         return round(length_m / WALKING_SPEED_MPS / 60, 1)
     except Exception as e:
         logger.warning("walk_minutes fallback: %s: %s", type(e).__name__, e)
         return _haversine_walk_minutes(origin_lat, origin_lon, dest_lat, dest_lon)
+
+
+def _path_coords_from_path(vpath: tuple, epath: tuple) -> tuple:
+    """Build the same coordinate sequence as `_build_path` from a known vpath/epath.
+
+    Reads geometry from the cached `_edge_geometries` column, falling back to
+    direct igraph access only when the cache is unavailable.
+    """
+    if len(vpath) < 2:
+        return ()
+
+    geoms = _edge_geometries
+    if geoms is None:
+        G = _load_graph()
+        if G is None:
+            return ()
+
+    result_coords: list[tuple[float, float]] = []
+    for eid, u, v in zip(epath, vpath, vpath[1:]):
+        geom_coords = geoms[eid] if geoms is not None else G.es[eid]["geometry"]
+
+        if geom_coords:
+            u_lon = _vertex_lons[u]
+            u_lat = _vertex_lats[u]
+            du_start = (geom_coords[0][0] - u_lon)**2 + (geom_coords[0][1] - u_lat)**2
+            du_end   = (geom_coords[-1][0] - u_lon)**2 + (geom_coords[-1][1] - u_lat)**2
+            # Iterate forward or reverse without copying the geometry list.
+            reverse = du_start > du_end
+            n = len(geom_coords)
+            head_idx = n - 1 if reverse else 0
+            head_lon, head_lat = geom_coords[head_idx][0], geom_coords[head_idx][1]
+            first = (head_lat, head_lon)
+            last  = result_coords[-1] if result_coords else None
+            skip_first = bool(last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9)
+            if reverse:
+                rng = range(n - 2, -1, -1) if skip_first else range(n - 1, -1, -1)
+            else:
+                rng = range(1, n) if skip_first else range(n)
+            for j in rng:
+                lon, lat = geom_coords[j][0], geom_coords[j][1]
+                result_coords.append((lat, lon))
+        else:
+            if not result_coords:
+                result_coords.append((_vertex_lats[u], _vertex_lons[u]))
+            result_coords.append((_vertex_lats[v], _vertex_lons[v]))
+
+    return tuple(result_coords)
 
 
 def _build_directions(
@@ -343,19 +438,6 @@ def _build_directions(
     dest_lon: float,
     flavor: str = DEFAULT_FLAVOR,
 ) -> tuple:
-    def _cardinal(lat1: float, lon1: float, lat2: float, lon2: float) -> str:
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        deg = math.degrees(math.atan2(dlon, dlat)) % 360
-        dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-        return dirs[round(deg / 45) % 8]
-
-    def _street_name(attrs: dict) -> str:
-        return _edge_attr(attrs, "name").strip()
-
-    def _edge_path_type(attrs: dict) -> str:
-        return _highway_path_type(_edge_attr(attrs, "highway"), _edge_attr(attrs, "footway"))
-
     try:
         G = _load_graph()
         if G is None:
@@ -366,53 +448,9 @@ def _build_directions(
             raise RuntimeError("path unavailable")
 
         vpath, epath = path
-
         if len(vpath) < 2:
             return ()
-
-        raw: list[tuple[str, str, float, int, int]] = []
-        for eid, u, v in zip(epath, vpath, vpath[1:]):
-            edge = G.es[eid]
-            attrs = edge.attributes()
-            name = _street_name(attrs)
-            path_type = _edge_path_type(attrs) if not name else ""
-            raw.append((name, path_type, edge["length"] or 0.0, u, v))
-
-        steps: list[dict] = []
-        i = 0
-        while i < len(raw):
-            name, path_type = raw[i][0], raw[i][1]
-            total_length = 0.0
-            edge_count   = 0
-            start_vertex = raw[i][3]
-            end_vertex   = raw[i][4]
-            while i < len(raw) and raw[i][0] == name and raw[i][1] == path_type:
-                total_length += raw[i][2]
-                edge_count   += 1
-                end_vertex = raw[i][4]
-                i += 1
-            lat1 = _vertex_lats[start_vertex]
-            lon1 = _vertex_lons[start_vertex]
-            lat2 = _vertex_lats[end_vertex]
-            lon2 = _vertex_lons[end_vertex]
-            minutes = round(total_length / WALKING_SPEED_MPS / 60, 1)
-            direction_abbrev = _cardinal(lat1, lon1, lat2, lon2)
-            avg_edge_m = total_length / edge_count
-            is_long    = avg_edge_m >= _BLOCK_TYPE_THRESHOLD
-            block_m    = _LONG_BLOCK_METERS if is_long else _SHORT_BLOCK_METERS
-            blocks     = max(0.5, round(total_length / block_m * 2) / 2)
-            block_type = "long" if is_long else "short"
-            steps.append({
-                "street":         name,
-                "path_type":      path_type,
-                "direction":      direction_abbrev,
-                "direction_full": _DIRECTION_FULL.get(direction_abbrev, direction_abbrev),
-                "blocks":         blocks,
-                "block_type":     block_type,
-                "minutes":        minutes,
-                "distance_meters": round(total_length, 1),
-            })
-        return tuple(steps)
+        return _directions_from_path(vpath, epath)
 
     except Exception as e:
         logger.warning("walk_directions fallback: %s: %s", type(e).__name__, e)
@@ -440,41 +478,9 @@ def _build_path(
             raise RuntimeError("path unavailable")
 
         vpath, epath = path
-
         if len(vpath) < 2:
             return ((origin_lat, origin_lon), (dest_lat, dest_lon))
-
-        result_coords: list[tuple[float, float]] = []
-
-        for eid, u, v in zip(epath, vpath, vpath[1:]):
-            geom_coords = G.es[eid]["geometry"]
-
-            if geom_coords:
-                u_lon = _vertex_lons[u]
-                u_lat = _vertex_lats[u]
-                du_start = (geom_coords[0][0] - u_lon)**2 + (geom_coords[0][1] - u_lat)**2
-                du_end   = (geom_coords[-1][0] - u_lon)**2 + (geom_coords[-1][1] - u_lat)**2
-                # Iterate forward or reverse without copying the geometry list.
-                reverse = du_start > du_end
-                n = len(geom_coords)
-                head_idx = n - 1 if reverse else 0
-                head_lon, head_lat = geom_coords[head_idx][0], geom_coords[head_idx][1]
-                first = (head_lat, head_lon)
-                last  = result_coords[-1] if result_coords else None
-                skip_first = bool(last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9)
-                if reverse:
-                    rng = range(n - 2, -1, -1) if skip_first else range(n - 1, -1, -1)
-                else:
-                    rng = range(1, n) if skip_first else range(n)
-                for j in rng:
-                    lon, lat = geom_coords[j][0], geom_coords[j][1]
-                    result_coords.append((lat, lon))
-            else:
-                if not result_coords:
-                    result_coords.append((_vertex_lats[u], _vertex_lons[u]))
-                result_coords.append((_vertex_lats[v], _vertex_lons[v]))
-
-        return tuple(result_coords)
+        return _path_coords_from_path(vpath, epath)
 
     except Exception as e:
         logger.error("routing failed: %s: %s", type(e).__name__, e)
@@ -492,11 +498,38 @@ def _compute_route_quantized(
 ) -> "tuple[tuple, tuple, float]":
     olat, olon = olat_q / 1e5, olon_q / 1e5
     dlat, dlon = dlat_q / 1e5, dlon_q / 1e5
-    path = _build_path(olat, olon, dlat, dlon, flavor)
-    directions = _build_directions(olat, olon, dlat, dlon, flavor)
+
+    G = _load_graph()
+    if G is None:
+        # No graph — defer to the per-helper fallbacks (haversine path/directions).
+        return (
+            _build_path(olat, olon, dlat, dlon, flavor),
+            _build_directions(olat, olon, dlat, dlon, flavor),
+            _build_minutes(olat, olon, dlat, dlon, flavor),
+        )
+
+    sp = _get_shortest_path(olat, olon, dlat, dlon, flavor)
+    if sp is None:
+        # Same fallback shape as before: each helper logs and returns its own
+        # straight-line approximation independently.
+        return (
+            _build_path(olat, olon, dlat, dlon, flavor),
+            _build_directions(olat, olon, dlat, dlon, flavor),
+            _build_minutes(olat, olon, dlat, dlon, flavor),
+        )
+
+    vpath, epath = sp
+    if len(vpath) < 2:
+        return (
+            ((olat, olon), (dlat, dlon)),
+            (),
+            _build_minutes(olat, olon, dlat, dlon, flavor),
+        )
+
+    path       = _path_coords_from_path(vpath, epath)
+    directions = _directions_from_path(vpath, epath)
     # Derive minutes from the per-step distance_meters already summed inside
-    # _build_directions, avoiding a second full epath traversal. Falls back to
-    # _build_minutes only when directions are empty (degenerate path).
+    # _directions_from_path, avoiding a second full epath traversal.
     if directions:
         total_meters = sum(d["distance_meters"] for d in directions)
         minutes = round(total_meters / WALKING_SPEED_MPS / 60, 1)
@@ -533,22 +566,36 @@ def pace_minutes_factor(pace: str) -> float:
     return WALKING_SPEED_MPH / pace_mph
 
 
+def _get_avoid_stairs_weights(flavor: str) -> "list[float] | None":
+    """Return (and cache) the weight vector for `flavor` with stair penalties layered on."""
+    G = _load_graph()
+    if G is None or _edge_lengths is None:
+        return None
+    key = (flavor, "avoid_stairs")
+    cached = _combined_weights.get(key)
+    if cached is not None and len(cached) == G.ecount():
+        return cached
+    base = _get_flavor_weights(flavor)
+    weights = list(_edge_lengths) if isinstance(base, str) else list(base)
+    highways = _edge_highways
+    if highways is not None:
+        for i, h in enumerate(highways):
+            if h == "steps":
+                weights[i] += _AVOID_STAIRS_PENALTY_M
+    _combined_weights[key] = weights
+    return weights
+
+
 def _shortest_path_with_avoid_stairs(
     orig_idx: int, dest_idx: int, flavor: str,
 ) -> "tuple[tuple[int, ...], tuple[int, ...]] | None":
-    """Uncached Dijkstra with a per-edge step-avoidance penalty layered on `flavor`."""
+    """Dijkstra with a per-edge step-avoidance penalty layered on `flavor`. Weights cached."""
     G = _load_graph()
     if G is None:
         return None
-    base = _get_flavor_weights(flavor)
-    if isinstance(base, str):
-        weights = [float(e["length"] or 0.0) for e in G.es]
-    else:
-        weights = list(base)
-    if "highway" in G.es.attributes():
-        for i, e in enumerate(G.es):
-            if (e["highway"] or "") == "steps":
-                weights[i] += _AVOID_STAIRS_PENALTY_M
+    weights = _get_avoid_stairs_weights(flavor)
+    if weights is None:
+        return None
     try:
         result = G.get_shortest_paths(orig_idx, to=dest_idx, weights=weights, output="epath")
         if not result or not result[0]:
@@ -610,68 +657,77 @@ def compute_route_with_prefs(
         return _compute_route(origin_lat, origin_lon, dest_lat, dest_lon, flavor)
 
     vpath, epath = path
-    G = _load_graph()
-    length_m = sum(G.es[e]["length"] or 0.0 for e in epath)
-    minutes  = round(length_m / WALKING_SPEED_MPS / 60, 1)
+    lengths = _edge_lengths
+    if lengths is not None:
+        length_m = sum(lengths[e] for e in epath)
+    else:
+        G = _load_graph()
+        length_m = sum(G.es[e]["length"] or 0.0 for e in epath)
+    minutes = round(length_m / WALKING_SPEED_MPS / 60, 1)
 
-    coords: list[tuple[float, float]] = []
-    for eid, u, v in zip(epath, vpath, vpath[1:]):
-        geom = G.es[eid]["geometry"]
-        if geom:
-            u_lon, u_lat = _vertex_lons[u], _vertex_lats[u]
-            du_start = (geom[0][0]  - u_lon)**2 + (geom[0][1]  - u_lat)**2
-            du_end   = (geom[-1][0] - u_lon)**2 + (geom[-1][1] - u_lat)**2
-            seq = geom[::-1] if du_start > du_end else geom
-            first = (seq[0][1], seq[0][0])
-            last  = coords[-1] if coords else None
-            start = 1 if last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9 else 0
-            for lon, lat in seq[start:]:
-                coords.append((lat, lon))
-        else:
-            if not coords:
-                coords.append((_vertex_lats[u], _vertex_lons[u]))
-            coords.append((_vertex_lats[v], _vertex_lons[v]))
-
+    coords = _path_coords_from_path(vpath, epath)
     # Re-build directions from the same vpath/epath we just computed; reusing
     # _build_directions would re-run the cached Dijkstra and return the
     # stairs-included path, defeating avoid_stairs.
     directions = _directions_from_path(vpath, epath)
-    return (tuple(coords) if coords else ((origin_lat, origin_lon), (dest_lat, dest_lon)),
+    return (coords if coords else ((origin_lat, origin_lon), (dest_lat, dest_lon)),
             directions, minutes)
 
 
+_CARDINAL_DIRS: tuple[str, ...] = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+
+
 def _directions_from_path(vpath: tuple, epath: tuple) -> tuple:
-    """Build the same direction-step tuples as _build_directions from a known vpath/epath."""
-    G = _load_graph()
-    if G is None or len(vpath) < 2:
+    """Build the same direction-step tuples as _build_directions from a known vpath/epath.
+
+    Reads names/highways/footways/lengths from cached columns when available,
+    falling back to direct igraph access only if the cache hasn't been populated.
+    """
+    if len(vpath) < 2:
         return ()
+
+    names_col    = _edge_names
+    highways_col = _edge_highways
+    footways_col = _edge_footways
+    lengths_col  = _edge_lengths
+    have_cache = (
+        names_col is not None and highways_col is not None
+        and footways_col is not None and lengths_col is not None
+    )
+    if not have_cache:
+        G = _load_graph()
+        if G is None:
+            return ()
 
     raw: list[tuple[str, str, float, int, int]] = []
     for eid, u, v in zip(epath, vpath, vpath[1:]):
-        edge = G.es[eid]
-        attrs = edge.attributes()
-        name = _edge_attr(attrs, "name").strip()
-        path_type = (
-            _highway_path_type(_edge_attr(attrs, "highway"), _edge_attr(attrs, "footway"))
-            if not name else ""
-        )
-        raw.append((name, path_type, edge["length"] or 0.0, u, v))
-
-    def _cardinal(lat1, lon1, lat2, lon2):
-        import math as _m
-        deg = _m.degrees(_m.atan2(lon2 - lon1, lat2 - lat1)) % 360
-        dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-        return dirs[round(deg / 45) % 8]
+        if have_cache:
+            name = names_col[eid].strip()
+            if name:
+                path_type = ""
+            else:
+                path_type = _highway_path_type(highways_col[eid], footways_col[eid])
+            length = lengths_col[eid]
+        else:
+            attrs = G.es[eid].attributes()
+            name = _edge_attr(attrs, "name").strip()
+            path_type = (
+                _highway_path_type(_edge_attr(attrs, "highway"), _edge_attr(attrs, "footway"))
+                if not name else ""
+            )
+            length = G.es[eid]["length"] or 0.0
+        raw.append((name, path_type, length, u, v))
 
     steps: list[dict] = []
     i = 0
-    while i < len(raw):
+    n = len(raw)
+    while i < n:
         name, path_type = raw[i][0], raw[i][1]
         total_length = 0.0
         edge_count = 0
         start_v = raw[i][3]
         end_v = raw[i][4]
-        while i < len(raw) and raw[i][0] == name and raw[i][1] == path_type:
+        while i < n and raw[i][0] == name and raw[i][1] == path_type:
             total_length += raw[i][2]
             edge_count   += 1
             end_v = raw[i][4]
@@ -679,7 +735,8 @@ def _directions_from_path(vpath: tuple, epath: tuple) -> tuple:
         lat1, lon1 = _vertex_lats[start_v], _vertex_lons[start_v]
         lat2, lon2 = _vertex_lats[end_v],   _vertex_lons[end_v]
         minutes = round(total_length / WALKING_SPEED_MPS / 60, 1)
-        cardinal = _cardinal(lat1, lon1, lat2, lon2)
+        deg = math.degrees(math.atan2(lon2 - lon1, lat2 - lat1)) % 360
+        cardinal = _CARDINAL_DIRS[round(deg / 45) % 8]
         avg_edge_m = total_length / edge_count
         is_long  = avg_edge_m >= _BLOCK_TYPE_THRESHOLD
         block_m  = _LONG_BLOCK_METERS if is_long else _SHORT_BLOCK_METERS

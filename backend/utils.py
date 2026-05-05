@@ -26,6 +26,11 @@ CHICAGO_EAST:  float = -87.52
 
 CHICAGO_BBOX_GOOGLE: str = f"{CHICAGO_SOUTH},{CHICAGO_WEST}|{CHICAGO_NORTH},{CHICAGO_EAST}"
 
+
+def chicago_bbox_contains(lat: float, lon: float) -> bool:
+    """Return True if (lat, lon) is inside Chicago's bounding box."""
+    return CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST
+
 # OSM highway tags for service/alley edges that are technically walkable but
 # not desirable for pedestrian routing (driveways, parking lot lanes, etc.).
 # Single source of truth — imported by walking.py (runtime filter) and

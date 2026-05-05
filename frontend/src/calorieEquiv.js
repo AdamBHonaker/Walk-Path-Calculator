@@ -51,5 +51,5 @@ export function calorieEquivalent(calories) {
 
   if (!bestFood) return null;
   const itemLabel = bestFrac.val >= 2 ? bestFood.plural : bestFood.name;
-  return `≈ ${bestFrac.label} ${itemLabel}`;
+  return `≈ ${bestFrac.label} ${itemLabel}, returned to the day.`;
 }
