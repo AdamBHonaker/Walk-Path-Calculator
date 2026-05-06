@@ -1,5 +1,5 @@
-import React from "react";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
+import { useMediaQuery } from "../lib/useMediaQuery.js";
 
 const FLAVOR_META = {
   fastest:      { label: "Fastest",      icon: "bolt",   detail: "Shortest walk" },
@@ -8,6 +8,11 @@ const FLAVOR_META = {
 };
 
 export function RouteFlavorTabs({ routes, activeFlavor, onChange }) {
+  // Below 480px the per-tab stats line ("X mi · Y min · Z STEPS") is too
+  // dense for ~107px-wide tabs. Drop the stats; the StepHero below the tabs
+  // shows the active flavor's stats anyway.
+  const isCompact = useMediaQuery("(max-width: 480px)");
+
   if (!routes || routes.length < 2) return null;
   return (
     <div
@@ -35,7 +40,8 @@ export function RouteFlavorTabs({ routes, activeFlavor, onChange }) {
               flexDirection: "column",
               alignItems: "center",
               gap: 4,
-              padding: "10px 6px",
+              padding: isCompact ? "12px 6px" : "10px 6px",
+              minHeight: 44,
               background: "transparent",
               border: "none",
               borderBottom: isActive ? "2px solid var(--ember)" : "2px solid transparent",
@@ -58,18 +64,20 @@ export function RouteFlavorTabs({ routes, activeFlavor, onChange }) {
             >
               {meta.label}
             </span>
-            <span
-              style={{
-                fontFamily: "var(--wf-mono)",
-                fontSize: 10,
-                fontVariantNumeric: "tabular-nums",
-                textTransform: "uppercase",
-                letterSpacing: 0.5,
-                color: "var(--mute)",
-              }}
-            >
-              {r.total_miles} MI · {r.total_minutes} MIN · {r.total_steps.toLocaleString()} STEPS
-            </span>
+            {!isCompact && (
+              <span
+                style={{
+                  fontFamily: "var(--wf-mono)",
+                  fontSize: 10,
+                  fontVariantNumeric: "tabular-nums",
+                  textTransform: "uppercase",
+                  letterSpacing: 0.5,
+                  color: "var(--mute)",
+                }}
+              >
+                {r.total_miles} MI · {r.total_minutes} MIN · {r.total_steps.toLocaleString()} STEPS
+              </span>
+            )}
           </button>
         );
       })}

@@ -11,7 +11,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      // "prompt" (not "autoUpdate") so a new SW doesn't silently skipWaiting +
+      // reload the page mid-session — that wiped in-progress form state. The
+      // app surfaces a toast instead and the user reloads on their own terms.
+      registerType: "prompt",
       includeAssets: ["favicon.svg"],
       manifest: {
         name: "Passage",
@@ -39,7 +42,22 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      output: {
+        // Pin maplibre-gl into a single shared chunk so the lazy MapView and
+        // lazy ShareDispatch entries don't each duplicate the library.
+        manualChunks: (id) => {
+          if (id.includes("node_modules/maplibre-gl/")) return "maplibre";
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
+    // Allow ephemeral Cloudflare Tunnel hostnames so `npm run dev:tunnel`
+    // (see scripts/dev-tunnel.mjs and docs/MOBILE_TESTING.md) doesn't get
+    // rejected by Vite's host check. Dev-only; production builds are static.
+    allowedHosts: [".trycloudflare.com"],
   },
 });

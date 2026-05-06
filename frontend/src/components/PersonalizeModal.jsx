@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from "react";
-import { lbToKg } from "../App.jsx";
+import { useEffect, useState } from "react";
+import { lbToKg, kgToLb } from "../lib/units.js";
 import { safeGet, safeSet } from "../lib/storage.js";
+import { loadTheme, applyTheme } from "../lib/theme.js";
 
 const FT_OPTIONS = [4, 5, 6, 7];
 const IN_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 const GOAL_PRESETS = [5_000, 7_500, 10_000, 15_000, 20_000];
 
-function kgToLb(kg) {
-  return kg * 2.20462;
-}
+const THEME_OPTIONS = [
+  { value: "cream", label: "Cream", detail: "Bone-white paper" },
+  { value: "dusk",  label: "Dusk",  detail: "Lamplit deep ink" },
+];
 
 export function PersonalizeModal({
   open,
@@ -22,6 +24,12 @@ export function PersonalizeModal({
   onChangeGoal,
 }) {
   const [unit, setUnit] = useState(() => safeGet("walkpath:weightUnit") || "lb");
+  const [theme, setTheme] = useState(() => loadTheme());
+
+  function handleThemeChange(next) {
+    setTheme(next);
+    applyTheme(next);
+  }
   const [weightInput, setWeightInput] = useState(() =>
     weightKg != null
       ? String(Math.round(unit === "lb" ? kgToLb(weightKg) : weightKg))
@@ -33,6 +41,24 @@ export function PersonalizeModal({
   const [goalInput, setGoalInput] = useState(() =>
     dailyGoal != null ? String(dailyGoal) : ""
   );
+  // Inline message when an entered goal is silently clamped or rejected,
+  // so the user isn't left wondering why their number didn't stick.
+  const [goalNote, setGoalNote] = useState("");
+
+  // Reseed the local input mirrors when the modal opens or when the parent
+  // values change. Without this, parent-driven updates (deep-link import,
+  // external reset) would be hidden behind stale local state because the
+  // component only returns null while closed — it doesn't unmount.
+  useEffect(() => {
+    if (!open) return;
+    setWeightInput(
+      weightKg != null
+        ? String(Math.round(unit === "lb" ? kgToLb(weightKg) : weightKg))
+        : ""
+    );
+    setGoalInput(dailyGoal != null ? String(dailyGoal) : "");
+    setGoalNote("");
+  }, [open, weightKg, dailyGoal, unit]);
 
   useEffect(() => {
     if (!open) return;
@@ -77,10 +103,23 @@ export function PersonalizeModal({
     setGoalInput(val);
     if (val === "") {
       onChangeGoal(null);
+      setGoalNote("");
       return;
     }
     const n = parseInt(val, 10);
-    if (Number.isFinite(n) && n >= 1_000 && n <= 100_000) onChangeGoal(n);
+    if (!Number.isFinite(n)) {
+      setGoalNote("");
+      return;
+    }
+    // Always commit the user's intent — clamp into [1k, 100k] and surface
+    // a hint when we did so, instead of silently dropping the input.
+    const clamped = Math.max(1_000, Math.min(100_000, n));
+    onChangeGoal(clamped);
+    if (clamped !== n) {
+      setGoalNote(`Adjusted to ${clamped.toLocaleString()} — goals stay between 1,000 and 100,000.`);
+    } else {
+      setGoalNote("");
+    }
   }
   function handleReset() {
     onChangeHeight(null, null);
@@ -88,25 +127,10 @@ export function PersonalizeModal({
     onChangeGoal(null);
     setWeightInput("");
     setGoalInput("");
+    setGoalNote("");
   }
 
-  const sectionLabelStyle = {
-    fontFamily: "var(--wf-sans)",
-    fontSize: 10,
-    fontWeight: 800,
-    letterSpacing: 2,
-    textTransform: "uppercase",
-    color: "var(--mute)",
-    marginBottom: 8,
-  };
-  const hintStyle = {
-    fontFamily: "var(--wf-serif)",
-    fontStyle: "italic",
-    fontSize: 12,
-    color: "var(--mute)",
-    marginTop: 6,
-    lineHeight: 1.45,
-  };
+  const heightInchesDisabled = heightFt == null;
 
   return (
     <div
@@ -114,103 +138,69 @@ export function PersonalizeModal({
       aria-modal="true"
       aria-labelledby="personalize-title"
       onClick={onClose}
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(20, 16, 12, 0.45)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 200,
-        padding: 16,
-      }}
+      className="wf-modal-overlay"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="paper-grain paper-bright"
-        style={{
-          width: "min(440px, 100%)",
-          color: "var(--ink)",
-          border: "1px solid var(--ink)",
-          padding: 20,
-          fontFamily: "var(--wf-serif)",
-          maxHeight: "90vh",
-          overflowY: "auto",
-        }}
+        className="wf-modal-card paper-grain paper-bright"
       >
-        <header
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            marginBottom: 14,
-          }}
-        >
-          <h2
-            id="personalize-title"
-            style={{
-              fontFamily: "var(--wf-serif)",
-              fontStyle: "italic",
-              fontWeight: 600,
-              fontSize: 22,
-              margin: 0,
-            }}
-          >
+        <header className="personalize-header">
+          <h2 id="personalize-title" className="personalize-title">
             Your particulars.
           </h2>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close personalize modal"
-            style={{
-              background: "transparent",
-              border: "none",
-              fontSize: 20,
-              cursor: "pointer",
-              color: "var(--ink)",
-              padding: 4,
-              lineHeight: 1,
-            }}
+            className="personalize-close"
           >
             ×
           </button>
         </header>
 
         {/* Height */}
-        <section style={{ marginBottom: 18 }}>
-          <div style={sectionLabelStyle}>Height</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <select
-              value={heightFt ?? ""}
-              onChange={handleFt}
-              aria-label="Height feet"
-            >
-              <option value="" disabled>ft</option>
-              {FT_OPTIONS.map((f) => (
-                <option key={f} value={f}>{f} ft</option>
-              ))}
-            </select>
-            <select
-              value={heightIn ?? ""}
-              onChange={handleIn}
-              aria-label="Height inches"
-              disabled={heightFt == null}
-            >
-              <option value="" disabled>in</option>
-              {IN_OPTIONS.map((i) => (
-                <option key={i} value={i}>{i} in</option>
-              ))}
-            </select>
+        <section className="personalize-section">
+          <div className="personalize-section-label">Height</div>
+          <div className="personalize-row">
+            <span className="personalize-select-wrap">
+              <select
+                value={heightFt ?? ""}
+                onChange={handleFt}
+                aria-label="Height feet"
+                className="personalize-select"
+              >
+                <option value="" disabled>ft</option>
+                {FT_OPTIONS.map((f) => (
+                  <option key={f} value={f}>{f} ft</option>
+                ))}
+              </select>
+              <span aria-hidden="true" className="personalize-select-chevron">▾</span>
+            </span>
+            <span className="personalize-select-wrap">
+              <select
+                value={heightIn ?? ""}
+                onChange={handleIn}
+                aria-label="Height inches"
+                disabled={heightInchesDisabled}
+                className="personalize-select"
+              >
+                <option value="" disabled>in</option>
+                {IN_OPTIONS.map((i) => (
+                  <option key={i} value={i}>{i} in</option>
+                ))}
+              </select>
+              <span aria-hidden="true" className="personalize-select-chevron">▾</span>
+            </span>
           </div>
-          <p style={hintStyle}>
+          <p className="personalize-section-hint">
             Uses a biomechanical formula to estimate your personal stride length.
           </p>
         </section>
 
         {/* Weight */}
-        <section style={{ marginBottom: 18 }}>
-          <div style={sectionLabelStyle}>Weight</div>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <section className="personalize-section">
+          <div className="personalize-section-label">Weight</div>
+          <div className="personalize-row personalize-row--centered">
             <input
               type="number"
               value={weightInput}
@@ -219,57 +209,32 @@ export function PersonalizeModal({
               max={unit === "lb" ? 661 : 300}
               placeholder={unit === "lb" ? "lbs" : "kg"}
               aria-label={`Weight in ${unit === "lb" ? "pounds" : "kilograms"}`}
-              style={{
-                flex: 1,
-                padding: "8px 10px",
-                border: "1px solid var(--ink)",
-                background: "transparent",
-                fontFamily: "var(--wf-mono)",
-                fontSize: 14,
-                color: "var(--ink)",
-              }}
+              className="personalize-input"
             />
             <button
               type="button"
               onClick={handleUnitToggle}
-              style={{
-                padding: "8px 12px",
-                border: "1px solid var(--ink)",
-                background: "transparent",
-                fontFamily: "var(--wf-serif)",
-                fontStyle: "italic",
-                fontSize: 13,
-                color: "var(--ink)",
-                cursor: "pointer",
-              }}
+              className="personalize-unit-toggle"
             >
               {unit === "lb" ? "lb → kg" : "kg → lb"}
             </button>
           </div>
-          <p style={hintStyle}>
+          <p className="personalize-section-hint">
             Used to calculate how many calories you burned.
           </p>
         </section>
 
         {/* Daily measure */}
-        <section style={{ marginBottom: 4 }}>
-          <div style={sectionLabelStyle}>Daily measure</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        <section className="personalize-section-final">
+          <div className="personalize-section-label">Daily measure</div>
+          <div className="personalize-presets">
             {GOAL_PRESETS.map((p) => (
               <button
                 key={p}
                 type="button"
-                onClick={() => { onChangeGoal(p); setGoalInput(String(p)); }}
+                onClick={() => { onChangeGoal(p); setGoalInput(String(p)); setGoalNote(""); }}
                 aria-pressed={dailyGoal === p}
-                style={{
-                  padding: "6px 10px",
-                  border: `1px solid ${dailyGoal === p ? "var(--ink)" : "var(--mute-fog)"}`,
-                  background: dailyGoal === p ? "var(--ink)" : "transparent",
-                  color: dailyGoal === p ? "var(--paper)" : "var(--ink)",
-                  fontFamily: "var(--wf-mono)",
-                  fontSize: 12,
-                  cursor: "pointer",
-                }}
+                className={`personalize-preset${dailyGoal === p ? " personalize-preset--active" : ""}`}
               >
                 {p.toLocaleString()}
               </button>
@@ -284,62 +249,53 @@ export function PersonalizeModal({
             step={500}
             onChange={handleGoalNumber}
             aria-label="Custom daily step goal"
-            style={{
-              width: "100%",
-              padding: "8px 10px",
-              border: "1px solid var(--ink)",
-              background: "transparent",
-              fontFamily: "var(--wf-mono)",
-              fontSize: 14,
-              color: "var(--ink)",
-            }}
+            className="personalize-input personalize-input--full"
           />
-          <p style={hintStyle}>
+          {goalNote && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="personalize-section-hint personalize-section-hint--clamped"
+            >
+              {goalNote}
+            </p>
+          )}
+          <p className="personalize-section-hint">
             Controls the % progress bar shown after each route.
           </p>
         </section>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginTop: 18,
-            paddingTop: 12,
-            borderTop: "1px solid var(--mute-fog)",
-          }}
-        >
-          <button
-            type="button"
-            onClick={handleReset}
-            style={{
-              background: "transparent",
-              border: "none",
-              fontFamily: "var(--wf-serif)",
-              fontStyle: "italic",
-              fontSize: 13,
-              color: "var(--mute)",
-              cursor: "pointer",
-              textDecoration: "underline",
-              textUnderlineOffset: 3,
-            }}
-          >
+        {/* Display */}
+        <section className="personalize-section-final">
+          <div className="personalize-section-label">Display</div>
+          <div role="radiogroup" aria-label="Page theme" className="personalize-theme-row">
+            {THEME_OPTIONS.map(({ value, label, detail }) => {
+              const checked = theme === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  onClick={() => handleThemeChange(value)}
+                  className={`personalize-theme-btn${checked ? " personalize-theme-btn--active" : ""}`}
+                >
+                  <span>{label}</span>
+                  <span className="personalize-theme-btn-detail">{detail}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="personalize-section-hint">
+            Switch the paper stock between cream daylight and lamplit dusk.
+          </p>
+        </section>
+
+        <div className="personalize-footer">
+          <button type="button" onClick={handleReset} className="personalize-reset">
             Reset
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              padding: "10px 18px",
-              background: "var(--ink)",
-              color: "var(--paper)",
-              border: "1px solid var(--ink)",
-              fontFamily: "var(--wf-serif)",
-              fontStyle: "italic",
-              fontSize: 14,
-              cursor: "pointer",
-            }}
-          >
+          <button type="button" onClick={onClose} className="personalize-keep">
             Keep these particulars
           </button>
         </div>

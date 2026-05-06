@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "maplibre-gl/dist/maplibre-gl.css";
+// MapLibre's stylesheet ships with the lazy MapView/ShareDispatch chunks
+// (imported in those modules) so it doesn't block first paint.
 import "./wayfarer/index.css";
 import "./index.css";
 import App from "./App.jsx";

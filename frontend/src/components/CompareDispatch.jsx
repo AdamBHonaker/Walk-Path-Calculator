@@ -1,4 +1,4 @@
-import React from "react";
+import { useMemo } from "react";
 import { summarize } from "../compareEstimates.js";
 import { calorieEquivalent } from "../calorieEquiv.js";
 
@@ -17,12 +17,19 @@ const monoStyle = {
 };
 
 export function CompareDispatch({ miles, walkMinutes, calories }) {
+  // 12×10 nested search inside calorieEquivalent — cache so re-renders
+  // driven by sibling state (sheet drag, theme toggle) don't repeat it.
+  // Must run before the early-return below to satisfy rules-of-hooks.
+  const equiv = useMemo(
+    () => (calories > 0 ? calorieEquivalent(calories) : null),
+    [calories],
+  );
+
   if (!miles || miles <= 0.1) return null;
 
   const { driveMin, transitMin, costUsd, co2Kg } = summarize(miles, walkMinutes);
   const driveDelta = Math.round(walkMinutes - driveMin);
   const transitDelta = Math.round(walkMinutes - transitMin);
-  const equiv = calories > 0 ? calorieEquivalent(calories) : null;
 
   return (
     <section

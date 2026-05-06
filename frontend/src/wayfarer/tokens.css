@@ -101,6 +101,37 @@
   --dur-quick: 180ms;
   --dur-considered: 320ms;
   --dur-flicker: 3.4s;       /* the lamp-step cycle */
+
+  /* ── Breakpoints ─────────────────────────────────────────
+     Documentary tokens — CSS @media can't read custom props,
+     so write breakpoints as literal pixel values in queries.
+     These exist so JS (via getComputedStyle) can read the same
+     numbers, and so the values are documented in one place.
+        mobile  : single column, sheet UI, 44px touch targets
+        tablet  : the threshold where two columns become viable
+        desktop : full editorial layout */
+  --bp-mobile:  480px;
+  --bp-tablet:  768px;
+  --bp-desktop: 1024px;
+
+  /* ── Safe area (notched / home-indicator devices) ────────
+     Resolved from env() with a 0px fallback so non-mobile
+     surfaces are unaffected. Requires viewport-fit=cover in
+     the document <meta name="viewport"> tag. */
+  --safe-top:    env(safe-area-inset-top, 0px);
+  --safe-right:  env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left, 0px);
+
+  /* ── Compact type ────────────────────────────────────────
+     Narrower scale for sheet headers, mobile heroes, and any
+     surface that has to live inside ~360px of inline space.
+     Prefer these via @media (max-width: 480px) overrides
+     rather than universally — the editorial scale at 48/28
+     is the desktop default and should stay that way. */
+  --fs-display-compact:  36px;
+  --fs-headline-compact: 22px;
+  --fs-title-compact:    18px;
 }
 
 /* ── Optional: paper-grain background utility ─────────────────

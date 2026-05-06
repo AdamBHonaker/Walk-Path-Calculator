@@ -22,16 +22,24 @@ export function saveRecentSearch(originOrStops, destination) {
   }
   if (stops.length < 2) return null;
   const existing = loadRecentSearches();
-  const sig = stops.join("");
+  // Drop corrupt legacy entries (missing/empty stops, or origin/destination
+  // that resolved to undefined) before we dedupe — otherwise their
+  // "[null,null]" signature lingers in the 10-slot window and crowds out
+  // valid entries. recentEntryStops is the same readback the UI uses, so
+  // anything it can't render gets filtered here.
+  const cleanExisting = existing.filter(r => recentEntryStops(r).length >= 2);
+  // JSON.stringify keeps stop boundaries intact so ["A","BC"] and ["AB","C"]
+  // produce different signatures — using a plain join("") collapsed those
+  // distinct routes onto the same key and silently evicted the older one.
+  const sig = JSON.stringify(stops);
   const entry = {
     stops,
     origin: stops[0],
     destination: stops[stops.length - 1],
     timestamp: Date.now(),
   };
-  const sigOf = (r) =>
-    (Array.isArray(r.stops) ? r.stops : [r.origin, r.destination]).join("");
-  const deduped = existing.filter(r => sigOf(r) !== sig);
+  const sigOf = (r) => JSON.stringify(recentEntryStops(r));
+  const deduped = cleanExisting.filter(r => sigOf(r) !== sig);
   const updated = [entry, ...deduped].slice(0, RECENT_MAX);
   return saveJSON(RECENT_KEY, updated) ? updated : null;
 }

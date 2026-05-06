@@ -1,16 +1,3 @@
-/* ── Design tokens ───────────────────────────────────────────────────────── */
-/* Legacy green tokens are now aliased to Wayfarer paper-and-ink palette so
- * unextracted classes retint without per-rule edits. Final cleanup deletes
- * these aliases when every class is either extracted or restyled in place. */
-:root {
-  --color-green-primary: var(--ink);
-  --color-green-light:   var(--ink-soft);
-  --color-green-pale:    var(--ink);
-  --color-bg-darkest:    var(--paper);
-  --color-border-dark:   var(--mute-fog);
-  --transition-ui:       background 0.15s, border-color 0.15s;
-}
-
 /* ── Layout ─────────────────────────────────────────────────────────────── */
 
 .app {
@@ -19,6 +6,86 @@
   flex-direction: column;
   overflow: hidden;
   padding: 14px 20px 0;
+}
+
+/* Mobile root: MobileLayout uses position:fixed, so the .app's editorial
+   padding is dead weight. Drop it and switch to the dynamic viewport unit so
+   the layout doesn't jump when iOS Safari's chrome shows/hides. */
+.app--mobile {
+  height: 100dvh;
+  padding: 0;
+}
+
+/* Stop-row stacking is now the default for every viewport — see the
+ * `.stop-row` rule below. On phones it freed the full width for typing;
+ * on desktop/tablet the same approach keeps the input from being squeezed
+ * by a side label and the crosshair button. */
+
+/* Mobile map-unlock-btn lives at top-right (under the floating masthead)
+ * because the bottom-right corner is owned by the sheet at every snap.
+ * Desktop keeps the editorial bottom-right placement. */
+@media (max-width: 768px) {
+  .map-unlock-btn {
+    bottom: auto;
+    top: max(72px, calc(var(--safe-top) + 64px));
+    right: max(12px, var(--safe-right));
+    gap: 0;
+    padding: 0;
+    width: 44px;
+    height: 44px;
+    justify-content: center;
+  }
+  .map-unlock-btn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* Locate button collapses to a 44×44 icon and sits directly under the
+   * floating masthead, top-right. When the unlock button is also visible
+   * (route loaded, gestures still locked) it stacks just below the locate
+   * button so both stay within thumb reach without overlapping. */
+  .map-locate-btn {
+    top: max(72px, calc(var(--safe-top) + 64px));
+    right: max(12px, var(--safe-right));
+    gap: 0;
+    padding: 0;
+    width: 44px;
+    height: 44px;
+    justify-content: center;
+  }
+  .map-locate-btn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* When both buttons are visible, push the unlock-btn below the locate-btn
+   * (44 px tall + 8 px gap). Selector relies on adjacent-sibling order in
+   * the JSX: locate-btn renders after unlock-btn, so we cannot use ~ from
+   * unlock to locate; instead re-anchor unlock when the locate sibling
+   * exists. The JSX renders unlock BEFORE locate, so :has(+ .map-locate-btn)
+   * lets us shift the unlock button down. */
+  .map-view:has(.map-locate-btn) .map-unlock-btn {
+    top: max(124px, calc(var(--safe-top) + 116px));
+  }
+}
+
+@media (pointer: coarse) {
+  .map-locate-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 .layout {
@@ -43,52 +110,25 @@
   min-width: 0;
 }
 
-/* ── Header ─────────────────────────────────────────────────────────────── */
-
-.header {
-  padding: 20px 20px 12px;
-  border-bottom: 1px solid var(--color-border-dark);
+/* Placeholder shown while the lazy MapView / ShareDispatch chunks load.
+ * Fills the same box as the real map so first paint doesn't shift. */
+.map-lazy-fallback {
+  width: 100%;
+  height: 100%;
+  background: var(--paper, #f2ece0);
+}
+.share-card-lazy-fallback {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: var(--paper, #f2ece0);
 }
 
-.header-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-
-.app-title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--color-green-pale);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.app-title-icon {
-  font-size: 1.4rem;
-}
-
-.city-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  background: var(--color-border-dark);
-  border: 1px solid var(--color-green-primary);
-  border-radius: 99px;
-  font-size: 0.72rem;
-  color: var(--color-green-light);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.tagline {
-  font-size: 0.8rem;
-  color: var(--color-green-light);
-  opacity: 0.85;
+/* Tablet range (481–1023 px): keep the desktop two-column layout but
+ * shrink the sidebar from 420 px → 320 px so the map stays the dominant
+ * surface on a 600 px portrait. Sheet UI is mobile-only (≤480 px). */
+.app--tablet .panel-cards {
+  width: 320px;
+  min-width: 280px;
 }
 
 /* ── Main / Form ─────────────────────────────────────────────────────────── */
@@ -121,6 +161,8 @@
 
 .form input[type="search"],
 .form input[type="text"] {
+  width: 100%;
+  min-width: 0;
   padding: 8px 0;
   background: transparent;
   border: none;
@@ -145,38 +187,6 @@
   font-style: italic;
 }
 
-.swap-btn {
-  position: absolute;
-  top: 50%;
-  right: 4px;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid var(--mute-fog);
-  border-radius: 0;
-  color: var(--ink);
-  font-size: 1rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-  z-index: 1;
-}
-
-.swap-btn:hover:not(:disabled) {
-  background: var(--ink);
-  color: var(--paper);
-  border-color: var(--ink);
-}
-
-.swap-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
 /* Multi-stop list */
 
 .stops-group {
@@ -187,23 +197,28 @@
 
 .stop-row {
   display: grid;
-  grid-template-columns: 64px 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 4px;
 }
 
 .stop-row-label {
+  grid-column: 1 / -1;
   font-family: var(--wf-serif);
   font-style: italic;
-  font-size: 14px;
+  font-size: 12px;
   color: var(--mute);
-  text-align: right;
-  padding-right: 4px;
+  text-align: left;
+  padding-right: 0;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
 }
 
 .stop-row-actions {
   display: inline-flex;
-  gap: 4px;
+  gap: 2px;
+  justify-self: end;
 }
 
 .stop-move-btn,
@@ -219,7 +234,7 @@
   color: var(--ink);
   line-height: 1;
   cursor: pointer;
-  transition: var(--transition-ui);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .stop-move-btn:hover:not(:disabled),
@@ -263,7 +278,7 @@
   font-size: 14px;
   padding: 8px 12px;
   cursor: pointer;
-  transition: var(--transition-ui);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .add-stop-btn:hover:not(:disabled) {
@@ -277,20 +292,28 @@
   cursor: not-allowed;
 }
 
-.stops-controls .swap-btn {
-  position: static;
-  transform: none;
-  width: auto;
-  height: auto;
+.swap-btn {
+  background: transparent;
+  border: 1px solid var(--mute-fog);
   border-radius: 0;
-  padding: 8px 14px;
+  color: var(--ink);
   font-family: var(--wf-serif);
   font-style: italic;
   font-size: 14px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
 }
 
-.stops-controls .swap-btn:hover:not(:disabled) {
-  transform: none;
+.swap-btn:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.swap-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .multi-stop-note {
@@ -310,24 +333,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-/* Height input */
-
-.height-section {
-  border: 1px solid var(--color-border-dark);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.weekly-summary-toggle {
-  width: 100%;
-  padding: 9px 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  text-align: left;
-  cursor: pointer;
 }
 
 /* Personalized badge on stat-chip */
@@ -350,6 +355,7 @@
 /* Submit button */
 
 .btn-route {
+  width: 100%;
   padding: 13px 16px;
   background: var(--ink);
   border: 1px solid var(--ink);
@@ -359,6 +365,11 @@
   font-style: italic;
   font-size: 15px;
   letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
   transition: background 0.15s, color 0.15s, opacity 0.15s;
 }
 
@@ -369,7 +380,93 @@
 
 .btn-route:disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  cursor: wait;
+}
+
+/* Personalize accordion trigger */
+
+.personalize-trigger {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: 1px solid var(--mute-fog);
+  text-align: left;
+  cursor: pointer;
+  margin: 8px 0;
+}
+
+.personalize-trigger-eyebrow {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.personalize-trigger-summary {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* Inline icon+label clusters inside form buttons */
+
+.add-stop-btn-inner,
+.swap-btn-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* SW update banner */
+
+.sw-update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  max-width: calc(100vw - 32px);
+}
+
+.sw-update-btn {
+  padding: 6px 12px;
+  min-height: 36px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--paper);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sw-update-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--paper);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 6px;
+  min-height: 36px;
+  min-width: 36px;
+  line-height: 1;
 }
 
 /* ── Recent Searches ─────────────────────────────────────────────────────── */
@@ -459,7 +556,7 @@
   font-style: italic;
   font-size: 14px;
   cursor: pointer;
-  transition: var(--transition-ui);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .log-walk-btn:hover:not(:disabled) {
@@ -492,7 +589,7 @@
   font-weight: 800;
   letter-spacing: 2px;
   text-transform: uppercase;
-  transition: var(--transition-ui);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .weekly-summary-toggle:hover {
@@ -602,7 +699,9 @@
 
 .step-hero-count {
   font-family: var(--wf-mono);
-  font-size: 96px;
+  /* Fluid scale: 48px floor, ~18vw fluid, 96px ceiling. At 320px viewport
+   * resolves to ~58px (fits "12,500" comfortably), at 533px+ caps at 96px. */
+  font-size: clamp(48px, 18vw, 96px);
   font-weight: 500;
   color: var(--ink);
   line-height: 1;
@@ -810,24 +909,92 @@
   background: var(--paper);
 }
 
+/* "Use my current location" CTA. Sits top-right on desktop so it doesn't
+ * collide with the bottom-right unlock button. Mobile override below
+ * shifts it under the floating masthead, mirroring the unlock-btn pattern. */
+.map-locate-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--paper-bright);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  transition: background 0.15s;
+}
+
+.map-locate-btn:hover {
+  background: var(--paper);
+}
+
+.map-locate-btn:disabled {
+  cursor: progress;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
-@media (max-width: 700px) {
-  .layout {
-    flex-direction: column;
-  }
+/* Below the tablet breakpoint, App.jsx renders MobileLayout instead of the
+ * desktop two-column .layout, so no .layout / panel-cards overrides are
+ * needed here. The mobile main panel lives inside the WFSheet body, which
+ * already supplies its own padding — drop the editorial 16px/20px gutter
+ * so the sheet's drag handle and content sit flush with the sheet edge. */
+.main--mobile {
+  padding: 8px 0 12px;
+}
 
-  .panel-cards {
-    width: 100%;
-    min-width: unset;
-    max-height: 55vh;
-    border-right: none;
-    border-bottom: 1px solid var(--color-border-dark);
+/* Touch-target floor: every icon-only button on a touch device gets at
+ * least 44×44px hit area. Keeps desktop sizing intact on pointer:fine
+ * displays — the editorial 24–28px boxes look right with a cursor, but
+ * are unworkable with a thumb. */
+@media (pointer: coarse) {
+  .swap-btn,
+  .pick-map-btn,
+  .share-modal-close,
+  .map-pick-confirm-btn,
+  .map-unlock-btn,
+  .recent-chip,
+  .recent-clear-btn {
+    min-width: 44px;
+    min-height: 44px;
   }
+  /* Stop reorder/remove buttons sit to the right of the input on multi-stop
+   * rows. The 44 px floor squeezed the text-entry strip into a sliver — keep
+   * a tall hit area for thumbs but a compact width so the input stays
+   * usable. */
+  .stop-move-btn,
+  .stop-remove-btn {
+    min-width: 32px;
+    min-height: 40px;
+    width: 32px;
+    padding: 0;
+  }
+  .stop-move-btn svg,
+  .stop-remove-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+}
 
-  .panel-map {
-    flex: 1;
-    min-height: 200px;
+/* Share modal: scoot the card off any safe-area inset on notched phones,
+ * and let the dialog respect the dynamic viewport height. */
+@media (max-width: 480px) {
+  .share-modal-overlay {
+    padding: max(12px, var(--safe-top)) max(12px, var(--safe-right))
+             max(12px, var(--safe-bottom)) max(12px, var(--safe-left));
+  }
+  .share-modal {
+    max-height: calc(100dvh - 24px);
   }
 }
 
@@ -858,29 +1025,76 @@
   gap: 6px;
 }
 
+.pace-option-label {
+  font-style: italic;
+  font-weight: 600;
+}
+
+.pace-option-detail {
+  font-family: var(--wf-mono);
+  font-size: 11px;
+  color: var(--mute);
+  margin-left: 6px;
+}
+
+/* Compact segmented variant (≤480 px). Three side-by-side cells sharing
+ * borders, the active one ink-filled. */
+.pace-segmented {
+  display: flex;
+}
+
+.pace-segmented-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 8px;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-right: none;
+  border-left: none;
+  cursor: pointer;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.pace-segmented-btn--first { border-left: 1px solid var(--ink); }
+.pace-segmented-btn--last  { border-right: 1px solid var(--ink); }
+
+.pace-segmented-btn--active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.pace-segmented-btn-label {
+  font-weight: 400;
+}
+
+.pace-segmented-btn--active .pace-segmented-btn-label {
+  font-weight: 600;
+}
+
+.pace-segmented-btn-detail {
+  font-family: var(--wf-mono);
+  font-size: 10px;
+  opacity: 0.85;
+}
+
 /* ── Pick on map ──────────────────────────────────────────────────────────── */
 
-.input-with-pick {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.input-with-pick input {
-  flex: 1;
-  padding-right: 36px !important;
-}
-
 .pick-map-btn {
-  position: absolute;
-  right: 4px;
-  width: 24px;
-  height: 24px;
-  display: flex;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid transparent;
+  border: 1px solid var(--mute-fog);
   border-radius: 0;
   color: var(--mute);
   transition: background 0.15s, border-color 0.15s, color 0.15s;
@@ -1007,11 +1221,437 @@
   cursor: not-allowed;
 }
 
+/* ── Modal (Personalize, share dialog) ───────────────────────────────────── */
+
+.wf-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 16, 12, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 16px;
+}
+
+.wf-modal-card {
+  width: min(440px, 100%);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  padding: 20px;
+  font-family: var(--wf-serif);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.personalize-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 14px;
+}
+
+.personalize-title {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-weight: 600;
+  font-size: 22px;
+  margin: 0;
+}
+
+.personalize-close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: var(--ink);
+  padding: 8px;
+  min-height: 44px;
+  min-width: 44px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.personalize-section {
+  margin-bottom: 18px;
+}
+
+.personalize-section-final {
+  margin-bottom: 4px;
+}
+
+.personalize-section-label {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+
+.personalize-section-hint {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--mute);
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+.personalize-section-hint--clamped {
+  color: var(--ember);
+}
+
+.personalize-row {
+  display: flex;
+  gap: 10px;
+}
+
+.personalize-row--centered {
+  align-items: center;
+}
+
+.personalize-select-wrap {
+  position: relative;
+  flex: 1;
+}
+
+/* Native <select> rendering on macOS Safari (and iOS) draws the displayed
+ * value in OS system colors regardless of the page's `color` — so on Dusk
+ * the dark system text vanished against the dark modal paper. `appearance:
+ * none` opts out of that and lets our --ink win; `color-scheme` carries the
+ * active theme through to the option popup. */
+.personalize-select {
+  width: 100%;
+  padding: 10px 28px 10px 12px;
+  min-height: 44px;
+  border: 1px solid var(--ink);
+  background: var(--paper-bright);
+  color: var(--ink);
+  font-family: var(--wf-mono);
+  font-size: 16px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color-scheme: light dark;
+}
+
+.personalize-select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.personalize-select-chevron {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--mute);
+}
+
+/* 16px floor on inputs defeats iOS Safari's zoom-on-focus. */
+.personalize-input {
+  flex: 1;
+  padding: 10px 12px;
+  min-height: 44px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  font-family: var(--wf-mono);
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.personalize-input--full {
+  width: 100%;
+  flex: none;
+}
+
+.personalize-unit-toggle {
+  padding: 10px 14px;
+  min-height: 44px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.personalize-presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.personalize-preset {
+  padding: 10px 14px;
+  min-height: 44px;
+  border: 1px solid var(--mute-fog);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--wf-mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.personalize-preset--active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.personalize-theme-row {
+  display: flex;
+  border: 1px solid var(--ink);
+}
+
+.personalize-theme-btn {
+  flex: 1;
+  min-height: 44px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--ink);
+  border: none;
+  border-right: 1px solid var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  cursor: pointer;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.personalize-theme-btn:last-child { border-right: none; }
+
+.personalize-theme-btn--active {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.personalize-theme-btn-detail {
+  font-family: var(--wf-mono);
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.personalize-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mute-fog);
+}
+
+.personalize-reset {
+  background: transparent;
+  border: none;
+  padding: 10px 4px;
+  min-height: 44px;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--mute);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.personalize-keep {
+  padding: 12px 20px;
+  min-height: 44px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ── Mobile shell (MobileLayout) ─────────────────────────────────────────── */
+
+.mobile-shell {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--paper);
+}
+
+.mobile-shell-map {
+  position: absolute;
+  inset: 0;
+}
+
+.mobile-shell-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+}
+
+/* ── Loading skeleton ────────────────────────────────────────────────────── */
+
+.loading-skel {
+  border: 2px solid var(--ink);
+  background: var(--paper-bright);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.loading-skel-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+
+.loading-skel-lamp {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 0 2px var(--paper-bright), 0 0 6px var(--ember);
+}
+
+.loading-skel-bar {
+  background: linear-gradient(90deg, var(--mute) 0%, var(--paper-bright) 50%, var(--mute) 100%);
+  background-size: 200% 100%;
+  border: 1px solid var(--ink-soft);
+}
+
+/* ── Masthead ────────────────────────────────────────────────────────────── */
+
+.masthead--full {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+
+.masthead--compact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  padding-top: max(10px, var(--safe-top));
+  padding-left: max(16px, var(--safe-left));
+  padding-right: max(16px, var(--safe-right));
+  background: var(--paper-bright);
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--wf-sans);
+}
+
+.masthead-compact-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.masthead-compact-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid var(--mute-fog);
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.masthead-eyebrow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.masthead-eyebrow-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.masthead-rule {
+  height: 1px;
+  background: var(--ink);
+}
+
+.masthead-rule--thick {
+  height: 2px;
+  margin-top: 2px;
+}
+
+.masthead-tagline {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--mute);
+  margin: 0;
+  margin-top: 4px;
+}
+
+/* ── Page footer colophon ────────────────────────────────────────────────── */
+
+.page-footer-colophon {
+  display: block;
+  text-align: center;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--mute);
+  padding-top: 16px;
+  border-top: 1px solid var(--mute-fog);
+}
+
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 
 .toast {
   position: fixed;
-  bottom: 24px;
+  /* Clear the iPhone home indicator on notched phones; falls back to 24px
+   * elsewhere because env() resolves to 0px when there's no inset. */
+  bottom: max(24px, calc(var(--safe-bottom) + 12px));
   left: 50%;
   transform: translateX(-50%);
   padding: 9px 18px;
@@ -1046,12 +1686,18 @@
   font-family: var(--wf-serif);
   font-style: italic;
   font-size: 13px;
-  transition: var(--transition-ui);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 .share-card-btn:hover {
   background: var(--ink);
   color: var(--paper);
+}
+
+.share-card-btn-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* ── Share modal ──────────────────────────────────────────────────────────── */
@@ -1158,5 +1804,662 @@
   .map-pick-marker-pulse,
   .toast {
     animation: none !important;
+  }
+}
+
+/* ── Mode toggle (Route ⇄ Explore) ───────────────────────────────────────── */
+
+.mode-toggle {
+  display: flex;
+  margin-bottom: 14px;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+}
+.mode-toggle-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mode-toggle-btn + .mode-toggle-btn {
+  border-left: 1px solid var(--ink);
+}
+.mode-toggle-btn--active {
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+.mode-toggle-btn:not(.mode-toggle-btn--active):hover {
+  background: var(--paper-deep);
+}
+.mode-toggle-btn:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: -2px;
+}
+
+/* ── Explore form ───────────────────────────────────────────────────────── */
+
+.explore-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.explore-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.explore-section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+/* Origin mode buttons — two big tappable cards. Stack on mobile, side-by-side
+ * on desktop where there's room. */
+.explore-origin-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.explore-origin-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 64px;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: 1px solid var(--mute-fog);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+.explore-origin-btn:hover {
+  border-color: var(--ink);
+}
+.explore-origin-btn:active {
+  transform: scale(0.98);
+}
+.explore-origin-btn--active {
+  border-color: var(--ink);
+  background: var(--paper-bright);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.explore-origin-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.explore-origin-btn-glyph {
+  font-size: 20px;
+  line-height: 1;
+}
+.explore-origin-btn-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.explore-origin-btn-title {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.explore-origin-btn-sub {
+  font-family: var(--wf-sans);
+  font-size: 11px;
+  color: var(--mute);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.explore-area-select {
+  position: relative;
+  border-bottom: 1px solid var(--ink);
+  padding: 4px 0;
+}
+.explore-area-select::after {
+  content: "▾";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  color: var(--mute);
+  pointer-events: none;
+}
+.explore-area-select select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--wf-serif);
+  font-size: 16px;
+  color: var(--ink);
+  padding: 8px 24px 8px 0;
+  cursor: pointer;
+  min-height: 44px;
+}
+.explore-area-select select:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+
+/* Time-budget slider. Native range input restyled to match the editorial
+ * voice: a paper track, an ink-filled thumb sized for thumbs (no pun
+ * intended) on mobile.  */
+.explore-budget {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.explore-budget-readout {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.explore-budget-num {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 36px;
+  color: var(--ink);
+  line-height: 1;
+}
+.explore-budget-unit {
+  font-family: var(--wf-sans);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.explore-budget-summary {
+  margin: 0;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--mute);
+}
+.explore-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+  /* Reserve all touch gestures on the slider for the slider itself, so a
+   * drag that starts on the thumb can't be hijacked by the bottom sheet's
+   * body-drag heuristic when the user moves vertically while changing
+   * the value. */
+  touch-action: none;
+}
+.explore-slider:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 4px;
+}
+.explore-slider::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 4px;
+  background: var(--mute-fog);
+  border: none;
+}
+.explore-slider::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  background: var(--mute-fog);
+  border: none;
+}
+.explore-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -12px;
+  background: var(--ink);
+  border: 2px solid var(--paper-bright);
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.explore-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  background: var(--ink);
+  border: 2px solid var(--paper-bright);
+  border-radius: 50%;
+  cursor: grab;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+.explore-slider:active::-webkit-slider-thumb {
+  cursor: grabbing;
+  transform: scale(1.08);
+}
+.explore-slider:active::-moz-range-thumb {
+  cursor: grabbing;
+  transform: scale(1.08);
+}
+
+.explore-slider-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px;
+  font-family: var(--wf-mono);
+  font-size: 9px;
+  color: var(--mute);
+}
+/* Trim middle ticks on narrower viewports so the row doesn't crowd. */
+@media (max-width: 480px) {
+  .explore-slider-tick:nth-child(2),
+  .explore-slider-tick:nth-child(4),
+  .explore-slider-tick:nth-child(6),
+  .explore-slider-tick:nth-child(8) {
+    visibility: hidden;
+  }
+}
+
+.explore-submit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 13px 16px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.explore-submit-btn:hover:not(:disabled) {
+  background: var(--ink-soft);
+}
+.explore-submit-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.explore-submit-btn:disabled {
+  background: var(--mute-fog);
+  border-color: var(--mute-fog);
+  cursor: not-allowed;
+}
+
+/* Reachable-neighborhood chips */
+.explore-chip-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.explore-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  background: var(--paper);
+  border: 1px solid var(--mute-fog);
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.08s;
+}
+.explore-chip:hover {
+  background: var(--paper-bright);
+  border-color: var(--ink);
+}
+.explore-chip:active {
+  transform: scale(0.97);
+}
+.explore-chip-arrow {
+  font-family: var(--wf-mono);
+  color: var(--mute);
+  font-size: 12px;
+}
+.explore-chip-help {
+  margin: 0;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--mute);
+}
+
+/* ── Explore result summary + error ─────────────────────────────────────── */
+
+.explore-error {
+  padding: 10px 12px;
+  background: rgba(156, 42, 26, 0.06);
+  border: 1px solid var(--ember);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ember);
+}
+
+.explore-result-summary {
+  display: flex;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--mute-fog);
+  border-bottom: 1px solid var(--mute-fog);
+}
+.explore-result-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.explore-result-stat-num {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--ink);
+  line-height: 1;
+}
+.explore-result-stat-unit {
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-top: 4px;
+}
+
+/* ── Category panel ─────────────────────────────────────────────────────── */
+
+.explore-cat-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.explore-cat-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ink);
+}
+.explore-cat-panel-label {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.explore-cat-panel-count {
+  margin-left: 6px;
+  font-family: var(--wf-mono);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--mute);
+}
+.explore-cat-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.explore-cat-panel-link {
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 6px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  min-height: 32px;
+}
+.explore-cat-panel-link:hover {
+  color: var(--ember);
+}
+.explore-cat-panel-divider {
+  color: var(--mute-fog);
+}
+.explore-cat-groups {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.explore-cat-group {
+  border-bottom: 1px dashed var(--mute-fog);
+}
+.explore-cat-group:last-child {
+  border-bottom: none;
+}
+.explore-cat-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 4px;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.explore-cat-group-toggle:hover {
+  background: var(--paper-deep);
+}
+.explore-cat-group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--mute);
+}
+.explore-cat-group-title {
+  flex: 1;
+}
+.explore-cat-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--wf-mono);
+  font-size: 10px;
+  border-radius: 2px;
+}
+.explore-cat-list {
+  list-style: none;
+  margin: 0 0 6px 24px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.explore-cat-row {
+  position: relative;
+}
+.explore-cat-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.explore-cat-row-swatch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--paper-bright);
+  font-family: var(--wf-sans);
+  font-size: 11px;
+  font-weight: 700;
+  border: 1.5px solid var(--paper-bright);
+  box-shadow: 0 0 0 1px var(--ink);
+  flex-shrink: 0;
+}
+.explore-cat-row-swatch--fill {
+  /* Heatmap-only categories — render as a translucent square fill swatch
+   * so the user reads it as a region, not a pin. */
+  border-radius: 2px;
+  border: 1px solid var(--ink);
+  box-shadow: none;
+  opacity: 0.7;
+}
+.explore-cat-sublist {
+  list-style: none;
+  margin: 0 0 4px 30px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.explore-cat-subrow {
+  display: flex;
+  align-items: center;
+  border-left: 1px dashed var(--mute-fog);
+  padding-left: 8px;
+}
+
+/* ── Place-pin popup (MapLibre Popup content) ───────────────────────────── */
+
+.maplibregl-popup.explore-popup .maplibregl-popup-content {
+  background: var(--paper-bright);
+  border: 1px solid var(--ink);
+  padding: 0;
+  box-shadow: 0 4px 14px rgba(23, 19, 16, 0.18);
+  border-radius: 0;
+  font-family: var(--wf-serif);
+  color: var(--ink);
+}
+.maplibregl-popup.explore-popup .maplibregl-popup-tip {
+  border-top-color: var(--ink);
+}
+.maplibregl-popup.explore-popup .maplibregl-popup-close-button {
+  font-size: 18px;
+  padding: 4px 8px;
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-weight: 600;
+  min-height: 32px;
+  min-width: 32px;
+}
+.explore-popup-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  min-width: 200px;
+}
+.explore-popup-card-name {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.25;
+  padding-right: 18px; /* leave room for the close button */
+}
+.explore-popup-card-address {
+  font-family: var(--wf-serif);
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+.explore-popup-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.explore-popup-card-source {
+  color: var(--mute-fog);
+}
+.explore-popup-card-walk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 4px;
+  min-height: 40px;
+  padding: 8px 12px;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  cursor: pointer;
+}
+.explore-popup-card-walk:hover {
+  background: var(--ink-soft);
+}
+
+/* ── Mobile tweaks (≤480 px) for explore mode ───────────────────────────── */
+
+@media (max-width: 480px) {
+  /* Origin buttons can drop to a single column on the narrowest phones —
+   * two-column gets too cramped to read the sub label. */
+  .explore-origin-modes {
+    grid-template-columns: 1fr;
+  }
+  .explore-budget-num {
+    font-size: 32px;
+  }
+  /* The category panel often anchors below the form inside the sheet body;
+   * give it a slightly tighter vertical rhythm so more rows fit at half snap. */
+  .explore-cat-group-toggle {
+    padding: 6px 2px;
+  }
+}
+
+/* Tablet: limit the origin button column width so the two cards don't
+ * stretch awkwardly wide in the desktop sidebar. */
+@media (min-width: 481px) and (max-width: 1023px) {
+  .explore-origin-modes {
+    grid-template-columns: 1fr 1fr;
   }
 }

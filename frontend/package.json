@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
+    "dev:tunnel": "node ../scripts/dev-tunnel.mjs",
     "build": "node ./node_modules/vite/bin/vite.js build",
     "preview": "node ./node_modules/vite/bin/vite.js preview",
     "test": "node ./node_modules/vitest/vitest.mjs run",

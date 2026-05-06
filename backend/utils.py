@@ -8,6 +8,22 @@ _EARTH_RADIUS_MILES = 3958.8
 
 WALKING_SPEED_MPH: float = 3.0
 
+# Single source of truth for the meters-per-mile conversion factor used across
+# the routing/explore/geocoding modules. Keeping the prior 1609.34 (vs. the
+# more precise 1609.344) preserves byte-for-byte numeric output of every
+# distance/area calculation that already exists.
+METERS_PER_MILE: float = 1609.34
+
+
+def quantize_coord(lat: float, lon: float) -> tuple[int, int]:
+    """Quantize a (lat, lon) pair to ~1 m precision for cache or dedupe keys.
+
+    Five decimal places ≈ 1.1 m at Chicago latitude. Used everywhere we want
+    coordinates that are "close enough" to share a cache entry — route caches,
+    KDTree-snap caches, places dedupe, isochrone cache.
+    """
+    return (round(lat * 1e5), round(lon * 1e5))
+
 
 def haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Return the great-circle distance in miles between two lat/lon points."""

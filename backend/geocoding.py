@@ -34,6 +34,7 @@ from utils import (
     CHICAGO_BBOX_GOOGLE,
     chicago_bbox_contains,
     haversine_miles,
+    METERS_PER_MILE,
 )
 
 
@@ -112,6 +113,18 @@ logger = logging.getLogger(__name__)
 
 _GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+# Latch so the "GOOGLE_MAPS_API_KEY not set" warning fires once per process —
+# every uncached free-text query previously re-emitted it, drowning real errors.
+_missing_api_key_warned: bool = False
+
+
+def _warn_missing_api_key() -> None:
+    """Log the missing-API-key warning at most once per process."""
+    global _missing_api_key_warned
+    if not _missing_api_key_warned:
+        logger.warning("GOOGLE_MAPS_API_KEY not set — geocoding unavailable")
+        _missing_api_key_warned = True
 
 _GEOCODE_CACHE_PATH = Path(__file__).parent / "geocode_cache.json"
 _geocode_lock = threading.Lock()
@@ -553,7 +566,7 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
         if query in _geocode_cache:
             return _geocode_cache[query]
         if not _GOOGLE_API_KEY:
-            logger.warning("GOOGLE_MAPS_API_KEY not set — geocoding unavailable")
+            _warn_missing_api_key()
             return None
     # Lock released here — network I/O happens without holding the lock so
     # concurrent uncached queries don't serialise behind each other's round-trip.
@@ -672,7 +685,7 @@ def _resolve_location_inner(query: str) -> "tuple[float, float] | None":
 # Reverse geocoding
 # ---------------------------------------------------------------------------
 
-_REV_THRESHOLD_MI: float = 200.0 / 1609.34  # 200 m in miles
+_REV_THRESHOLD_MI: float = 200.0 / METERS_PER_MILE  # 200 m in miles
 
 
 # Lazy-built KDTree over NEIGHBORHOOD_COORDS for O(log n) nearest-neighbor lookup
@@ -682,26 +695,44 @@ _REV_THRESHOLD_MI: float = 200.0 / 1609.34  # 200 m in miles
 _neighborhood_kdtree = None
 _neighborhood_names: tuple[str, ...] = ()
 _neighborhood_coords_arr = None
+_neighborhood_kdtree_lock = threading.Lock()
 
 
 def _get_neighborhood_kdtree():
     global _neighborhood_kdtree, _neighborhood_names, _neighborhood_coords_arr
-    if _neighborhood_kdtree is None:
+    if _neighborhood_kdtree is not None:
+        return _neighborhood_kdtree
+    with _neighborhood_kdtree_lock:
+        # Double-checked: another thread may have built it while we waited.
+        if _neighborhood_kdtree is not None:
+            return _neighborhood_kdtree
         from scipy.spatial import cKDTree  # local import: keeps module import light
         import numpy as np
 
         items = list(NEIGHBORHOOD_COORDS.items())
         names = tuple(name for name, _ in items)
         coords = np.array([[lon, lat] for _, (lat, lon) in items], dtype=float)
-        _neighborhood_kdtree = cKDTree(coords)
+        tree = cKDTree(coords)
+        # Publish names/coords BEFORE the tree handle so any thread that sees a
+        # non-None _neighborhood_kdtree is guaranteed to see the matching names.
         _neighborhood_names = names
         _neighborhood_coords_arr = coords
+        _neighborhood_kdtree = tree
     return _neighborhood_kdtree
 
 
 def _reverse_geocode_google(lat: float, lon: float) -> "str | None":
-    """Call Google reverse geocode; return a short human label or None."""
+    """Call Google reverse geocode; return a short human label or None.
+
+    Honors the same 429/`OVER_QUERY_LIMIT` circuit breaker as `geocode_google`:
+    when the breaker is open we skip the network call entirely, and 429
+    responses (or `status=OVER_QUERY_LIMIT`) trip it for the next request.
+    Falls back silently to the caller's "coordinates" label when degraded.
+    """
     if not _GOOGLE_API_KEY:
+        _warn_missing_api_key()
+        return None
+    if _circuit_is_open():
         return None
     try:
         resp = _http_session.get(
@@ -709,13 +740,22 @@ def _reverse_geocode_google(lat: float, lon: float) -> "str | None":
             params={"latlng": f"{lat},{lon}", "key": _GOOGLE_API_KEY},
             timeout=5,
         )
-        data = resp.json()
-        if data.get("status") == "OK" and data.get("results"):
+        data = resp.json() if resp.content else {}
+        api_status = data.get("status")
+        if resp.status_code == 429 or api_status == "OVER_QUERY_LIMIT":
+            _circuit_trip_429()
+            return None
+        if api_status == "OK" and data.get("results"):
             # Prefer the most specific (first) result's formatted_address
             addr = data["results"][0].get("formatted_address", "")
             # Strip country suffix for brevity
             addr = re.sub(r",\s*USA\s*$", "", addr).strip()
+            _circuit_record_success()
             return addr or None
+        if api_status:
+            # Healthy reply with no usable result still proves Google is up;
+            # close the breaker if it was tripped by an earlier request.
+            _circuit_record_success()
     except Exception as exc:
         logger.error("Google reverse geocode failed for (%s, %s): %s", lat, lon, exc)
     return None

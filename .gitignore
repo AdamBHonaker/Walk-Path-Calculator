@@ -48,7 +48,7 @@ npm-debug.log*
 
 # Personal documentation (not for the repo)
 Human Documentation/
-
+docs/MOBILE_TESTING.md
 # IDE
 .vscode/
 .idea/
@@ -61,3 +61,6 @@ Thumbs.db
 
 # Backup directories
 backend copy/
+
+# Top-level dev/utility scripts (not backend/scripts/)
+/scripts/

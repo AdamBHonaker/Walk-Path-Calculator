@@ -5,7 +5,7 @@
 // progress. All in editorial Wayfarer voice.
 // ============================================================
 
-import React from "react";
+import { useState } from "react";
 import { WF, WFCaps } from "./primitives.jsx";
 
 // ── <WFTag> — small paper chip ─────────────────────────────
@@ -121,7 +121,7 @@ export function WFList({ items = [], variant = "numbered", style = {} }) {
 
 // ── <WFTooltip> — dispatch-frame popover ───────────────────
 export function WFTooltip({ children, content, style = {} }) {
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useState(false);
   return (
     <span style={{ position: "relative", display: "inline-block", ...style }}
       onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
@@ -139,17 +139,24 @@ export function WFTooltip({ children, content, style = {} }) {
 }
 
 // ── <WFModal> — paper sheet over vellum scrim ──────────────
+// On wide viewports renders a centred 480px card. Below 480px
+// the `.wf-modal-overlay` / `.wf-modal-card` classes are picked
+// up by responsive.css and the modal becomes a full-screen sheet
+// with safe-area padding, so the content doesn't slide under a
+// notch or home indicator.
 export function WFModal({ open, onClose, title, children, style = {} }) {
   if (!open) return null;
   return (
-    <div onClick={onClose} style={{
+    <div onClick={onClose} className="wf-modal-overlay" style={{
       position: "fixed", inset: 0, background: "rgba(23,19,16,0.45)",
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 100, padding: 20,
     }}>
-      <div onClick={(e) => e.stopPropagation()} className="paper-grain paper-bright" style={{
+      <div onClick={(e) => e.stopPropagation()} className="wf-modal-card paper-grain paper-bright" style={{
         maxWidth: 480, width: "100%", border: `1px solid ${WF.ink}`,
-        boxShadow: "0 12px 40px rgba(23,19,16,0.25)", padding: 24, ...style,
+        boxShadow: "0 12px 40px rgba(23,19,16,0.25)", padding: 24,
+        maxHeight: "calc(100vh - 40px)", overflowY: "auto",
+        ...style,
       }}>
         {title && (
           <>
@@ -183,7 +190,8 @@ export function WFAvatar({ initials = "—", size = 36, tone = "ink" }) {
 
 // ── <WFProgress> — hand-ruled progress ─────────────────────
 export function WFProgress({ value = 0, max = 100, label, style = {} }) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  // Guard against max <= 0: 0/0 → NaN propagates into width/left CSS values.
+  const pct = max > 0 ? Math.max(0, Math.min(100, (value / max) * 100)) : 0;
   return (
     <div style={style}>
       {label && <WFCaps style={{ marginBottom: 6 }}>{label}</WFCaps>}

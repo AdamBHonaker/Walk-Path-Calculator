@@ -92,6 +92,10 @@ export function WFIcon({ name, size = 20, color = "currentColor", strokeWidth = 
       return (<svg {...props}>
         <path d="M6 9 L12 15 L18 9" />
       </svg>);
+    case "chevron-right":
+      return (<svg {...props}>
+        <path d="M9 6 L15 12 L9 18" />
+      </svg>);
     case "x":
       return (<svg {...props}>
         <path d="M6 6 L18 18 M18 6 L6 18" />
@@ -106,7 +110,7 @@ export function WFIcon({ name, size = 20, color = "currentColor", strokeWidth = 
 }
 
 export const WF_ICON_NAMES = [
-  "compass", "lantern", "key", "ledger", "envelope", "journal", "anchor",
+  "compass", "lantern", "key", "ledger", "envelope", "journal", "anchor", "chevron-right",
   "pen", "arrow-right", "arrow-left", "star", "bookmark", "map", "moon", "sun", "ticket",
   "chevron-up", "chevron-down", "x", "plus",
 ];

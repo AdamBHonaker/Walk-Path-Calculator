@@ -1,5 +1,6 @@
 import { useEffect, useRef, forwardRef, useMemo } from "react";
 import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import {
   renderWalkRoute,
   lockMapGestures,
@@ -9,6 +10,7 @@ import {
 import { safePaceLabel, motivationMessage } from "../lib/routeFormat.js";
 import { calorieEquivalent } from "../calorieEquiv.js";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
+import { COLOPHON_TEXT } from "../wayfarer/primitives.jsx";
 
 const CARD_WIDTH = 480;
 const HORIZONTAL_PAD = 22;
@@ -24,7 +26,7 @@ function formatIssueDate(d = new Date()) {
 }
 
 export const ShareDispatch = forwardRef(function ShareDispatch(
-  { result, originLabel, destLabel, onMapReady },
+  { result, originLabel, destLabel, onMapReady, mapInstanceRef },
   ref,
 ) {
   const mapContainerRef = useRef(null);
@@ -52,6 +54,7 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
     });
 
     lockMapGestures(map);
+    if (mapInstanceRef) mapInstanceRef.current = map;
 
     map.once("load", () => {
       // Share-card route uses ember (#9c2a1a) — kept in sync with --ember in
@@ -65,10 +68,11 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
 
     return () => {
       map.remove();
+      if (mapInstanceRef) mapInstanceRef.current = null;
       layerIds.current = [];
       sourceIds.current = [];
     };
-  }, [result, onMapReady]);
+  }, [result, onMapReady, mapInstanceRef]);
 
   const motivation = useMemo(
     () => (result ? motivationMessage(result.total_steps) : null),
@@ -94,7 +98,12 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
       ref={ref}
       className="paper-grain paper-bright"
       style={{
-        width: CARD_WIDTH,
+        // Stretch to fit the share-modal-card-wrap on mobile (where the modal
+        // becomes full-bleed), but never exceed the editorial 480px design
+        // width on desktop. PNG export uses pixelRatio: 3 so even a 320px
+        // card renders at ~960px — high enough for a social share.
+        width: "100%",
+        maxWidth: CARD_WIDTH,
         background: "var(--paper-bright)",
         color: "var(--ink)",
         border: "2px solid var(--ink)",
@@ -319,13 +328,15 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
       >
         <span
           style={{
-            fontFamily: "var(--wf-serif)",
-            fontStyle: "italic",
-            fontSize: 11,
+            fontFamily: "var(--wf-sans)",
+            fontSize: 10,
+            fontWeight: 800,
+            letterSpacing: 3,
+            textTransform: "uppercase",
             color: "var(--mute)",
           }}
         >
-          walkpath.app
+          Passage
         </span>
         <span
           style={{
@@ -340,7 +351,7 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
             color: "var(--ink)",
           }}
         >
-          ⟡ Printed in Chicago, on foot ⟡
+          {COLOPHON_TEXT}
         </span>
       </div>
     </div>

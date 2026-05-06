@@ -31,6 +31,216 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Reject geocodes outside the Chicago bbox | Bolt-On | 2026-05-05 |
 | Tighten geocoder fuzzy-match threshold | Bolt-On | 2026-05-05 |
 | Cache + back off on Google Maps 429s | Bolt-On | 2026-05-05 |
+| Sheet Snap Memory Across Sessions | Bolt-On | 2026-05-05 |
+| Haptic Feedback on Sheet Snap Settle | Bolt-On | 2026-05-05 |
+| Pace Selector as Segmented Control on Mobile | Bolt-On | 2026-05-05 |
+| Off-screen 480 px PNG Render for ShareDispatch | Bolt-On | 2026-05-05 |
+| Landscape phone orientation polish | Bolt-On | 2026-05-05 |
+| Tablet range (481–1023 px) layout | Bolt-On | 2026-05-05 |
+| Tunnel-based mobile dev access (HTTPS) | Bolt-On | 2026-05-05 |
+| Drag-from-body with scroll handoff (sheet) | Bolt-On | 2026-05-05 |
+| Velocity-aware sheet snap | Bolt-On | 2026-05-05 |
+| Map-First Mobile UI Foundation | Structural | 2026-05-05 |
+| Theme Toggle in Personalize Modal | Bolt-On | 2026-05-05 |
+| Geolocation CTA on the map | Bolt-On | 2026-05-05 |
+| Code-splitting MapView for faster cold-load | Bolt-On | 2026-05-05 |
+
+---
+
+## Code-splitting MapView for faster cold-load
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+The production build was a single 1.03 MB JS bundle (~290 KB gzip), almost entirely MapLibre. On cold load the form panel could not become interactive until that whole bundle parsed. Splitting the MapLibre-dependent surfaces into lazy chunks gets the form rendering immediately while the map streams in alongside.
+
+**What changed:**
+- [frontend/src/App.jsx](frontend/src/App.jsx) — `MapView` and `ShareDispatch` are now imported via `React.lazy` and each render site is wrapped in a `<Suspense>` boundary with a same-dimension placeholder (`.map-lazy-fallback`, `.share-card-lazy-fallback`) so first paint doesn't shift. ShareDispatch had to be lazy too — leaving it eager would have pinned MapLibre back into the initial graph since the modal's import is at module top-level.
+- [frontend/src/main.jsx](frontend/src/main.jsx) — removed the eager `import "maplibre-gl/dist/maplibre-gl.css"`. The stylesheet now lives inside [MapView.jsx](frontend/src/MapView.jsx) and [ShareDispatch.jsx](frontend/src/components/ShareDispatch.jsx), so Vite emits it as a separate CSS chunk that loads in parallel with the lazy JS.
+- [frontend/vite.config.js](frontend/vite.config.js) — added `build.rollupOptions.output.manualChunks` pinning anything under `node_modules/maplibre-gl/` into a shared `maplibre` chunk so MapView and ShareDispatch don't each duplicate the library.
+- [frontend/src/App.css](frontend/src/App.css) — added the two fallback selectors above so the placeholder reserves the right box.
+
+**Build result:**
+- Initial chunk: **220 KB / 69.5 KB gzip** (was ~290 KB gzip — a 76% reduction, comfortably past the 60% acceptance bar).
+- Separate chunks: `maplibre-*.js` 803 KB / 218 KB gzip, `maplibre-*.css` 65 KB / 9.2 KB gzip, `MapView-*.js` 6.6 KB, `ShareDispatch-*.js` 5.0 KB.
+- `html-to-image` continues to load on demand via the existing dynamic `import("html-to-image")` in `handleDownloadCard`.
+
+**Test impact:** all 170 frontend tests pass with the lazy boundaries in place. The maplibre-gl module mock in `test-setup.js` still applies because vi.mock matches by module ID, not by static-vs-dynamic import.
+
+---
+
+## Geolocation CTA on the map
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+Added a "Use my current location" floating action on the map. Click it to populate the first empty stop (or origin if all stops have values) without typing — bridges the gap between pick-on-map (already required clicking a precise spot) and typed entry. Designed so FEAT #1 (Neighborhood Explorer)'s "current location" mode can reuse the same helper.
+
+**What changed:**
+- New [frontend/src/lib/geolocation.js](frontend/src/lib/geolocation.js) — `resolveCurrentLocation()` wraps `navigator.geolocation.getCurrentPosition` and classifies outcomes into `{ lat, lon }` or `{ error: "denied" | "outside_coverage" | "unavailable" }`. Coverage gating happens locally against the same Chicago bbox the backend uses, so we don't pay a `/reverse-geocode` round trip for points the backend would 422 anyway.
+- [frontend/src/MapView.jsx](frontend/src/MapView.jsx) gained `onLocateMe` / `locating` props and renders a top-right floating button. While resolving, the button gets `wf-anim-radar` (reusing the existing keyframe in [motion.css](frontend/src/wayfarer/motion.css)) and is disabled. The button hides during pick-on-map and on style errors.
+- [frontend/src/App.jsx](frontend/src/App.jsx) owns the `locating` state and `handleLocateMe`: target = first empty stop, falling back to origin; success calls the existing `resolveStopLabel` helper for the address; failure inserts `lat.toFixed(5), lon.toFixed(5)` and toasts the same "no name we know" copy as `handleMapPick`. Toast plumbing factored into a small `showToast` callback so the three error paths (denied / outside_coverage / unavailable) and the coordinates-fallback share one call site.
+- [App.css](frontend/src/App.css) — `.map-locate-btn` mirrors `.map-unlock-btn`'s editorial chrome but anchors top-right by default; mobile media query (≤ 768 px) collapses it to 44 × 44 px under the floating masthead, with a `:has(+ .map-locate-btn)` rule that pushes the unlock button below the locate button when both are visible so they don't overlap.
+
+**FEAT #1 reuse note:** chunk 8 of the Neighborhood Explorer plan now expects this helper — keep `resolveCurrentLocation`'s return shape stable when wiring the explorer's "📍 My location" radio.
+
+---
+
+## Theme Toggle in Personalize Modal
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+The Cream / Dusk theme switcher used to live in `TweaksPanel`, a hidden component activated only by an external AI editor harness via a `__activate_edit_mode` postMessage protocol — end users couldn't reach it. Promoted to a real user-facing setting: a "Display" section in `PersonalizeModal` next to height / weight / daily measure. The harness panel and its protocol were deleted entirely.
+
+**What changed:**
+- New [frontend/src/lib/theme.js](frontend/src/lib/theme.js) — `loadTheme()` / `applyTheme(theme)` helpers using the existing safe-storage wrappers. The `walkpath:theme` localStorage key matches the boot script in [frontend/index.html](frontend/index.html), so the page picks up the right palette before React mounts (no FOUC).
+- [frontend/src/components/PersonalizeModal.jsx](frontend/src/components/PersonalizeModal.jsx) gained a Display section — two-cell segmented control with proper `radiogroup` / `aria-checked` semantics, 44 px tap height, italic editorial labels ("Cream / Bone-white paper" · "Dusk / Lamplit deep ink"), italic hint line beneath. Theme state is local to the modal; `applyTheme` mutates `<html>` and writes to localStorage on every change. The Reset button intentionally does **not** clear theme — it's a display preference, not a particular.
+- Deleted `frontend/src/components/TweaksPanel.jsx` and its references in `App.jsx` (import + render). The `__edit_mode_*` postMessage protocol is gone with it; nothing else in the codebase referenced either.
+
+**Concurrent fix — height select native rendering on Dusk:** promoting the toggle exposed an existing rendering bug. The `<select>` elements for height feet / inches had no inline styling, so macOS Safari / iOS drew the displayed value in OS system colours regardless of our `color`. On Dusk that meant dark system text on the dark `paper-bright` background — unreadable. Opted out of native rendering with `appearance: none` (plus `WebkitAppearance` / `MozAppearance`) on a new `heightSelectStyle`, added an explicit chevron span (`▾` in `var(--mute)`) in a `position: relative` wrapper around each select, and set `colorScheme: "light dark"` so the native option popup also carries the active theme. Disabled state (inches while feet is null) gets `opacity: 0.4` + `cursor: not-allowed` since `appearance: none` strips the browser's default disabled styling.
+
+---
+
+## Map-First Mobile UI Foundation
+**Type:** Structural | **Area:** Frontend + Wayfarer | **Shipped:** 2026-05-05
+
+Replaces the single-breakpoint "stack the layout vertically" mobile fallback (a leftover from the Wayfarer Phase 1 migration) with a real map-first composition: below 768 px the app renders a new `MobileLayout` — full-bleed map, floating compact `Masthead`, and a draggable `WFSheet` containing form / results / directions. Wayfarer was extended with the responsive primitives the new layout depends on so future components inherit them.
+
+This entry covers the platform layer; the sheet-behaviour refinements (snap memory, haptic, velocity, drag-from-body, landscape profile) and per-component polish (segmented pace, off-screen PNG, tablet range) shipped concurrently and have their own entries below.
+
+**Wayfarer extensions:**
+- New breakpoint tokens (`--bp-mobile`, `--bp-tablet`, `--bp-desktop`), safe-area `env()` helpers (`--safe-top/right/bottom/left`), and compact type variants (`--fs-display-compact`, `--fs-headline-compact`, `--fs-title-compact`) in [tokens.css](frontend/src/wayfarer/tokens.css).
+- New [responsive.css](frontend/src/wayfarer/responsive.css) — visibility helpers (`wf-mobile-only` / `wf-mobile-hide` / `wf-tablet-up`), safe-area paddings, container utility, a `(pointer: coarse)` 44 × 44 px touch-target floor, and the `wf-modal-overlay` / `wf-modal-card` mobile-fullscreen overrides used by `WFModal` and `PersonalizeModal`.
+- New `WFSheet` primitive in [primitives.jsx](frontend/src/wayfarer/primitives.jsx) — paper-stock bottom sheet with snap-point math (px / % / dvh), pointer-event drag, editorial easing curve (`--ease-walk` × `--dur-considered`), and `prefers-reduced-motion` handling.
+- `WFModal` ([extras.jsx](frontend/src/wayfarer/extras.jsx)) renders full-screen below 480 px via the new responsive classes; centred 480 px card above.
+- Form primitives ([forms.jsx](frontend/src/wayfarer/forms.jsx)) bumped to a 16 px font floor (defeats iOS zoom-on-focus) and a 44 px `minHeight` on `WFInput` / `WFButton` / `WFCheck` / `WFRadio`.
+
+**App-level branch:**
+- New [`useMediaQuery`](frontend/src/lib/useMediaQuery.js) hook — SSR-safe `matchMedia` subscription used for `(max-width: 768px)` and other breakpoints.
+- New [`MobileLayout`](frontend/src/components/MobileLayout.jsx) — composition root that takes `masthead`, `map`, and children, wraps them in a fixed-position shell, and owns the `WFSheet`.
+- [App.jsx](frontend/src/App.jsx) extracts `mainContents` and `mapNode` once and slots them into either the existing desktop two-column layout or `MobileLayout`. The same JSX nodes mean React (and the MapLibre instance) preserve component identity across breakpoint crossings — no re-init when a tablet rotates.
+- Sheet auto-promotes from peek to half on route arrival, respecting the user's stored snap preference (see Sheet Snap Memory entry).
+- [MapView.jsx](frontend/src/MapView.jsx) accepts a `mapPadding` prop (number or `{top, right, bottom, left}`) and threads it into `fitBounds` + active-turn `flyTo` so the route polyline always fits the visible slice above the sheet. App.jsx computes the padding from the sheet's obscured-area callback.
+- Compact `Masthead` variant in [Masthead.jsx](frontend/src/components/Masthead.jsx) — brand mark + "Particulars" button that opens `PersonalizeModal`, with safe-area-top padding.
+
+**Component-level refinements:**
+- `RouteFlavorTabs` drops the per-tab stats line below 480 px (so 3 cramped tabs become 3 readable tabs); 44 px tap height.
+- `DirectionLedger` rows enforce 44 px min-height; Copy + "Show all" buttons taller for thumbs.
+- `ShareDispatch` card width is responsive (`min(480, container)`); the editorial 480 px design width is preserved at PNG export time (see Off-screen 480 px PNG Render entry).
+- `PersonalizeModal` adopts the new `wf-modal-card` / `wf-modal-overlay` classes so it goes full-screen below 480 px; weight + custom-goal inputs at 16 px font; preset chips at 44 px.
+
+**App.css cleanup:**
+- The single `@media (max-width: 700px)` rule that just stacked the columns is gone. Replaced by a `(pointer: coarse)` 44 px floor on the legacy icon buttons (`.swap-btn`, `.stop-move-btn`, `.stop-remove-btn`, `.pick-map-btn`, `.share-modal-close`, `.map-pick-confirm-btn`, `.map-unlock-btn`, `.recent-chip`, `.recent-clear-btn`), an `.app--mobile` 100 dvh shell, mobile-only stop-row label stacking (label on top instead of a 64 px right-aligned column), and a fluid `clamp(48px, 18vw, 96px)` `step-hero-count`.
+- Toast respects `--safe-bottom`; `.map-unlock-btn` moves to top-right under the masthead on mobile so the sheet doesn't bury it.
+
+**Other:**
+- `viewport-fit=cover` added to [frontend/index.html](frontend/index.html) so `env(safe-area-inset-*)` resolves on notched devices.
+
+---
+
+## Velocity-aware sheet snap
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+`WFSheet` previously settled to the *nearest* snap point on release, which read sticky next to native bottom sheets (Apple Maps, Google Maps, Vaul) — a quick upward flick that released closer to "half" would not promote to "full". The sheet now tracks pointer samples during drag and, on release, computes exit velocity over the trailing ~80 ms; a flick above the threshold promotes/demotes one snap in the direction of motion, while slower releases keep the nearest-snap fallback. Reduced-motion users keep nearest-snap since the velocity feel is itself a motion signal. Multiple-snap leaps (peek → full on a hard fling) are intentionally out of scope for v1.
+
+**What changed:**
+- [frontend\src\wayfarer\primitives.jsx](frontend\src\wayfarer\primitives.jsx): added a 4–6-sample ring buffer to `dragStateRef.samples`, populated on `pointerdown`/`pointermove`. Extracted the snap-decision logic into a pure exported helper `decideSnap({ samples, currentSnap, finalTranslate, snapPx, maxHeightPx, reducedMotion })` that returns the nearest snap unless `|velocity| > SHEET_VELOCITY_THRESHOLD` (0.8 px/ms) over the trailing `SHEET_VELOCITY_WINDOW_MS` (80 ms) — in which case it returns `currentSnap ± 1` clamped to the snap range. `onPointerUp` (and the body-drag release path added in the sibling feature) now call the helper instead of computing nearest inline. A small `pointerNow()` shim prefers `performance.now()` and falls back to `Date.now()`.
+- [frontend\src\wayfarer\WFSheet.test.jsx](frontend\src\wayfarer\WFSheet.test.jsx): added a `decideSnap` test suite covering nearest fallback below threshold, single-snap promotion on a fast upward fling (the spec's `[(t=0, y=400), (t=80, y=200)]` trajectory plus a same-release-y comparison vs. a slow trajectory), single-snap demotion on a fast downward fling, clamping at the top snap, reduced-motion override, stale-sample trimming via the 80 ms window, and the documented threshold constant.
+- [docs\FEATURE_PLANS.md](docs\FEATURE_PLANS.md): entry removed; bolt-on index renumbered.
+
+---
+
+## Drag-from-body with scroll handoff (sheet)
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+The `WFSheet` previously only dragged from its handle, leaving the largest target on a touch device — the body itself — inert. Native bottom sheets (Vaul, Apple Maps, Google Maps) treat a downward drag from the body as a sheet drag *only when* the body is scrolled to the top, otherwise letting the body scroll. This shipped that handoff.
+
+**What changed:**
+- [frontend/src/wayfarer/primitives.jsx](frontend/src/wayfarer/primitives.jsx): added `bodyDragRef` plus `onBodyPointerDown` / `onBodyPointerMove` / `onBodyPointerUp` wired to `.wf-sheet-body`. The state machine has three phases — `pending` → (`dragging` | `released`) — committed on the first move past `BODY_DRAG_DEADZONE_PX` (8 px). If the body's `scrollTop === 0` and the gesture is downward, the gesture sets pointer capture and behaves identically to the existing handle drag (samples velocity, settles via `decideSnap`, fires the same haptic). Otherwise it transitions to `released` and never re-engages, so native scroll runs uninterrupted. Existing `overscroll-behavior: contain` on the body keeps iOS rubber-banding from interfering.
+- [frontend/src/wayfarer/WFSheet.test.jsx](frontend/src/wayfarer/WFSheet.test.jsx): four new gesture tests cover the four decision branches (commit-to-drag, scrollTop>0 release, upward release, deadzone ignored) by stubbing `scrollTop` on the body element and dispatching synthetic pointer events.
+
+**Decisions made on the open questions:**
+- **Deadzone:** 8 px (matched Vaul's default), exported as `BODY_DRAG_DEADZONE_PX` so it's tweakable in one place.
+- **`touch-action` on the body:** kept the current default (`auto` / pan-y) rather than flipping to `none`. The commit branch only fires when `scrollTop === 0` — there's nothing for the browser to scroll above that, so native scroll quietly no-ops while the JS drag runs. Synthesizing body scroll ourselves would have been a far larger undertaking with no observable user-facing benefit. Worth re-testing on iOS Safari once the next round of mobile-device testing happens; if it reads off, the fix is to add `touch-action: none` to the body during the dragging phase only.
+
+
+**Type:** Bolt-On | **Area:** Dev tooling | **Shipped:** 2026-05-05
+
+Real-device mobile testing previously required the phone to share Wi-Fi with the dev machine and hit the laptop's LAN IP over plain HTTP — which blocks every browser secure-context behavior (PWA service-worker registration, "Add to Home Screen", `navigator.geolocation` on iOS Safari, Web Share, clipboard writes) and excludes any reviewer not on the home network. A new tunnel orchestrator gives a public HTTPS URL for a session with no manual env wiring.
+
+**What changed:**
+- New [scripts/dev-tunnel.mjs](scripts/dev-tunnel.mjs): cross-platform Node ESM orchestrator that spawns uvicorn (`127.0.0.1:8000`), opens an ephemeral Cloudflare tunnel to it, writes the captured URL into `frontend/.env.local` as `VITE_BACKEND_URL`, starts vite, opens a second Cloudflare tunnel to the frontend, and prints the public HTTPS URL. SIGINT tears down all four child processes and removes `frontend/.env.local` so the next `npm run dev` starts clean.
+- [frontend/package.json](frontend/package.json): new `dev:tunnel` script.
+- [frontend/vite.config.js](frontend/vite.config.js): `server.allowedHosts` now includes `.trycloudflare.com` so vite's host check accepts the ephemeral subdomain.
+- [backend/main.py](backend/main.py): reads a dev-only `DEV_TUNNEL_ORIGIN_REGEX` env var and passes it to `CORSMiddleware(allow_origin_regex=…)`. The orchestrator sets `^https://[a-z0-9-]+\.trycloudflare\.com$` so any per-session frontend tunnel origin is accepted without manual CORS edits. Production never sets the var.
+- [backend/.env.example](backend/.env.example): documents `DEV_TUNNEL_ORIGIN_REGEX` with a "never set in production" warning.
+- New [docs/MOBILE_TESTING.md](docs/MOBILE_TESTING.md): full setup walkthrough (cloudflared install via `winget` / `brew`), the security caveat (don't run against a `backend/.env` holding production secrets), iOS Safari verification checklist, and an ngrok fallback path.
+- [CLAUDE.md](CLAUDE.md): pointer in "Running Locally" to the new mobile-testing doc.
+
+**Decisions made on the open questions:** Cloudflare default (no account, free `trycloudflare.com`); per-session ephemeral URLs (named-tunnel deferred); separate `dev:tunnel` script (vs. a flag on `npm run dev`); both backend and frontend tunneled (a CORS-permitted phone request to localhost would otherwise hit the *phone's* localhost). QR-code output skipped — keeps zero new npm deps; the printed URL is highlighted prominently enough to type in.
+
+## Tablet range (481–1023 px) layout
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+The mobile/desktop layout switch in [frontend/src/App.jsx](frontend/src/App.jsx) previously flipped at 768 px, leaving the 481–768 px tablet portrait range either rendered as a phone sheet or — on the desktop side of the line — squashed under a 420 px sidebar that ate most of the map. The switch now flips at 480 px, and the 481–1023 px range is a deliberate tablet branch of the desktop two-column layout with a narrowed sidebar (Approach A from the original plan).
+
+**What changed:**
+- [frontend/src/App.jsx](frontend/src/App.jsx): `isMobile` shrunk from `(max-width: 768px)` → `(max-width: 480px)`. Added `isTablet = useMediaQuery("(min-width: 481px) and (max-width: 1023px)")` and an `app--tablet` class on the root `.app`. The same `mainContents` and `mapNode` JSX feed both desktop branches, so React component identity (and `MapView`'s MapLibre instance) is preserved when a tablet rotates across the 1024 px threshold — no map re-init.
+- [frontend/src/App.css](frontend/src/App.css): `.app--tablet .panel-cards` reduces the sidebar from 420 px → 320 px (with a 280 px floor) only inside the tablet range, so the map remains the dominant surface on a 600 px portrait without restructuring the layout.
+- [frontend/src/lib/useMediaQuery.js](frontend/src/lib/useMediaQuery.js): comment updated to document the new 480 px threshold and the tablet range.
+- [frontend/src/App.tablet.test.jsx](frontend/src/App.tablet.test.jsx): new viewport tests (400 / 600 / 900 / 1200 px) that stub `window.matchMedia` against a fixed width and assert the right layout class plus presence/absence of `.panel-cards` and `.mobile-shell`. Sheet UI is verified to stay mobile-only.
+
+## Landscape phone orientation polish
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+The mobile bottom-sheet snap profile now adapts to landscape phones (e.g. 667 × 375 px). The default `["140px", "50dvh", "88dvh"]` profile eats nearly 40 % of a short viewport at peek and swallows the map entirely at full. Under `(orientation: landscape) and (max-height: 480px)`, the sheet now snaps to `["48px", "60dvh", "100dvh"]` instead — handle-only peek, map's upper third preserved at half, full screen at full. Portrait behaviour is unchanged.
+
+Implemented per Approach A from the original scope (retune) rather than Approach B (right-side drawer): no `WFSheet` API growth, no layout-tree restructure.
+
+**What changed:**
+- [frontend/src/components/MobileLayout.jsx](frontend/src/components/MobileLayout.jsx): added `LANDSCAPE_SNAP_POINTS` and a `useMediaQuery("(orientation: landscape) and (max-height: 480px)")` branch. Caller-supplied `snapPoints` still wins over both defaults so tests and future callers can override.
+- [frontend/src/components/MobileLayout.test.jsx](frontend/src/components/MobileLayout.test.jsx): two new tests cover the landscape and portrait branches by asserting the resolved `.wf-sheet` height (largest snap) at a 375 px landscape viewport vs an 800 px portrait viewport.
+
+---
+
+## Sheet Snap Memory Across Sessions
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+The mobile bottom sheet now opens at the user's last manually-chosen snap (peek / half / full) on every page load instead of always starting at peek. Auto-promote behaviour was also tightened: a route arrival only promotes the sheet **from peek** to half — if the user had previously dragged to half or full, that preference wins so the sheet doesn't fight them.
+
+**What changed:**
+- New [frontend/src/lib/sheetSnap.js](frontend/src/lib/sheetSnap.js) — `loadSheetSnap()` / `saveSheetSnap(idx)` helpers under the existing safe-storage wrappers from [storage.js](frontend/src/lib/storage.js). Out-of-range stored values (e.g., from a future schema bump) are silently treated as absent rather than thrown, so a downgrade can't break the load path.
+- [frontend/src/App.jsx](frontend/src/App.jsx): `useState(() => loadSheetSnap() ?? 0)` for the initial sheet snap. The auto-promote `useEffect` now uses a functional updater (`setSheetSnap(prev => prev === 0 ? 1 : prev)`) so a stored half/full preference is preserved across route arrivals.
+- [frontend/src/components/MobileLayout.jsx](frontend/src/components/MobileLayout.jsx): `handleSnapChange` schedules a 500 ms debounced `saveSheetSnap(idx)` write after each call. `WFSheet`'s `onSnapChange` only fires from drag releases (not from prop changes), so the debounced write naturally captures only manual settles, not auto-promote.
+
+**Follow-up (BUG-014, same date):** The auto-promote was further gated by a `userMovedSheetRef` flag in [App.jsx](frontend/src/App.jsx) that flips true on the first manual snap change. After that, route arrivals no longer promote the sheet for the rest of the session — needed because `setResult(null)` immediately preceding `setResult(data)` on every submit was re-triggering the "first result" branch. The same property that makes the persistence write user-only (drag-release-only `onSnapChange`) is what makes the flag user-only.
+
+---
+
+## Haptic Feedback on Sheet Snap Settle
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+`WFSheet` now fires a 10 ms `navigator.vibrate` pulse when the user drags and releases to a different snap, giving Android Chrome a brief tactile confirmation that matches native bottom-sheet behaviour. iOS Safari ignores the call (no-op), so this is upside-only on platforms that support it. Same-snap releases (drag and release without crossing a snap boundary) don't vibrate, and the call is skipped entirely under `prefers-reduced-motion: reduce` since vibration is itself a motion signal.
+
+**What changed:**
+- [frontend/src/wayfarer/primitives.jsx](frontend/src/wayfarer/primitives.jsx): added a feature-checked vibrate call inside `WFSheet`'s `onPointerUp` handler, gated on (a) the snap actually changed (`nearestIdx !== currentSnap`), (b) reduced-motion is not active (re-uses the existing `reducedMotionRef`), and (c) `navigator.vibrate` is callable. `currentSnap` was added to the `useCallback` dependency array so the closure stays current.
+
+---
+
+## Pace Selector as Segmented Control on Mobile
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+Below 480 px the three pace options (Strolling / Steady / Earnest) now render as a horizontal segmented control sharing borders, with the active segment ink-filled — replacing the vertical `WFRadio` stack that previously ate ~140 px of sheet vertical space inside the bottom sheet. Above 480 px the existing layout is unchanged. Selection still persists via the existing `walkpath:walkPace` localStorage key.
+
+**What changed:**
+- [frontend/src/App.jsx](frontend/src/App.jsx): added a component-local `PaceSegmented` (button-based `radiogroup` with `aria-checked`, `tabIndex` roving focus, ArrowLeft/Up & ArrowRight/Down keyboard navigation, 44 px `minHeight`). `PaceSelector` now uses `useMediaQuery("(max-width: 480px)")` to render either the segmented variant or the existing vertical `WFRadio` layout. Kept component-local rather than promoting to a Wayfarer primitive — premature abstraction risk without a second use site.
+
+---
+
+## Off-screen 480 px PNG Render for ShareDispatch
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-05
+
+The shareable route-card PNG now always renders at the editorial 480 px design width regardless of the visible card size on mobile. On a 320 px phone the visible card still scales responsively to fit the modal (so the user previews what fits the screen), but the captured image is consistent: stats grid in 4 columns, drop figure at 54 px, no narrow-viewport reflow.
+
+**What changed:**
+- [frontend/src/App.jsx](frontend/src/App.jsx) `handleDownloadCard`: measures the visible card width via `getBoundingClientRect` before capture; when it's below 480 px, passes `style: { width: "480px", maxWidth: "480px" }` to `html-to-image`'s `toPng()` options. `html-to-image` applies the style override only to its DOM clone before drawing to canvas, so the visible card stays untouched and there's no extra MapLibre instance to manage.
+
+**Plan deviation:** the original plan called for mounting a hidden full-design-width copy of `ShareDispatch` and capturing that. The simpler `style`-override path achieves the same outcome (480 px-wide PNG, no MapLibre re-init, no parallel-mount cleanup dance) with one option line. The acceptance criteria are satisfied either way; documented here so a future contributor isn't surprised by the divergence between the plan and the shipped code.
 
 ---
 

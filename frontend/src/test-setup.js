@@ -1,5 +1,14 @@
 import "@testing-library/jest-dom";
-import { vi } from "vitest";
+import { vi, beforeEach } from "vitest";
+
+// Clear localStorage and sessionStorage between tests so the new persistence
+// (height/weight in localStorage, draft stops in sessionStorage) doesn't leak
+// typed values from one test render into the next. Per-describe beforeEach
+// hooks run after this global one, so they can still seed specific keys.
+beforeEach(() => {
+  try { localStorage.clear(); } catch { /* not available */ }
+  try { sessionStorage.clear(); } catch { /* not available */ }
+});
 
 // maplibre-gl requires WebGL which jsdom does not support; stub the Map class
 vi.mock("maplibre-gl", () => ({

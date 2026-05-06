@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 export function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
   const [open, setOpen] = useState(false);

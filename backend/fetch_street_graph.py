@@ -157,8 +157,7 @@ def download_and_save(verbose: bool = False) -> None:
         print("osmnx is not installed. Run: pip install osmnx")
         sys.exit(1)
 
-    ox.settings.log_console = True
-    _ = verbose
+    ox.settings.log_console = bool(verbose)
 
     _set_step_total(7)
 

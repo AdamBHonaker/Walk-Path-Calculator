@@ -1,5 +1,3 @@
-import React from "react";
-
 export function ErrorDispatch({ error, onRetry }) {
   return (
     <div

@@ -103,3 +103,7 @@ useEffect(() => {
 - **Description**: `_directions_from_path._cardinal` does `import math as _m` inside the nested function body. The module already imports `math` at the top of the file, and `_build_directions` (the sibling function) uses the module-level binding. The `import` itself is cheap (cached in `sys.modules`) but the redundant local import adds an unnecessary attribute lookup per direction segment and is dead code visually.
 - **Suggested Improvement**: Drop the nested import; reference the module-level `math.degrees` / `math.atan2` directly, matching `_build_directions`'s pattern. Trivial change.
 
+
+---
+
+

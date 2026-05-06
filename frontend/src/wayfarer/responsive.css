@@ -1,0 +1,92 @@
+/* ============================================================
+   WAYFARER — Responsive utilities
+   ------------------------------------------------------------
+   Visibility helpers, safe-area shorthands, and a container
+   guideline. Pair with the breakpoint tokens in tokens.css.
+
+   Breakpoint convention (mobile-first):
+     default      → mobile (≤480px)
+     min-width 481px → tablet/desktop
+     min-width 769px → desktop only
+   ============================================================ */
+
+/* ── Visibility helpers ─────────────────────────────────────
+   `wf-mobile-only` shows only at narrow widths; `wf-tablet-up`
+   is its inverse. `wf-mobile-hide` is a synonym for the latter,
+   reading more naturally at the call site ("hide on mobile"). */
+.wf-mobile-only { display: none; }
+@media (max-width: 480px) {
+  .wf-mobile-only { display: revert; }
+  .wf-mobile-hide,
+  .wf-tablet-up   { display: none !important; }
+}
+
+/* ── Safe-area shorthands ───────────────────────────────────
+   `padding-block-start: max(X, env())` keeps the existing
+   editorial padding intact on devices without insets, but
+   nudges past the notch / home indicator when present. */
+.wf-safe-pad-top    { padding-top:    max(0px, var(--safe-top)); }
+.wf-safe-pad-bottom { padding-bottom: max(0px, var(--safe-bottom)); }
+.wf-safe-pad-left   { padding-left:   max(0px, var(--safe-left)); }
+.wf-safe-pad-right  { padding-right:  max(0px, var(--safe-right)); }
+
+/* Convenience — both vertical insets at once. */
+.wf-safe-pad-block {
+  padding-top:    max(0px, var(--safe-top));
+  padding-bottom: max(0px, var(--safe-bottom));
+}
+
+/* ── Container ──────────────────────────────────────────────
+   Mobile gutter that respects landscape safe-area insets so
+   content doesn't slide under a notch when the device rotates. */
+.wf-container {
+  padding-inline: max(16px, var(--safe-left)) max(16px, var(--safe-right));
+}
+
+/* ── Touch targets ──────────────────────────────────────────
+   Minimum 44×44px hit area on touch surfaces. Apply to any
+   icon-only button on a touch device. Does not enforce on
+   pointer:fine displays where smaller cursor targets are fine. */
+@media (pointer: coarse) {
+  .wf-touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* ── Safe-area-aware fixed positioning ──────────────────────
+   For surfaces (sheets, fixed bars) that must hug the edge of
+   a notched viewport without their content disappearing under
+   the indicator. */
+.wf-fixed-bottom-safe {
+  bottom: 0;
+  padding-bottom: max(0px, var(--safe-bottom));
+}
+.wf-fixed-top-safe {
+  top: 0;
+  padding-top: max(0px, var(--safe-top));
+}
+
+/* ── WFModal — full-screen below 480px ──────────────────────
+   Overrides the inline styles in extras.jsx so the modal becomes
+   a full-bleed sheet on phones, with safe-area padding so the
+   content clears the notch and home indicator. !important is
+   intentional — these rules exist to defeat WFModal's own inline
+   defaults at the mobile breakpoint, not arbitrary user styles. */
+@media (max-width: 480px) {
+  .wf-modal-overlay {
+    padding: 0 !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+  }
+  .wf-modal-card {
+    max-width: 100% !important;
+    width: 100% !important;
+    max-height: 100dvh !important;
+    height: 100dvh !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: max(20px, calc(16px + var(--safe-top))) 20px max(20px, var(--safe-bottom)) !important;
+    border-radius: 0 !important;
+  }
+}

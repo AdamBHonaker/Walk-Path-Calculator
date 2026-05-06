@@ -50,6 +50,8 @@ export function calorieEquivalent(calories) {
   }
 
   if (!bestFood) return null;
-  const itemLabel = bestFrac.val >= 2 ? bestFood.plural : bestFood.name;
+  // Anything strictly greater than one is plural in English ("1½ bananas",
+  // not "1½ banana"). Singular only for "¼", "⅓", "half", "⅔", "¾", "1".
+  const itemLabel = bestFrac.val > 1 ? bestFood.plural : bestFood.name;
   return `≈ ${bestFrac.label} ${itemLabel}, returned to the day.`;
 }

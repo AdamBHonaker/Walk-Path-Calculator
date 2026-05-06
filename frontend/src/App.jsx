@@ -1,10 +1,19 @@
-import { useState, useRef, useEffect, useCallback, useMemo, memo, Component } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import "./App.css";
-import MapView from "./MapView.jsx";
-import { ShareDispatch } from "./components/ShareDispatch.jsx";
-import { haversineMeters } from "./mapHelpers.js";
+
+// MapView and ShareDispatch both pull in maplibre-gl (~290 KB gzip). Lazy-load
+// both so the initial bundle stays form-only — see FEATURE_HISTORY entry
+// "Code-splitting MapView for faster cold-load".
+const MapView = lazy(() => import("./MapView.jsx"));
+const ShareDispatch = lazy(() =>
+  import("./components/ShareDispatch.jsx").then(m => ({ default: m.ShareDispatch }))
+);
+
 import { calorieEquivalent } from "./calorieEquiv.js";
-import { safeGet, safeSet, safeRemove, loadJSON, saveJSON } from "./lib/storage.js";
+import {
+  safeSet, safeRemove, saveJSON,
+  loadSessionJSON, saveSessionJSON, safeSessionRemove,
+} from "./lib/storage.js";
 import { Masthead } from "./components/Masthead.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { PersonalizeModal } from "./components/PersonalizeModal.jsx";
@@ -14,25 +23,38 @@ import { CompareDispatch } from "./components/CompareDispatch.jsx";
 import { LoadingSkeleton } from "./components/LoadingSkeleton.jsx";
 import { ErrorDispatch } from "./components/ErrorDispatch.jsx";
 import { WeeklySummaryPanel } from "./components/WeeklySummaryPanel.jsx";
-import { TweaksPanel } from "./components/TweaksPanel.jsx";
+import { MobileLayout } from "./components/MobileLayout.jsx";
+import { PaceSelector } from "./components/PaceSelector.jsx";
+import { StepHero } from "./components/StepHero.jsx";
+import { RecentSearches } from "./components/RecentSearches.jsx";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary.jsx";
+import { useMediaQuery } from "./lib/useMediaQuery.js";
+import { loadSheetSnap } from "./lib/sheetSnap.js";
+import { resolveCurrentLocation } from "./lib/geolocation.js";
 import { WPIcon } from "./wayfarer/walkpath-icons.jsx";
 import { WFIcon } from "./wayfarer/icons.jsx";
-import { WFCheck, WFRadio } from "./wayfarer/forms.jsx";
-import { formatSteps } from "./lib/directionFormat.js";
+import { WFCheck } from "./wayfarer/forms.jsx";
+import { useTurnCoords } from "./hooks/useTurnCoords.js";
+import { BACKEND_URL } from "./lib/backendUrl.js";
+import { fetchWithTimeout } from "./lib/fetchWithTimeout.js";
+import { lbToKg } from "./lib/units.js";
+import { MAX_STOPS, parseStopsParam, readUrlParams } from "./lib/urlParams.js";
+import {
+  loadDailyGoal,
+  loadStoredHeightFt, loadStoredHeightIn, loadStoredWeightKg,
+  loadStoredPace, loadAccessPrefs,
+} from "./lib/personaPrefs.js";
 import {
   PACE_LABELS,
   safePaceLabel,
   motivationMessage,
   formatDirectionsText,
 } from "./lib/routeFormat.js";
-
-export { formatBlocks } from "./lib/directionFormat.js";
 import {
   RECENT_KEY,
   RECENT_MAX,
   loadRecentSearches,
   saveRecentSearch,
-  clearRecentSearches,
   recentEntryStops,
   formatRecentChip,
 } from "./lib/recentSearches.js";
@@ -42,9 +64,18 @@ import {
   logWalk,
   clearStepLog,
 } from "./lib/stepLog.js";
+import { ExploreForm } from "./components/ExploreForm.jsx";
+import { ExploreCategoryPanel } from "./components/ExploreCategoryPanel.jsx";
+import {
+  loadMode, saveMode,
+  loadExplorePrefs, saveExplorePrefs,
+} from "./lib/explorePrefs.js";
+import { PIN_CATEGORIES } from "./lib/exploreCategories.js";
+import { fetchExplore } from "./lib/exploreApi.js";
 
-// Re-exported for App.test.jsx — extractions to lib/ stay transparent
+// Re-exports for App.test.jsx — extractions to lib/ stay transparent
 // to the existing test imports.
+export { formatBlocks } from "./lib/directionFormat.js";
 export {
   calorieEquivalent,
   RECENT_MAX,
@@ -60,31 +91,12 @@ export {
   safePaceLabel,
   motivationMessage,
   formatDirectionsText,
+  lbToKg,
+  loadDailyGoal,
+  loadStoredPace,
+  parseStopsParam,
+  MAX_STOPS,
 };
-
-function normalizeBackendUrl(rawUrl) {
-  if (!rawUrl) return null;
-  if (rawUrl.match(/^https:\/\//i)) return rawUrl;
-  if (rawUrl.match(/^http:\/\//i)) {
-    if (import.meta.env.PROD) {
-      throw new Error("VITE_BACKEND_URL must use https:// in production builds.");
-    }
-    return rawUrl;
-  }
-  return `https://${rawUrl}`;
-}
-
-function resolveBackendUrl() {
-  const normalized = normalizeBackendUrl(import.meta.env.VITE_BACKEND_URL);
-  if (normalized) return normalized;
-  if (import.meta.env.PROD) {
-    throw new Error("VITE_BACKEND_URL is required in production builds.");
-  }
-  return "http://localhost:8000";
-}
-
-const BACKEND_URL = resolveBackendUrl();
-const FETCH_TIMEOUT_MS = 10_000;
 
 // Floor on how long the loading skeleton stays mounted, even when the fetch
 // resolves quickly. Without this, on localhost (~80 ms round-trip) the skeleton
@@ -98,327 +110,34 @@ function ensureMinLoadingDuration(start) {
   return Promise.resolve();
 }
 
-function fetchWithTimeout(input, init = {}, timeoutMs = FETCH_TIMEOUT_MS) {
-  const externalSignal = init.signal;
-  const timeoutCtrl = new AbortController();
-  const timer = setTimeout(() => timeoutCtrl.abort(), timeoutMs);
-  if (externalSignal) {
-    if (externalSignal.aborted) timeoutCtrl.abort();
-    else externalSignal.addEventListener("abort", () => timeoutCtrl.abort(), { once: true });
-  }
-  return fetch(input, { ...init, signal: timeoutCtrl.signal })
-    .finally(() => clearTimeout(timer));
-}
-
-export const MAX_STOPS = 8;
-
-export function parseStopsParam(raw) {
-  if (!raw) return null;
-  const parts = raw.split("|").map(s => s.trim().slice(0, 200));
-  const filled = parts.filter(Boolean);
-  if (filled.length < 2) return null;
-  return filled.slice(0, MAX_STOPS);
-}
-
-function readUrlParams() {
-  try {
-    const p = new URLSearchParams(window.location.search);
-    const hft = p.has("hft") ? parseInt(p.get("hft"), 10) : null;
-    const hin = p.has("hin") ? parseInt(p.get("hin"), 10) : null;
-    const cap = (s) => (s || "").slice(0, 200);
-    const stopsRaw = p.get("stops");
-    const stops = parseStopsParam(stopsRaw);
-    return {
-      from: cap(p.get("from")),
-      to:   cap(p.get("to")),
-      stops,
-      hft:  hft != null && !isNaN(hft) && hft >= 4 && hft <= 7 ? hft : null,
-      hin:  hin != null && !isNaN(hin) && hin >= 0 && hin <= 11 ? hin : null,
-    };
-  } catch {
-    return { from: "", to: "", stops: null, hft: null, hin: null };
-  }
-}
-
 let _stopIdCounter = 0;
 function makeStopId() {
   _stopIdCounter += 1;
   return `stop-${_stopIdCounter}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Persisted stop drafts. Saved to sessionStorage (not localStorage) so a draft
+// survives a reload but doesn't haunt the user's inputs days later. Stored
+// with a write timestamp; entries older than STOPS_TTL_MS are discarded on
+// load as a belt-and-braces guard against very long-lived sessions.
+const STOPS_KEY = "walkpath:draftStops";
+const STOPS_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-// ── Step goal section ─────────────────────────────────────────────────────
-
-
-export function loadDailyGoal() {
-  const raw = safeGet("walkpath:dailyGoal");
-  if (!raw) return null;
-  const n = parseInt(raw, 10);
-  return n >= 1_000 && n <= 100_000 ? n : null;
+export function loadStoredStops(now = Date.now()) {
+  const parsed = loadSessionJSON(STOPS_KEY, null);
+  if (!parsed || typeof parsed !== "object") return null;
+  if (!Array.isArray(parsed.values)) return null;
+  if (typeof parsed.savedAt !== "number") return null;
+  if (now - parsed.savedAt > STOPS_TTL_MS) return null;
+  const values = parsed.values
+    .filter(v => typeof v === "string")
+    .map(v => v.slice(0, 200));
+  if (values.length < 2) return null;
+  return values.slice(0, MAX_STOPS);
 }
 
-
-function useTurnCoords(path, directions) {
-  return useMemo(() => {
-    if (!path?.length || !directions?.length) return [];
-
-    // thresholds[i] = cumulative meters from the start to the turn at direction segment i
-    const thresholds = [];
-    let cum = 0;
-    for (const dir of directions) {
-      thresholds.push(cum);
-      cum += dir.distance_meters ?? 0;
-    }
-
-    const turnCoords = [];
-    let pathCum = 0;
-    let tIdx = 0;
-
-    for (let pi = 0; pi < path.length - 1 && tIdx < thresholds.length; pi++) {
-      const segLen = haversineMeters(path[pi], path[pi + 1]);
-
-      // Absorb all thresholds that fall within this segment (±10 m tolerance)
-      while (tIdx < thresholds.length && thresholds[tIdx] <= pathCum + segLen + 10) {
-        if (segLen > 0) {
-          const t = Math.max(0, Math.min(1, (thresholds[tIdx] - pathCum) / segLen));
-          turnCoords[tIdx] = [
-            path[pi][0] + t * (path[pi + 1][0] - path[pi][0]),
-            path[pi][1] + t * (path[pi + 1][1] - path[pi][1]),
-          ];
-        } else {
-          turnCoords[tIdx] = [...path[pi]];
-        }
-        tIdx++;
-      }
-      pathCum += segLen;
-    }
-
-    // Anchor any rounding-leftover turns to the last polyline point
-    const last = path[path.length - 1];
-    for (let i = 0; i < thresholds.length; i++) {
-      if (!turnCoords[i]) turnCoords[i] = last;
-    }
-
-    return turnCoords;
-  }, [path, directions]);
-}
-
-// ── Weight helpers (exported for tests) ──────────────────────────────────
-
-export function lbToKg(lb) {
-  return lb / 2.20462;
-}
-
-
-// (HeightInput / WeightInput / StepGoalInput were inline accordions; their
-//  controls now live in components/PersonalizeModal.jsx.)
-
-// ── Pace section ──────────────────────────────────────────────────────────
-
-const PACE_OPTIONS = [
-  { value: "leisurely", label: "Strolling", detail: "2 mph" },
-  { value: "normal",    label: "Steady",    detail: "3 mph" },
-  { value: "brisk",     label: "Earnest",   detail: "4 mph" },
-];
-
-export function loadStoredPace() {
-  const v = safeGet("walkpath:walkPace");
-  if (v === "leisurely" || v === "normal" || v === "brisk") return v;
-  return "normal";
-}
-
-const PaceSelector = memo(function PaceSelector({ pace, onChange }) {
-  return (
-    <div className="pace-selector">
-      <div className="pace-selector-label">
-        <WPIcon name="pace" size={12} />
-        <span>Manner of walking</span>
-      </div>
-      <div className="pace-options" role="radiogroup" aria-label="Manner of walking">
-        {PACE_OPTIONS.map(({ value, label, detail }) => (
-          <WFRadio
-            key={value}
-            checked={pace === value}
-            onChange={() => onChange(value)}
-            name="pace"
-            label={
-              <>
-                <span style={{ fontStyle: "italic", fontWeight: 600 }}>{label}</span>
-                <span style={{
-                  fontFamily: "var(--wf-mono)",
-                  fontSize: 11,
-                  color: "var(--mute)",
-                  marginLeft: 6,
-                }}>· {detail}</span>
-              </>
-            }
-          />
-        ))}
-      </div>
-    </div>
-  );
-});
-
-// ── Direction list ────────────────────────────────────────────────────────
-
-// (Inline DirectionList moved to components/DirectionLedger.jsx.)
-
-// (Inline RouteFlavorTabs moved to components/RouteFlavorTabs.jsx.)
-
-// ── Step hero card ────────────────────────────────────────────────────────
-
-function StepHero({ result, dailyGoal, onShare }) {
-  const {
-    total_steps, total_miles, total_minutes, calories_approx,
-    daily_goal_pct, step_length_inches, personalized,
-    personalized_calories,
-    elevation_gain_ft,
-  } = result;
-
-  const pct = Number.isFinite(daily_goal_pct) ? daily_goal_pct : 0;
-  const barWidth = Math.min(pct, 100);
-  const effectiveGoal = (dailyGoal ?? 10_000).toLocaleString();
-  const calorieEquiv = calorieEquivalent(calories_approx);
-
-  return (
-    <div className="step-hero">
-      <div className="step-hero-count">{formatSteps(total_steps)}</div>
-      <div className="step-hero-label">steps</div>
-
-      <div className="step-hero-stats">
-        <span className="stat-chip">
-          <span className="stat-chip-icon"><WPIcon name="ruler" size={12} /></span>
-          {total_miles} mi
-        </span>
-        <span className="stat-chip">
-          <span className="stat-chip-icon"><WPIcon name="hourglass" size={12} /></span>
-          {total_minutes} min
-        </span>
-        <span className="stat-chip">
-          <span className="stat-chip-icon"><WPIcon name="calorie-sigil" size={12} /></span>
-          ~{calories_approx} cal
-          {personalized_calories && (
-            <span className="stat-chip-badge">personalized</span>
-          )}
-        </span>
-        {elevation_gain_ft > 10 && (
-          <span className="stat-chip">
-            <span className="stat-chip-icon"><WPIcon name="elevation" size={12} /></span>
-            {Math.round(elevation_gain_ft)} ft
-          </span>
-        )}
-        {safePaceLabel(result.pace) && (
-          <span className="stat-chip">
-            <span className="stat-chip-icon"><WPIcon name="stride" size={12} /></span>
-            {safePaceLabel(result.pace)}
-          </span>
-        )}
-      </div>
-
-      {calorieEquiv && (
-        <p className="calorie-equiv">{calorieEquiv}</p>
-      )}
-
-      <div className="goal-bar-wrap">
-        <div className="goal-bar-label">Daily measure · {effectiveGoal.toLocaleString()} steps</div>
-        <div className="goal-bar-track">
-          <div className="goal-bar-fill" style={{ width: `${barWidth}%` }} />
-        </div>
-        <div className="goal-bar-caption">{pct}% of daily measure</div>
-      </div>
-
-      <p className="step-note">
-        {personalized
-          ? `Measured to your ${step_length_inches}″ stride.`
-          : `Using an average ${step_length_inches}″ stride. Add your particulars for a more honest count.`}
-      </p>
-
-      {onShare && (
-        <button type="button" className="share-card-btn" onClick={onShare}>
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <WPIcon name="printer" size={14} />
-            Print dispatch
-          </span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Compare-vs-alternatives panel ─────────────────────────────────────────
-
-// (Inline ComparePanel moved to components/CompareDispatch.jsx.)
-
-// (Inline LoadingSkeleton moved to components/LoadingSkeleton.jsx.)
-
-// ── Error boundary ────────────────────────────────────────────────────────
-
-class ErrorBoundary extends Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <ErrorDispatch
-          error="Something went wrong displaying your route — try a new search."
-        />
-      );
-    }
-    return this.props.children;
-  }
-}
-
-// ── Recent Searches ───────────────────────────────────────────────────────
-// Implementation lives in ./lib/recentSearches.js (RECENT_KEY, loadRecentSearches,
-// saveRecentSearch, clearRecentSearches, recentEntryStops, formatRecentChip,
-// RECENT_MAX). The lib symbols are imported at the top of this file and
-// re-exported there for App.test.jsx.
-
-function RecentSearches({ searches, onSelect, onClear }) {
-  if (!searches.length) return null;
-
-  return (
-    <div className="recent-searches">
-      <div className="recent-searches-header">
-        <span className="recent-searches-label">Lately Walked</span>
-        <button type="button" className="recent-clear-btn" onClick={onClear}>
-          Clear
-        </button>
-      </div>
-      <div className="recent-chips">
-        {searches.map(item => {
-          const stops = recentEntryStops(item);
-          return (
-            <button
-              key={item.timestamp}
-              type="button"
-              className="recent-chip"
-              onClick={() => onSelect(item)}
-            >
-              <span className="recent-chip-route">{formatRecentChip(stops)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── App ───────────────────────────────────────────────────────────────────
-
-function loadAccessPrefs() {
-  const parsed = loadJSON("walkpath:accessPrefs", {});
-  return {
-    avoidStairs: !!parsed?.avoidStairs,
-    preferPedestrian: !!parsed?.preferPedestrian,
-  };
+export function saveStoredStops(values) {
+  saveSessionJSON(STOPS_KEY, { values, savedAt: Date.now() });
 }
 
 export default function App() {
@@ -433,12 +152,22 @@ export default function App() {
   const initialAccess = initialAccessRef.current;
 
   const [stops, setStops] = useState(() => {
+    // Priority: URL params (shareable links) > sessionStorage draft > empty.
+    // The sessionStorage path is what catches a PWA SW reload mid-edit.
     if (initialUrlParams.stops?.length) {
       return initialUrlParams.stops.map(v => ({ id: makeStopId(), value: v }));
     }
+    if (initialUrlParams.from || initialUrlParams.to) {
+      return [
+        { id: makeStopId(), value: initialUrlParams.from || "" },
+        { id: makeStopId(), value: initialUrlParams.to   || "" },
+      ];
+    }
+    const draft = loadStoredStops();
+    if (draft) return draft.map(v => ({ id: makeStopId(), value: v }));
     return [
-      { id: makeStopId(), value: initialUrlParams.from || "" },
-      { id: makeStopId(), value: initialUrlParams.to   || "" },
+      { id: makeStopId(), value: "" },
+      { id: makeStopId(), value: "" },
     ];
   });
 
@@ -473,11 +202,17 @@ export default function App() {
     setStops(prev => prev.slice().reverse().map(s => ({ ...s, id: makeStopId() })));
   }
 
-  const [heightFt, setHeightFt]       = useState(() => initialUrlParams.hft);
-  const [heightIn, setHeightIn]       = useState(() =>
-    initialUrlParams.hft != null ? initialUrlParams.hin : null,
+  // Height and weight: URL params win (shareable links carry hft/hin), then
+  // localStorage. Without this, a PWA SW reload would wipe what the user
+  // entered in the Personalize modal.
+  const [heightFt, setHeightFt]       = useState(() =>
+    initialUrlParams.hft ?? loadStoredHeightFt(),
   );
-  const [weightKg, setWeightKg]       = useState(null);
+  const [heightIn, setHeightIn]       = useState(() => {
+    if (initialUrlParams.hft != null) return initialUrlParams.hin;
+    return loadStoredHeightIn();
+  });
+  const [weightKg, setWeightKg]       = useState(loadStoredWeightKg);
   const [dailyGoal, setDailyGoalState] = useState(() => loadDailyGoal());
   const [walkPace, setWalkPace]         = useState(loadStoredPace);
 
@@ -493,6 +228,58 @@ export default function App() {
     safeSet("walkpath:walkPace", walkPace);
   }, [walkPace]);
 
+  useEffect(() => {
+    if (heightFt == null) safeRemove("walkpath:heightFt");
+    else safeSet("walkpath:heightFt", String(heightFt));
+  }, [heightFt]);
+
+  useEffect(() => {
+    if (heightIn == null) safeRemove("walkpath:heightIn");
+    else safeSet("walkpath:heightIn", String(heightIn));
+  }, [heightIn]);
+
+  useEffect(() => {
+    if (weightKg == null) safeRemove("walkpath:weightKg");
+    else safeSet("walkpath:weightKg", String(weightKg));
+  }, [weightKg]);
+
+  // Persist stop drafts to sessionStorage on every change so a SW-triggered
+  // reload (or a normal refresh) restores what the user was typing. Two
+  // empty stops = nothing worth saving — clear instead.
+  useEffect(() => {
+    const values = stops.map(s => s.value);
+    if (values.every(v => !v.trim())) safeSessionRemove(STOPS_KEY);
+    else saveStoredStops(values);
+  }, [stops]);
+
+  // ── Neighborhood Explorer state ──────────────────────────────────────
+  // `mode` is the top-level switch — "route" (the original feature) vs.
+  // "explore" (the isochrone view). Explore prefs persist on every change
+  // so a user who picks Logan Square + 25 min on Tuesday gets that back
+  // on Wednesday. The result itself is not persisted — it always comes
+  // from a fresh /explore call when the user enters the mode (the polygon
+  // is fast, ~150 ms even at 45 min, so re-fetching is cheaper than
+  // serializing it out).
+  //
+  // A shared route URL (?stops=… or ?from=…&to=…) forces route mode at
+  // boot, overriding whatever was persisted, so the link recipient sees
+  // the route the sender intended. The explorer doesn't have URL state
+  // yet — that's a future enhancement.
+  const _hasRouteParams = !!(initialUrlParams.stops?.length
+    || (initialUrlParams.from && initialUrlParams.to));
+  const [mode, setModeState]            = useState(() =>
+    _hasRouteParams ? "route" : loadMode(),
+  );
+  const [explorePrefs, setExplorePrefs] = useState(loadExplorePrefs);
+  const [exploreResult, setExploreResult]   = useState(null);
+  const [exploreLoading, setExploreLoading] = useState(false);
+  const [exploreError, setExploreError]     = useState("");
+  const setMode = useCallback((next) => {
+    setModeState(next);
+    saveMode(next);
+  }, []);
+  useEffect(() => { saveExplorePrefs(explorePrefs); }, [explorePrefs]);
+
   const [result, setResult]           = useState(null);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
@@ -503,8 +290,87 @@ export default function App() {
   const [showShareModal, setShowShareModal] = useState(false);
   const [cardMapReady, setCardMapReady]     = useState(false);
   const [pickMode, setPickMode]             = useState(null); // stop id | null
+  const [locating, setLocating]             = useState(false);
   const [toastMsg, setToastMsg]             = useState("");
   const [activeFlavor, setActiveFlavor]     = useState("fastest");
+  // SW update prompt. With registerType: "prompt" in vite.config.js, a new
+  // service worker waits for our OK before activating — we surface that as
+  // an actionable banner instead of silently reloading mid-session.
+  const [swUpdateReady, setSwUpdateReady]   = useState(false);
+  const swUpdateFnRef = useRef(null);
+
+  // Mobile bottom-sheet state. Initial snap is the user's persisted preference
+  // (loadSheetSnap), falling back to peek (0). When a new route arrives we
+  // auto-promote ONLY from peek — if the user has previously chosen half or
+  // full, that preference wins over auto-promote so they don't fight the UI.
+  // The auto-promote itself never writes to storage; only manual drags do
+  // (debounce-write lives in MobileLayout).
+  // Mobile (sheet) caps at 480 px. The 481–1023 px tablet range uses the
+  // desktop two-column layout with a narrower sidebar (see `app--tablet`
+  // in App.css). Same `mainContents` / `mapNode` JSX in both desktop branches
+  // preserves React component identity — no MapLibre re-init when a tablet
+  // crosses the 1024 px threshold on rotation.
+  const isMobile = useMediaQuery("(max-width: 480px)");
+  const isTablet = useMediaQuery("(min-width: 481px) and (max-width: 1023px)");
+  const [sheetSnap, setSheetSnap] = useState(() => loadSheetSnap() ?? 0);
+  const [mapPadding, setMapPadding] = useState(null);
+  const lastResultRef = useRef(null);
+  // Once the user manually moves the sheet, stop auto-promoting on result
+  // arrival — they've expressed a preference for this session and the sheet
+  // jumping back up to half on every re-submit feels broken.
+  const userMovedSheetRef = useRef(false);
+  const handleSheetSnapChange = useCallback((idx) => {
+    userMovedSheetRef.current = true;
+    setSheetSnap(idx);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (result && !lastResultRef.current && !userMovedSheetRef.current) {
+      setSheetSnap(prev => prev === 0 ? 1 : prev);
+    }
+    lastResultRef.current = result;
+  }, [result, isMobile]);
+
+  // Mode flip → if the user enters explore mode while the sheet is at peek,
+  // promote it to half so the form is actually visible. Same "respect the
+  // user's explicit drag" guard as the route-result auto-promote: once the
+  // user has moved the sheet manually this session, mode flips don't override.
+  useEffect(() => {
+    if (!isMobile) return;
+    if (mode !== "explore") return;
+    if (userMovedSheetRef.current) return;
+    setSheetSnap(prev => prev === 0 ? 1 : prev);
+  }, [mode, isMobile]);
+
+  // Mobile pick-on-map: drop the sheet to peek so the user can see the
+  // map, remember the snap they were at, and restore it once the pick
+  // resolves (whether by tapping a point or cancelling).
+  const snapBeforePickRef = useRef(null);
+  useEffect(() => {
+    if (!isMobile) return;
+    if (pickMode) {
+      if (snapBeforePickRef.current === null) {
+        snapBeforePickRef.current = sheetSnap;
+      }
+      if (sheetSnap !== 0) setSheetSnap(0);
+    } else if (snapBeforePickRef.current !== null) {
+      const restore = snapBeforePickRef.current;
+      snapBeforePickRef.current = null;
+      setSheetSnap(restore);
+    }
+    // sheetSnap intentionally omitted: we only react to pickMode transitions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickMode, isMobile]);
+
+  const handleObscuredChange = useCallback((bottomPx) => {
+    setMapPadding({
+      top: 80,
+      bottom: bottomPx + 16,
+      left: 16,
+      right: 16,
+    });
+  }, []);
 
   // Overlay the active flavor's per-route fields onto top-level metadata
   // (origin/dest coords, step length, etc.) so existing renderers — which read
@@ -546,9 +412,33 @@ export default function App() {
 
   const abortRef      = useRef(null);
   const cardRef       = useRef(null);
+  const cardMapRef    = useRef(null);
   const toastTimerRef = useRef(null);
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+
+  // Register the PWA service worker with a needRefresh callback. We import
+  // the virtual module dynamically so test/dev environments (where the
+  // module doesn't exist) silently no-op instead of throwing.
+  useEffect(() => {
+    let cancelled = false;
+    import(/* @vite-ignore */ "virtual:pwa-register")
+      .then(({ registerSW }) => {
+        if (cancelled || typeof registerSW !== "function") return;
+        const updateSW = registerSW({
+          onNeedRefresh() { if (!cancelled) setSwUpdateReady(true); },
+        });
+        swUpdateFnRef.current = updateSW;
+      })
+      .catch(() => { /* not in a PWA build (tests/dev) — no-op */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  function handleApplySwUpdate() {
+    const fn = swUpdateFnRef.current;
+    if (typeof fn === "function") fn(true); // skipWaiting + reload
+    else window.location.reload();
+  }
 
   // Auto-submit once on mount when the page loads with URL-encoded route params
   useEffect(() => {
@@ -650,7 +540,10 @@ export default function App() {
       // correct even if the user navigates away mid-skeleton.
       const urlP = new URLSearchParams();
       if (multi) {
-        urlP.set("stops", cleanStops.join("|"));
+        // Encode each stop so a literal "|" inside a label can't be
+        // misread as a separator on the receiving end (parseStopsParam
+        // decodes per segment).
+        urlP.set("stops", cleanStops.map(encodeURIComponent).join("|"));
       } else {
         urlP.set("from", cleanStops[0]);
         urlP.set("to",   cleanStops[1]);
@@ -683,6 +576,260 @@ export default function App() {
     await fetchRoute(cleaned);
   }
 
+  // ── Explore-mode handlers ─────────────────────────────────────────────
+  // Independent abort handle so the explorer's fetch lifecycle doesn't
+  // collide with route fetches when the user toggles modes mid-request.
+  const exploreAbortRef = useRef(null);
+  useEffect(() => () => exploreAbortRef.current?.abort(), []);
+
+  // Keep the latest origin/maxMinutes/cat selection in a ref so the slider's
+  // onPointerUp callback doesn't capture stale values when the user drags
+  // immediately after editing the area dropdown.
+  const explorePrefsRef = useRef(explorePrefs);
+  useEffect(() => { explorePrefsRef.current = explorePrefs; }, [explorePrefs]);
+
+  // The /explore endpoint accepts top-level category keys only. Subcategories
+  // affect *which pins draw on the map* but not the request itself; the
+  // backend returns every place under a selected parent and the frontend
+  // post-filters by subcategory in `activeSubs`.
+  //
+  // Empty selection → send a sentinel that no category matches. The backend's
+  // category sanitizer collapses `[]` to "all categories" (it treats an empty
+  // list as null), which would otherwise dump thousands of places onto the
+  // map for a user who has selected nothing.
+  const requestCategories = useMemo(() => {
+    const fromCats = explorePrefs.selectedCategories;
+    const fromSubs = explorePrefs.selectedSubs.map(k => k.split("/", 1)[0]);
+    const merged = Array.from(new Set([...fromCats, ...fromSubs]));
+    return merged.length === 0 ? ["__none__"] : merged;
+  }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
+
+  // The set of (category, subcategory) keys that should be visible on the
+  // map. Includes parent-only entries (just the category key) when no sub
+  // filter is in effect for that category, so `places_in_polygon` results
+  // pass straight through.
+  const activeSubsSet = useMemo(() => {
+    const out = new Set();
+    for (const c of explorePrefs.selectedCategories) out.add(c);
+    for (const s of explorePrefs.selectedSubs) out.add(s);
+    return out;
+  }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
+
+  const exploreCategoryStyles = useMemo(
+    () => PIN_CATEGORIES.map(c => ({ key: c.key, color: c.color, glyph: c.glyph })),
+    [],
+  );
+
+  const fetchExploreResult = useCallback(async (overrides = {}) => {
+    const prefs = explorePrefsRef.current;
+    const origin = overrides.origin ?? prefs.origin;
+    const maxMinutes = overrides.maxMinutes ?? prefs.maxMinutes;
+    const categories = overrides.categories ?? requestCategories;
+
+    // Current-location origin requires lat/lon; if it's missing here,
+    // surface a friendly hint instead of hitting the backend.
+    if (origin.kind === "current" && (origin.lat == null || origin.lon == null)) {
+      setExploreError("Allow location access to explore from where you are.");
+      return;
+    }
+
+    exploreAbortRef.current?.abort();
+    exploreAbortRef.current = new AbortController();
+    const signal = exploreAbortRef.current.signal;
+    setExploreLoading(true);
+    setExploreError("");
+    try {
+      const data = await fetchExplore({
+        backendUrl: BACKEND_URL,
+        origin,
+        maxMinutes,
+        categories,
+        signal,
+      });
+      if (signal.aborted) return;
+      setExploreResult(data);
+    } catch (err) {
+      if (err.name === "AbortError" || signal.aborted) return;
+      setExploreError(err.message || "The explorer hit a snag — try again.");
+    } finally {
+      if (!signal.aborted) setExploreLoading(false);
+    }
+  }, [requestCategories]);
+
+  // When the user picks "📍 My location" in ExploreForm, we resolve their
+  // coordinates here and (on success) immediately re-fetch with the new origin.
+  const handleExploreLocateMe = useCallback(async () => {
+    setLocating(true);
+    try {
+      const loc = await resolveCurrentLocation();
+      if (loc.error === "denied") {
+        setExploreError("Location permission denied — pick a community area instead.");
+        return;
+      }
+      if (loc.error === "outside_coverage") {
+        setExploreError("You're outside the Chicago coverage area.");
+        return;
+      }
+      if (loc.error) {
+        setExploreError("Couldn't read your location — try a community area.");
+        return;
+      }
+      const next = { kind: "current", communityArea: null, lat: loc.lat, lon: loc.lon };
+      setExplorePrefs(p => ({ ...p, origin: next }));
+      // Wait for the prefs ref to flush before firing — ref update is sync,
+      // but use the explicit override so we don't race.
+      explorePrefsRef.current = { ...explorePrefsRef.current, origin: next };
+      fetchExploreResult({ origin: next });
+    } finally {
+      setLocating(false);
+    }
+  }, [fetchExploreResult]);
+
+  // First entry into explore mode → fire an initial fetch so the user sees
+  // an isochrone immediately on switch (no "click Discover to see anything"
+  // dead state). Re-fires when the user changes origin via the form.
+  useEffect(() => {
+    if (mode !== "explore") return;
+    if (exploreResult) return;
+    if (exploreLoading) return;
+    fetchExploreResult();
+    // Intentional: only run on mode-flip-into-explore + when result is empty.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  // Re-fetch when category selection changes (so the place pins refresh).
+  // Origin / maxMinutes changes go through the explicit submit button OR the
+  // slider release callback so we don't spam the backend on every drag tick.
+  useEffect(() => {
+    if (mode !== "explore") return;
+    if (!exploreResult) return; // initial-fetch effect above will handle it
+    fetchExploreResult();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestCategories.join("|")]);
+
+  function handleExploreOriginChange(nextOrigin) {
+    setExplorePrefs(p => ({ ...p, origin: nextOrigin }));
+    if (nextOrigin.kind === "community_area") {
+      // Community-area picks have a deterministic centroid → fetch immediately.
+      explorePrefsRef.current = { ...explorePrefsRef.current, origin: nextOrigin };
+      fetchExploreResult({ origin: nextOrigin });
+    }
+  }
+
+  function handleExploreMaxMinutesChange(next) {
+    setExplorePrefs(p => ({ ...p, maxMinutes: next }));
+  }
+
+  // Slider release / "Discover" button.
+  function handleExploreSubmit() {
+    fetchExploreResult();
+  }
+
+  function handleToggleGroup(groupKey) {
+    setExplorePrefs(p => {
+      const set = new Set(p.expandedGroups);
+      if (set.has(groupKey)) set.delete(groupKey);
+      else set.add(groupKey);
+      return { ...p, expandedGroups: Array.from(set) };
+    });
+  }
+
+  function handleToggleCategory(catKey) {
+    setExplorePrefs(p => {
+      const set = new Set(p.selectedCategories);
+      if (set.has(catKey)) set.delete(catKey);
+      else set.add(catKey);
+      // When unchecking the parent, also drop all of its subs.
+      let nextSubs = p.selectedSubs;
+      if (!set.has(catKey)) {
+        nextSubs = nextSubs.filter(s => !s.startsWith(`${catKey}/`));
+      }
+      return { ...p, selectedCategories: Array.from(set), selectedSubs: nextSubs };
+    });
+  }
+
+  function handleToggleSub(catKey, subKey) {
+    setExplorePrefs(p => {
+      const fullKey = `${catKey}/${subKey}`;
+      const subSet = new Set(p.selectedSubs);
+      if (subSet.has(fullKey)) subSet.delete(fullKey);
+      else subSet.add(fullKey);
+      // Promote the parent to checked the moment any sub is checked, so the
+      // request includes that category at all (the backend filters by parent).
+      const catSet = new Set(p.selectedCategories);
+      if (subSet.has(fullKey)) catSet.add(catKey);
+      return {
+        ...p,
+        selectedCategories: Array.from(catSet),
+        selectedSubs: Array.from(subSet),
+      };
+    });
+  }
+
+  function handleToggleHeatmap(e) {
+    const checked = !!(e?.target?.checked);
+    setExplorePrefs(p => ({ ...p, showResidentialHeatmap: checked }));
+  }
+
+  function handleSelectAllCategories() {
+    setExplorePrefs(p => ({
+      ...p,
+      // All pin-style categories get selected at the parent level. Subs are
+      // intentionally cleared — sub-filters are an opt-in narrowing tool, so
+      // "Select all" lands the user on every category at full breadth.
+      selectedCategories: PIN_CATEGORIES.map(c => c.key),
+      selectedSubs: [],
+      showResidentialHeatmap: true,
+    }));
+  }
+
+  function handleClearAllCategories() {
+    setExplorePrefs(p => ({
+      ...p,
+      selectedCategories: [],
+      selectedSubs: [],
+      showResidentialHeatmap: false,
+    }));
+  }
+
+  // Mobile only: when a place pin is tapped, drop the sheet to peek so
+  // the MapLibre popup over the pin isn't clipped under the sheet body.
+  // Doesn't write to userMovedSheetRef — this is a programmatic, ephemeral
+  // move that should NOT poison the auto-promote logic for future fetches.
+  const handlePlaceTap = useCallback(() => {
+    if (!isMobile) return;
+    setSheetSnap(0);
+  }, [isMobile]);
+
+  // "Walk here" from a place popover → flip back to route mode and fire a
+  // route fetch from the explorer's origin to the clicked place.
+  const handlePlaceWalkHere = useCallback(({ lat, lon, name, address }) => {
+    const originName = explorePrefsRef.current.origin.kind === "community_area"
+      ? explorePrefsRef.current.origin.communityArea
+      : "My location";
+    const destName = name || address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    setMode("route");
+    setStops([
+      { id: makeStopId(), value: originName },
+      { id: makeStopId(), value: destName },
+    ]);
+    fetchRoute([originName, destName]);
+  }, [setMode]);
+
+  // Reachable-neighborhood chip → same pattern: route from the explorer's
+  // origin to the clicked neighborhood.
+  const handleNeighborhoodChip = useCallback((neighborhoodName) => {
+    const originName = explorePrefsRef.current.origin.kind === "community_area"
+      ? explorePrefsRef.current.origin.communityArea
+      : "My location";
+    setMode("route");
+    setStops([
+      { id: makeStopId(), value: originName },
+      { id: makeStopId(), value: neighborhoodName },
+    ]);
+    fetchRoute([originName, neighborhoodName]);
+  }, [setMode]);
+
   function handleRecentSelect(item) {
     const itemStops = recentEntryStops(item);
     if (!itemStops.length) return;
@@ -711,9 +858,43 @@ export default function App() {
 
   async function handleDownloadCard() {
     if (!cardRef.current) return;
+    let overlay = null;
     try {
       const { toPng } = await import("html-to-image");
-      const dataUrl = await toPng(cardRef.current, { pixelRatio: 3 });
+
+      // iOS Safari can clear the WebGL backbuffer between MapLibre's `idle`
+      // and the moment html-to-image reads canvas.toDataURL() during clone,
+      // even with preserveDrawingBuffer:true — producing a blank map in the
+      // exported PNG. Snapshot the map ourselves and overlay an <img> so the
+      // clone picks up a stable raster instead of the live canvas.
+      const map = cardMapRef.current;
+      if (map) {
+        await new Promise(resolve => {
+          map.once("render", resolve);
+          map.triggerRepaint();
+        });
+        const mapDataUrl = map.getCanvas().toDataURL("image/png");
+        overlay = document.createElement("img");
+        overlay.src = mapDataUrl;
+        overlay.style.position = "absolute";
+        overlay.style.inset = "0";
+        overlay.style.width = "100%";
+        overlay.style.height = "100%";
+        overlay.style.pointerEvents = "none";
+        overlay.style.zIndex = "10";
+        map.getContainer().appendChild(overlay);
+      }
+
+      // Force the editorial 480px design width during capture so the PNG
+      // doesn't reflow narrower on phones — the visible card stays unchanged
+      // because html-to-image applies the style override only to its DOM
+      // clone. No-op when the visible card is already at design width.
+      const visibleWidth = cardRef.current.getBoundingClientRect().width;
+      const captureOpts = { pixelRatio: 3 };
+      if (visibleWidth < 480) {
+        captureOpts.style = { width: "480px", maxWidth: "480px" };
+      }
+      const dataUrl = await toPng(cardRef.current, captureOpts);
       const a = document.createElement("a");
       a.href = dataUrl;
       const slugStops = stopValues.map(v => v.trim()).filter(Boolean);
@@ -723,6 +904,8 @@ export default function App() {
       a.click();
     } catch (err) {
       console.error("[RouteCard] PNG capture failed:", err);
+    } finally {
+      overlay?.remove();
     }
   }
 
@@ -745,6 +928,48 @@ export default function App() {
     return null;
   }, []);
 
+  const showToast = useCallback((msg) => {
+    setToastMsg(msg);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(""), 3500);
+  }, []);
+
+  // "Use my current location" — populates the first empty stop, or the origin
+  // if every stop already has a value. Coverage gating + permission classification
+  // live in lib/geolocation.js. The reverse-geocode step mirrors handleMapPick:
+  // success → label; failure → coords truncated to 5 decimals.
+  const handleLocateMe = useCallback(async () => {
+    if (locating) return;
+    setLocating(true);
+    try {
+      const loc = await resolveCurrentLocation();
+      if (loc.error === "denied") {
+        showToast("Location permission denied — try typing a stop instead.");
+        return;
+      }
+      if (loc.error === "outside_coverage") {
+        showToast("You're outside the Chicago coverage area.");
+        return;
+      }
+      if (loc.error) {
+        showToast("Couldn't read your location — try typing a stop instead.");
+        return;
+      }
+      const { lat, lon } = loc;
+      const target = stops.find(s => !s.value.trim()) ?? stops[0];
+      if (!target) return;
+      const label = await resolveStopLabel(lat, lon);
+      if (label) {
+        setStopValue(target.id, label);
+      } else {
+        setStopValue(target.id, `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+        showToast("That spot has no name we know — using coordinates.");
+      }
+    } finally {
+      setLocating(false);
+    }
+  }, [locating, stops, resolveStopLabel, showToast]);
+
   const handleMapPick = useCallback((lat, lon, label) => {
     const targetId = pickMode; // capture before clearing
     setPickMode(null);
@@ -760,311 +985,385 @@ export default function App() {
     }
   }, [pickMode]);
 
-  return (
-    <div className="app paper-grain">
-      <Masthead />
-      <div className="layout">
+  // ── Mode toggle (Route ⇄ Explore) ────────────────────────────────────
+  // Two-button segmented control that lives at the top of the side panel
+  // (desktop) and at the top of the mobile sheet body (mobile). Same JSX
+  // in both surfaces so a flip in one updates the other immediately.
+  const modeToggle = (
+    <div className="mode-toggle" role="tablist" aria-label="Walk planning mode">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "route"}
+        className={`mode-toggle-btn${mode === "route" ? " mode-toggle-btn--active" : ""}`}
+        onClick={() => setMode("route")}
+      >
+        <WPIcon name="stride" size={14} />
+        <span>Route</span>
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={mode === "explore"}
+        className={`mode-toggle-btn${mode === "explore" ? " mode-toggle-btn--active" : ""}`}
+        onClick={() => setMode("explore")}
+      >
+        <WPIcon name="crosshair" size={14} />
+        <span>Explore</span>
+      </button>
+    </div>
+  );
 
-        {/* ── Left panel ── */}
-        <div className="panel-cards">
-          <main className="main">
-            <form className="form" onSubmit={handleSubmit}>
-              <div className="stops-group">
-                {stops.map((stop, i) => {
-                  const isFirst = i === 0;
-                  const isLast  = i === stops.length - 1;
-                  const label   = isFirst
-                    ? "From"
-                    : isLast
-                      ? "To"
-                      : `Stop ${i}`;
-                  const placeholder = isFirst
-                    ? "e.g. Wrigleyville, 600 N Clark St"
-                    : isLast
-                      ? "e.g. Logan Square, Navy Pier"
-                      : "Add a stop along the way";
-                  const canRemove = stops.length > 2;
-                  return (
-                    <div className="stop-row" key={stop.id}>
-                      <span className="stop-row-label">{label}</span>
-                      <div className="input-with-pick">
-                        <input
-                          type="search"
-                          placeholder={placeholder}
-                          value={stop.value}
-                          onChange={e => setStopValue(stop.id, e.target.value)}
-                          autoComplete="off"
-                          autoCorrect="off"
-                          autoCapitalize="words"
-                          enterKeyHint={isLast ? "go" : "next"}
-                          aria-label={label}
-                        />
-                        <button
-                          type="button"
-                          className={`pick-map-btn${pickMode === stop.id ? " pick-map-btn--active" : ""}`}
-                          onClick={() => handlePickToggle(stop.id)}
-                          title={pickMode === stop.id ? "Cancel pick" : "Set point on map"}
-                          aria-label={pickMode === stop.id ? "Cancel pick mode" : `Set ${label} by clicking map`}
-                        >
-                          <WPIcon name="crosshair" size={14} />
-                        </button>
-                      </div>
-                      <div className="stop-row-actions">
-                        <button
-                          type="button"
-                          className="stop-move-btn"
-                          onClick={() => moveStop(stop.id, -1)}
-                          disabled={i === 0}
-                          aria-label={`Move ${label} up`}
-                          title="Move up"
-                        >
-                          <WFIcon name="chevron-up" size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          className="stop-move-btn"
-                          onClick={() => moveStop(stop.id, 1)}
-                          disabled={isLast}
-                          aria-label={`Move ${label} down`}
-                          title="Move down"
-                        >
-                          <WFIcon name="chevron-down" size={14} />
-                        </button>
-                        {canRemove && (
-                          <button
-                            type="button"
-                            className="stop-remove-btn"
-                            onClick={() => removeStop(stop.id)}
-                            aria-label={`Remove ${label}`}
-                            title="Remove stop"
-                          >
-                            <WFIcon name="x" size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+  // Explore-mode content: the form (origin selector + slider + chips) plus
+  // the category panel. Slotted into the same desktop / mobile shells as
+  // the route form so layout differences come from the wrapping CSS only.
+  const exploreContents = (
+    <>
+      {modeToggle}
+      <ExploreForm
+        origin={explorePrefs.origin}
+        onOriginChange={handleExploreOriginChange}
+        maxMinutes={explorePrefs.maxMinutes}
+        onMaxMinutesChange={handleExploreMaxMinutesChange}
+        onSubmit={handleExploreSubmit}
+        loading={exploreLoading}
+        reachableNeighborhoods={exploreResult?.reachable_neighborhoods}
+        onChipClick={handleNeighborhoodChip}
+        onLocateMe={handleExploreLocateMe}
+        locating={locating}
+        geoError={exploreError}
+      />
+      {exploreError && (
+        <div className="explore-error" role="alert">
+          {exploreError}
+        </div>
+      )}
+      {exploreResult && (
+        <div className="explore-result-summary">
+          <div className="explore-result-stat">
+            <span className="explore-result-stat-num">
+              {exploreResult.stats?.area_sq_mi ?? "—"}
+            </span>
+            <span className="explore-result-stat-unit">sq mi</span>
+          </div>
+          <div className="explore-result-stat">
+            <span className="explore-result-stat-num">
+              {exploreResult.places?.length ?? 0}
+            </span>
+            <span className="explore-result-stat-unit">places shown</span>
+          </div>
+        </div>
+      )}
+      <ExploreCategoryPanel
+        selectedCategories={explorePrefs.selectedCategories}
+        selectedSubs={explorePrefs.selectedSubs}
+        expandedGroups={explorePrefs.expandedGroups}
+        showResidentialHeatmap={explorePrefs.showResidentialHeatmap}
+        onToggleGroup={handleToggleGroup}
+        onToggleCategory={handleToggleCategory}
+        onToggleSub={handleToggleSub}
+        onToggleHeatmap={handleToggleHeatmap}
+        onSelectAll={handleSelectAllCategories}
+        onClearAll={handleClearAllCategories}
+      />
+    </>
+  );
 
-                <div className="stops-controls">
-                  <button
-                    type="button"
-                    className="add-stop-btn"
-                    onClick={addStop}
-                    disabled={stops.length >= MAX_STOPS}
-                    aria-label="Add another stop"
-                  >
-                    {stops.length >= MAX_STOPS ? (
-                      `Maximum ${MAX_STOPS} stops`
-                    ) : (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                        <WFIcon name="plus" size={14} />
-                        Add stop
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    className="swap-btn"
-                    onClick={handleSwap}
-                    aria-label="Reverse stops"
-                    title="Reverse the order of all stops"
-                    disabled={stops.some(s => !s.value.trim())}
-                  >
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <WPIcon name="swap" size={14} />
-                      Reverse
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                className="personalize-trigger"
-                onClick={() => setPersonalizeOpen(true)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                  gap: 4,
-                  width: "100%",
-                  padding: "10px 12px",
-                  background: "transparent",
-                  border: "1px solid var(--mute-fog)",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  margin: "8px 0",
-                }}
-              >
-                <span
-                  style={{
-                    fontFamily: "var(--wf-sans)",
-                    fontSize: 10,
-                    fontWeight: 800,
-                    letterSpacing: 2,
-                    textTransform: "uppercase",
-                    color: "var(--mute)",
-                  }}
-                >
-                  Personalize
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--wf-serif)",
-                    fontStyle: "italic",
-                    fontSize: 14,
-                    color: "var(--ink)",
-                  }}
-                >
-                  {(() => {
-                    const parts = [];
-                    if (heightFt != null && heightIn != null) parts.push(`${heightFt}′ ${heightIn}″`);
-                    if (weightKg != null) parts.push(`${Math.round(weightKg * 2.20462)} lb`);
-                    if (dailyGoal != null) parts.push(`${dailyGoal.toLocaleString()} step measure`);
-                    return parts.length > 0
-                      ? parts.join(", ") + " ▸"
-                      : "Add your particulars for a more honest count ▸";
-                  })()}
-                </span>
-              </button>
-
-              <PaceSelector
-                pace={walkPace}
-                onChange={setWalkPace}
-              />
-
-              <fieldset className="access-prefs">
-                <legend>Considerations</legend>
-                <WFCheck
-                  checked={avoidStairs}
-                  onChange={e => setAvoidStairs(e.target.checked)}
-                  label="Avoid stairs and steep ascents"
-                />
-                <WFCheck
-                  checked={preferPedestrian}
-                  onChange={e => setPreferPedestrian(e.target.checked)}
-                  label="Prefer pedestrian ways and footpaths"
-                />
-              </fieldset>
-
-              <button
-                type="submit"
-                className="btn-route"
-                disabled={loading}
-                style={{
-                  width: "100%",
-                  padding: "13px 16px",
-                  fontSize: 15,
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 10,
-                  fontFamily: "var(--wf-serif)",
-                  fontStyle: "italic",
-                  background: "var(--ink)",
-                  color: "var(--paper)",
-                  border: "1px solid var(--ink)",
-                  cursor: loading ? "wait" : "pointer",
-                }}
-              >
-                <WPIcon name="stride" size={16} />
-                {loading ? "Plotting your route…" : "Commence the journey"}
-              </button>
-            </form>
-
-            <RecentSearches
-              searches={recentSearches}
-              onSelect={handleRecentSelect}
-              onClear={handleClearRecent}
-            />
-
-            <WeeklySummaryPanel
-              log={stepLog}
-              dailyGoal={dailyGoal}
-              onClear={handleClearStepLog}
-            />
-
-            {error && (
-              <ErrorDispatch
-                error={error}
-                onRetry={() => {
-                  const cleaned = stopValues.map(v => v.trim());
-                  if (cleaned.some(v => !v)) return;
-                  fetchRoute(cleaned);
-                }}
-              />
-            )}
-
-            {loading && <LoadingSkeleton />}
-
-            {viewResult && !loading && (
-              <ErrorBoundary>
-                {!isMultiStop && (
-                  <RouteFlavorTabs
-                    routes={result.routes}
-                    activeFlavor={activeFlavor}
-                    onChange={setActiveFlavor}
-                  />
-                )}
-                {isMultiStop && (
-                  <div className="multi-stop-note" role="note">
-                    Multi-stop walks use the fastest path. Alternatives (fewest turns, greenest) are offered for two-stop walks.
-                  </div>
-                )}
-
-                <StepHero result={viewResult} dailyGoal={dailyGoal} onShare={handleOpenShare} />
-
-                <CompareDispatch
-                  miles={viewResult.total_miles}
-                  walkMinutes={viewResult.total_minutes}
-                  calories={viewResult.calories_approx}
-                />
-
+  // Form, results, and directions — composed once and slotted into either
+  // the desktop two-column layout or the mobile bottom sheet so the JSX
+  // (and React state-tree identity) stays the same in both surfaces.
+  const routeContents = (
+    <>
+      {modeToggle}
+      <form className="form" onSubmit={handleSubmit}>
+        <div className="stops-group">
+          {stops.map((stop, i) => {
+            const isFirst = i === 0;
+            const isLast  = i === stops.length - 1;
+            const label   = isFirst
+              ? "Origin"
+              : isLast
+                ? "Destination"
+                : `Stop ${i}`;
+            const placeholder = isFirst
+              ? "e.g. Wrigleyville, 600 N Clark St"
+              : isLast
+                ? "e.g. Logan Square, Navy Pier"
+                : "Add a stop along the way";
+            const canRemove = stops.length > 2;
+            return (
+              <div className="stop-row" key={stop.id}>
+                <span className="stop-row-label">{label}</span>
                 <button
                   type="button"
-                  className={`log-walk-btn${walkLogged ? " log-walk-btn--logged" : ""}`}
-                  onClick={handleLogWalk}
-                  disabled={walkLogged}
-                  aria-label={walkLogged ? "Walk logged" : "Log this walk"}
+                  className={`pick-map-btn${pickMode === stop.id ? " pick-map-btn--active" : ""}`}
+                  onClick={() => handlePickToggle(stop.id)}
+                  title={pickMode === stop.id ? "Cancel pick" : "Set point on map"}
+                  aria-label={pickMode === stop.id ? "Cancel pick mode" : `Set ${label} by clicking map`}
                 >
-                  {walkLogged
-                    ? <><WFIcon name="check" size={14} /> Logged this walk</>
-                    : <><WFIcon name="plus" size={14} /> Log this walk</>}
+                  <WPIcon name="crosshair" size={14} />
                 </button>
-
-                <div className="motivation">
-                  {motivationMessage(viewResult.total_steps)}
-                </div>
-
-                <DirectionLedger
-                  directions={viewResult.directions}
-                  result={viewResult}
-                  activeTurnIndex={activeTurnIndex}
-                  onStepClick={setActiveTurnIndex}
-                  legs={isMultiStop ? (result.legs ?? null) : null}
-                  formatDirectionsText={formatDirectionsText}
+                <input
+                  type="search"
+                  placeholder={placeholder}
+                  value={stop.value}
+                  onChange={e => setStopValue(stop.id, e.target.value)}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="words"
+                  enterKeyHint={isLast ? "go" : "next"}
+                  aria-label={label}
                 />
-              </ErrorBoundary>
-            )}
-          </main>
+                {canRemove && (
+                  <div className="stop-row-actions">
+                    <button
+                      type="button"
+                      className="stop-move-btn"
+                      onClick={() => moveStop(stop.id, -1)}
+                      disabled={i === 0}
+                      aria-label={`Move ${label} up`}
+                      title="Move up"
+                    >
+                      <WFIcon name="chevron-up" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="stop-move-btn"
+                      onClick={() => moveStop(stop.id, 1)}
+                      disabled={isLast}
+                      aria-label={`Move ${label} down`}
+                      title="Move down"
+                    >
+                      <WFIcon name="chevron-down" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      className="stop-remove-btn"
+                      onClick={() => removeStop(stop.id)}
+                      aria-label={`Remove ${label}`}
+                      title="Remove stop"
+                    >
+                      <WFIcon name="x" size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          <div className="stops-controls">
+            <button
+              type="button"
+              className="add-stop-btn"
+              onClick={addStop}
+              disabled={stops.length >= MAX_STOPS}
+              aria-label="Add another stop"
+            >
+              {stops.length >= MAX_STOPS ? (
+                `Maximum ${MAX_STOPS} stops`
+              ) : (
+                <span className="add-stop-btn-inner">
+                  <WFIcon name="plus" size={14} />
+                  Add stop
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="swap-btn"
+              onClick={handleSwap}
+              aria-label="Reverse stops"
+              title="Reverse the order of all stops"
+              disabled={stops.some(s => !s.value.trim())}
+            >
+              <span className="swap-btn-inner">
+                <WPIcon name="swap" size={14} />
+                Reverse
+              </span>
+            </button>
+          </div>
         </div>
 
-        {/* ── Map panel ── */}
-        <div className="panel-map">
-          <MapView
-            result={viewResult}
-            turnCoords={turnCoords}
-            activeTurnIndex={activeTurnIndex}
-            pickMode={pickMode}
-            onPickPoint={handleMapPick}
-            resolveLabel={resolveStopLabel}
+        <button
+          type="button"
+          className="personalize-trigger"
+          onClick={() => setPersonalizeOpen(true)}
+        >
+          <span className="personalize-trigger-eyebrow">Personalize</span>
+          <span className="personalize-trigger-summary">
+            {(() => {
+              const parts = [];
+              if (heightFt != null && heightIn != null) parts.push(`${heightFt}′ ${heightIn}″`);
+              if (weightKg != null) parts.push(`${Math.round(weightKg * 2.20462)} lb`);
+              if (dailyGoal != null) parts.push(`${dailyGoal.toLocaleString()} step measure`);
+              return parts.length > 0
+                ? parts.join(", ") + " ▸"
+                : "Add your particulars for a more honest count ▸";
+            })()}
+          </span>
+        </button>
+
+        <PaceSelector
+          pace={walkPace}
+          onChange={setWalkPace}
+        />
+
+        <fieldset className="access-prefs">
+          <legend>Considerations</legend>
+          <WFCheck
+            checked={avoidStairs}
+            onChange={e => setAvoidStairs(e.target.checked)}
+            label="Avoid stairs and steep ascents"
           />
-        </div>
+          <WFCheck
+            checked={preferPedestrian}
+            onChange={e => setPreferPedestrian(e.target.checked)}
+            label="Prefer pedestrian ways and footpaths"
+          />
+        </fieldset>
 
-      </div>
+        <button
+          type="submit"
+          className="btn-route"
+          disabled={loading}
+        >
+          <WPIcon name="stride" size={16} />
+          {loading ? "Plotting your route…" : "Commence the journey"}
+        </button>
+      </form>
 
-      <Footer />
+      <RecentSearches
+        searches={recentSearches}
+        onSelect={handleRecentSelect}
+        onClear={handleClearRecent}
+      />
+
+      <WeeklySummaryPanel
+        log={stepLog}
+        dailyGoal={dailyGoal}
+        onClear={handleClearStepLog}
+      />
+
+      {error && (
+        <ErrorDispatch
+          error={error}
+          onRetry={() => {
+            const cleaned = stopValues.map(v => v.trim());
+            if (cleaned.some(v => !v)) return;
+            fetchRoute(cleaned);
+          }}
+        />
+      )}
+
+      {loading && <LoadingSkeleton />}
+
+      {viewResult && !loading && (
+        <RouteErrorBoundary>
+          {!isMultiStop && (
+            <RouteFlavorTabs
+              routes={result.routes}
+              activeFlavor={activeFlavor}
+              onChange={setActiveFlavor}
+            />
+          )}
+          {isMultiStop && (
+            <div className="multi-stop-note" role="note">
+              Multi-stop walks use the fastest path. Alternatives (fewest turns, greenest) are offered for two-stop walks.
+            </div>
+          )}
+
+          <StepHero result={viewResult} dailyGoal={dailyGoal} onShare={handleOpenShare} />
+
+          <CompareDispatch
+            miles={viewResult.total_miles}
+            walkMinutes={viewResult.total_minutes}
+            calories={viewResult.calories_approx}
+          />
+
+          <button
+            type="button"
+            className={`log-walk-btn${walkLogged ? " log-walk-btn--logged" : ""}`}
+            onClick={handleLogWalk}
+            disabled={walkLogged}
+            aria-label={walkLogged ? "Walk logged" : "Log this walk"}
+          >
+            {walkLogged
+              ? <><WFIcon name="check" size={14} /> Logged this walk</>
+              : <><WFIcon name="plus" size={14} /> Log this walk</>}
+          </button>
+
+          <div className="motivation">
+            {motivationMessage(viewResult.total_steps)}
+          </div>
+
+          <DirectionLedger
+            directions={viewResult.directions}
+            result={viewResult}
+            activeTurnIndex={activeTurnIndex}
+            onStepClick={setActiveTurnIndex}
+            legs={isMultiStop ? (result.legs ?? null) : null}
+            formatDirectionsText={formatDirectionsText}
+          />
+        </RouteErrorBoundary>
+      )}
+    </>
+  );
+
+  const sidebarContents = mode === "explore" ? exploreContents : routeContents;
+
+  const mapNode = (
+    <Suspense fallback={<div className="map-lazy-fallback" aria-hidden="true" />}>
+      <MapView
+        result={viewResult}
+        turnCoords={turnCoords}
+        activeTurnIndex={activeTurnIndex}
+        pickMode={pickMode}
+        onPickPoint={handleMapPick}
+        resolveLabel={resolveStopLabel}
+        onLocateMe={handleLocateMe}
+        locating={locating}
+        mapPadding={isMobile ? mapPadding : null}
+        mode={mode}
+        exploreResult={mode === "explore" ? exploreResult : null}
+        categoryStyles={exploreCategoryStyles}
+        activeSubs={activeSubsSet}
+        showResidential={explorePrefs.showResidentialHeatmap}
+        onPlaceWalkHere={handlePlaceWalkHere}
+        onPlaceTap={handlePlaceTap}
+      />
+    </Suspense>
+  );
+
+  return (
+    <div className={`app paper-grain${isMobile ? " app--mobile" : ""}${isTablet ? " app--tablet" : ""}`}>
+      {isMobile ? (
+        <MobileLayout
+          masthead={<Masthead compact onSettings={() => setPersonalizeOpen(true)} />}
+          map={mapNode}
+          snap={sheetSnap}
+          onSnapChange={handleSheetSnapChange}
+          onObscuredChange={handleObscuredChange}
+        >
+          <main className="main main--mobile">
+            {sidebarContents}
+          </main>
+        </MobileLayout>
+      ) : (
+        <>
+          <Masthead />
+          <div className="layout">
+            <div className="panel-cards">
+              <main className="main">
+                {sidebarContents}
+              </main>
+            </div>
+            <div className="panel-map">
+              {mapNode}
+            </div>
+          </div>
+          <Footer />
+        </>
+      )}
 
       <PersonalizeModal
         open={personalizeOpen}
@@ -1100,13 +1399,16 @@ export default function App() {
               </button>
             </div>
             <div className="share-modal-card-wrap">
-              <ShareDispatch
-                ref={cardRef}
-                result={viewResult}
-                originLabel={origin}
-                destLabel={destination}
-                onMapReady={handleCardMapReady}
-              />
+              <Suspense fallback={<div className="share-card-lazy-fallback" aria-hidden="true" />}>
+                <ShareDispatch
+                  ref={cardRef}
+                  result={viewResult}
+                  originLabel={origin}
+                  destLabel={destination}
+                  onMapReady={handleCardMapReady}
+                  mapInstanceRef={cardMapRef}
+                />
+              </Suspense>
             </div>
             <div className="share-modal-actions">
               <button
@@ -1129,7 +1431,28 @@ export default function App() {
         </div>
       )}
 
-      <TweaksPanel />
+      {/* ── SW update banner ── */}
+      {swUpdateReady && (
+        <div className="sw-update-banner" role="status" aria-live="polite">
+          <span>A new edition is ready.</span>
+          <button
+            type="button"
+            className="sw-update-btn"
+            onClick={handleApplySwUpdate}
+          >
+            Refresh
+          </button>
+          <button
+            type="button"
+            className="sw-update-dismiss"
+            onClick={() => setSwUpdateReady(false)}
+            aria-label="Dismiss update notice"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -1,5 +1,3 @@
-import React from "react";
-
 /* Passage × Wayfarer original pictograms.
  * 24×24 viewBox. Stroke 1.4. currentColor. round caps + joins. fill: none unless intentional.
  * These belong to Passage; they are not part of the shared Wayfarer system.

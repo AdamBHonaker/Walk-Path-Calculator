@@ -1,0 +1,966 @@
+{
+  "metadata": {
+    "sources": [
+      {
+        "name": "cpl_locations",
+        "url": "https://data.cityofchicago.org/resource/x8fc-8rcq.json",
+        "fetched_at": "2026-05-06T05:42:20Z",
+        "count": 81
+      },
+      {
+        "name": "farmers_markets_2013",
+        "url": "https://data.cityofchicago.org/resource/i8y3-ytj4.json",
+        "fetched_at": "2026-05-06T05:42:21Z",
+        "count": 24
+      }
+    ],
+    "count": 105
+  },
+  "places": [
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Albany Park Branch — Chicago Public Library",
+      "lat": 41.975579,
+      "lon": -87.713613,
+      "address": "3401 W. Foster Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Altgeld Branch — Chicago Public Library",
+      "lat": 41.657198,
+      "lon": -87.598838,
+      "address": "955 E. 131st St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Archer Heights Branch — Chicago Public Library",
+      "lat": 41.801108,
+      "lon": -87.726484,
+      "address": "5055 S. Archer Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Austin Branch — Chicago Public Library",
+      "lat": 41.889173,
+      "lon": -87.76582,
+      "address": "5615 W. Race Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Austin-Irving Branch — Chicago Public Library",
+      "lat": 41.953123,
+      "lon": -87.779285,
+      "address": "6100 W. Irving Park Rd.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Avalon Branch — Chicago Public Library",
+      "lat": 41.746393,
+      "lon": -87.586005,
+      "address": "8148 S. Stony Island Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Back of the Yards Branch — Chicago Public Library",
+      "lat": 41.808384,
+      "lon": -87.67757,
+      "address": "2111 W. 47th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Beverly Branch — Chicago Public Library",
+      "lat": 41.72119,
+      "lon": -87.672146,
+      "address": "1962 W. 95th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Bezazian Branch — Chicago Public Library",
+      "lat": 41.971551,
+      "lon": -87.660953,
+      "address": "1226 W. Ainslie St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Blackstone Branch — Chicago Public Library",
+      "lat": 41.805493,
+      "lon": -87.589237,
+      "address": "4904 S. Lake Park Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Brainerd Branch — Chicago Public Library",
+      "lat": 41.732445,
+      "lon": -87.657729,
+      "address": "1350 W. 89th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Brighton Park Branch — Chicago Public Library",
+      "lat": 41.81516,
+      "lon": -87.702734,
+      "address": "4314 S. Archer Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Bucktown-Wicker Park Branch — Chicago Public Library",
+      "lat": 41.912355,
+      "lon": -87.6803,
+      "address": "1701 N. Milwaukee Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Budlong Woods Branch — Chicago Public Library",
+      "lat": 41.983698,
+      "lon": -87.696316,
+      "address": "5630 N. Lincoln Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Canaryville Branch — Chicago Public Library",
+      "lat": 41.816344,
+      "lon": -87.642568,
+      "address": "642 W. 43rd St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Chicago Bee Branch — Chicago Public Library",
+      "lat": 41.828243,
+      "lon": -87.62635,
+      "address": "3647 S. State St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Chicago Lawn Branch — Chicago Public Library",
+      "lat": 41.781977,
+      "lon": -87.703368,
+      "address": "6120 S. Kedzie Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Chinatown Branch — Chicago Public Library",
+      "lat": 41.854121,
+      "lon": -87.631958,
+      "address": "2100 S. Wentworth Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Clearing Branch — Chicago Public Library",
+      "lat": 41.776653,
+      "lon": -87.782188,
+      "address": "6423 W. 63rd Pl.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Coleman Branch — Chicago Public Library",
+      "lat": 41.780283,
+      "lon": -87.607122,
+      "address": "731 E. 63rd St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Daley, Richard J. Branch — Chicago Public Library",
+      "lat": 41.832798,
+      "lon": -87.6463,
+      "address": "3400 S. Halsted St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Daley, Richard M. Branch — Chicago Public Library",
+      "lat": 41.894727,
+      "lon": -87.706384,
+      "address": "733 N. Kedzie Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Douglass Branch — Chicago Public Library",
+      "lat": 41.864412,
+      "lon": -87.710175,
+      "address": "3353 W. 13th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Dunning Branch — Chicago Public Library",
+      "lat": 41.943199,
+      "lon": -87.813952,
+      "address": "7455 W. Cornelia Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Edgebrook Branch — Chicago Public Library",
+      "lat": 41.997213,
+      "lon": -87.762118,
+      "address": "5331 W. Devon Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Edgewater Branch — Chicago Public Library",
+      "lat": 41.990959,
+      "lon": -87.660443,
+      "address": "6000 N. Broadway St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Gage Park Branch — Chicago Public Library",
+      "lat": 41.793575,
+      "lon": -87.69413,
+      "address": "2807 W. 55th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Galewood-Mont Clare Branch — Chicago Public Library",
+      "lat": 41.921033,
+      "lon": -87.79791,
+      "address": "6871 W. Belden Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Garfield Ridge Branch — Chicago Public Library",
+      "lat": 41.792916,
+      "lon": -87.780135,
+      "address": "6348 S. Archer Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Greater Grand Crossing Branch — Chicago Public Library",
+      "lat": 41.762395,
+      "lon": -87.600512,
+      "address": "1000 E. 73rd St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Hall Branch — Chicago Public Library",
+      "lat": 41.807378,
+      "lon": -87.622637,
+      "address": "4801 S. Michigan Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Harold Washtington Library Center Branch — Chicago Public Library",
+      "lat": 41.876863,
+      "lon": -87.627797,
+      "address": "400 S. State St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Hegewisch Branch — Chicago Public Library",
+      "lat": 41.659277,
+      "lon": -87.54882,
+      "address": "3048 E. 130th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Humboldt Park Branch — Chicago Public Library",
+      "lat": 41.910332,
+      "lon": -87.705519,
+      "address": "1605 N. Troy St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Independence Branch — Chicago Public Library",
+      "lat": 41.954139,
+      "lon": -87.720016,
+      "address": "4024 N. Elston Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Jefferson Park Branch — Chicago Public Library",
+      "lat": 41.967508,
+      "lon": -87.761767,
+      "address": "5363 W. Lawrence Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Jeffery Manor Branch — Chicago Public Library",
+      "lat": 41.713401,
+      "lon": -87.565734,
+      "address": "2401 E. 100th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Kelly Branch — Chicago Public Library",
+      "lat": 41.782026,
+      "lon": -87.637388,
+      "address": "6151 S. Normal Blvd.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "King Branch — Chicago Public Library",
+      "lat": 41.831751,
+      "lon": -87.617472,
+      "address": "3436 S. King Dr.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Legler Regional Branch — Chicago Public Library",
+      "lat": 41.879345,
+      "lon": -87.725476,
+      "address": "115 S. Pulaski Rd.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Lincoln Belmont Branch — Chicago Public Library",
+      "lat": 41.940465,
+      "lon": -87.671025,
+      "address": "1659 W. Melrose St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Lincoln Park Branch — Chicago Public Library",
+      "lat": 41.925407,
+      "lon": -87.658062,
+      "address": "1150 W. Fullerton Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Little Italy Branch — Chicago Public Library",
+      "lat": 41.869463,
+      "lon": -87.660726,
+      "address": "1336 W. Taylor St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Little Village Branch — Chicago Public Library",
+      "lat": 41.849592,
+      "lon": -87.705041,
+      "address": "2311 S. Kedzie Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Logan Square Branch — Chicago Public Library",
+      "lat": 41.92486,
+      "lon": -87.703519,
+      "address": "3030 W. Fullerton Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Lozano Branch — Chicago Public Library",
+      "lat": 41.857601,
+      "lon": -87.661164,
+      "address": "1805 S. Loomis St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Manning Branch — Chicago Public Library",
+      "lat": 41.881086,
+      "lon": -87.679235,
+      "address": "6 S. Hoyne Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Mayfair Branch — Chicago Public Library",
+      "lat": 41.968243,
+      "lon": -87.737969,
+      "address": "4400 W. Lawrence Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "McKinley Park Branch — Chicago Public Library",
+      "lat": 41.830301,
+      "lon": -87.673491,
+      "address": "1915 W. 35th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Merlo Branch — Chicago Public Library",
+      "lat": 41.940132,
+      "lon": -87.646029,
+      "address": "644 W. Belmont Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Mount Greenwood Branch — Chicago Public Library",
+      "lat": 41.693016,
+      "lon": -87.701025,
+      "address": "11010 S. Kedzie Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Near North Branch — Chicago Public Library",
+      "lat": 41.903931,
+      "lon": -87.636608,
+      "address": "310 W. Division St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "North Austin Branch — Chicago Public Library",
+      "lat": 41.909445,
+      "lon": -87.768983,
+      "address": "5724 W. North Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "North Pulaski Branch — Chicago Public Library",
+      "lat": 41.909898,
+      "lon": -87.733768,
+      "address": "4300 W. North Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Northtown Branch — Chicago Public Library",
+      "lat": 42.005076,
+      "lon": -87.690219,
+      "address": "6800 N. Western Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Oriole Park Branch — Chicago Public Library",
+      "lat": 41.978098,
+      "lon": -87.8142,
+      "address": "7454 W. Balmoral Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Portage-Cragin Branch — Chicago Public Library",
+      "lat": 41.938836,
+      "lon": -87.754671,
+      "address": "5108 W. Belmont Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Pullman Branch — Chicago Public Library",
+      "lat": 41.694365,
+      "lon": -87.618141,
+      "address": "11001 S. Indiana Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Roden Branch — Chicago Public Library",
+      "lat": 41.991998,
+      "lon": -87.798206,
+      "address": "6083 N. Northwest Hwy.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Rogers Park Branch — Chicago Public Library",
+      "lat": 42.006822,
+      "lon": -87.673308,
+      "address": "6907 N. Clark St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Scottsdale Branch — Chicago Public Library",
+      "lat": 41.749285,
+      "lon": -87.724409,
+      "address": "4101 W. 79th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Sherman Park Branch — Chicago Public Library",
+      "lat": 41.794769,
+      "lon": -87.655028,
+      "address": "5440 S. Racine Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "South Chicago Branch — Chicago Public Library",
+      "lat": 41.730298,
+      "lon": -87.549727,
+      "address": "9055 S. Houston Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "South Shore Branch — Chicago Public Library",
+      "lat": 41.762541,
+      "lon": -87.563877,
+      "address": "2505 E. 73rd St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Sulzer Regional Library Branch — Chicago Public Library",
+      "lat": 41.962967,
+      "lon": -87.684695,
+      "address": "4455 N. Lincoln Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Thurgood Marshall Branch — Chicago Public Library",
+      "lat": 41.757344,
+      "lon": -87.654064,
+      "address": "7506 S. Racine Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Toman Branch — Chicago Public Library",
+      "lat": 41.842086,
+      "lon": -87.72464,
+      "address": "2708 S. Pulaski Rd.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Uptown Branch — Chicago Public Library",
+      "lat": 41.958323,
+      "lon": -87.654247,
+      "address": "929 W. Buena Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Vodak-East Side Branch — Chicago Public Library",
+      "lat": 41.702834,
+      "lon": -87.61429,
+      "address": "3710 E. 106th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Walker Branch — Chicago Public Library",
+      "lat": 41.691983,
+      "lon": -87.673909,
+      "address": "11071 S. Hoyne Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Water Works Branch — Chicago Public Library",
+      "lat": 41.897484,
+      "lon": -87.623378,
+      "address": "163 E. Pearson St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "West Belmont Branch — Chicago Public Library",
+      "lat": 41.936652,
+      "lon": -87.786024,
+      "address": "3104 N. Narragansett Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "West Chicago Avenue Branch — Chicago Public Library",
+      "lat": 41.895096,
+      "lon": -87.748061,
+      "address": "4856 W. Chicago Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "West Englewood Branch — Chicago Public Library",
+      "lat": 41.779282,
+      "lon": -87.668433,
+      "address": "1745 W. 63rd St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "West Lawn Branch — Chicago Public Library",
+      "lat": 41.778754,
+      "lon": -87.723743,
+      "address": "4020 W. 63rd St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "West Loop Branch — Chicago Public Library",
+      "lat": 41.883711,
+      "lon": -87.654565,
+      "address": "122 N. Aberdeen St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "West Pullman Branch — Chicago Public Library",
+      "lat": 41.677906,
+      "lon": -87.643168,
+      "address": "830 W. 119th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "West Town Branch — Chicago Public Library",
+      "lat": 41.895947,
+      "lon": -87.668293,
+      "address": "1625 W. Chicago Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Whitney M. Young, Jr. Branch — Chicago Public Library",
+      "lat": 41.751018,
+      "lon": -87.614951,
+      "address": "415 East 79th St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Woodson Regional Library Branch — Chicago Public Library",
+      "lat": 41.720695,
+      "lon": -87.643048,
+      "address": "9525 S. Halsted St.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "libraries",
+      "subcategory": null,
+      "name": "Wrightwood-Ashburn Branch — Chicago Public Library",
+      "lat": 41.737957,
+      "lon": -87.702216,
+      "address": "8530 S. Kedzie Ave.",
+      "_source": "cpl_locations"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Bridgeport Farmers Market (35th & Wallace)",
+      "lat": 41.830703,
+      "lon": -87.641442,
+      "address": "35th & Wallace",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Beverly Farmers Market (W 95th St & S Longwood Dr)",
+      "lat": 41.721123,
+      "lon": -87.66914,
+      "address": "W 95th St & S Longwood Dr",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Daley Plaza Farmers Market (W Washington St & N Dearborn St)",
+      "lat": 41.883462,
+      "lon": -87.630012,
+      "address": "W Washington St & N Dearborn St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Federal Plaza Farmers Market (W Adams St & S Dearborn St)",
+      "lat": 41.879122,
+      "lon": -87.629617,
+      "address": "W Adams St & S Dearborn St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Pullman Farmers Market (E 111th Pl & S Cottage Grove Ave)",
+      "lat": 41.691825,
+      "lon": -87.610065,
+      "address": "E 111th Pl & S Cottage Grove Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Hyde Park Farmers Market (53rd & Hyde Park)",
+      "lat": 41.799948,
+      "lon": -87.583658,
+      "address": "53rd & Hyde Park",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Lincoln Park Farmers Market (W Armitage Ave & N Orchard St)",
+      "lat": 41.918214,
+      "lon": -87.646118,
+      "address": "W Armitage Ave & N Orchard St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Lincoln Square Farmers Market (W Leland Ave & N Western Ave)",
+      "lat": 41.966484,
+      "lon": -87.68875,
+      "address": "W Leland Ave & N Western Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Museum of Contemporary Art/Streeterville Farmers Market (E Chicago Ave & N Mies Van Der Rohe Way)",
+      "lat": 41.896769,
+      "lon": -87.621831,
+      "address": "E Chicago Ave & N Mies Van Der Rohe Way",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Division Street Farmers Market (W Division St & N Dearborn St)",
+      "lat": 41.903923,
+      "lon": -87.629986,
+      "address": "W Division St & N Dearborn St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Garfield Park Conservatory Farmers Market (300 N. Central Park)",
+      "lat": 41.885319,
+      "lon": -87.717682,
+      "address": "300 N. Central Park",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Northcenter Farmers Market (W Belle Plaine Ave & N Damen Ave)",
+      "lat": 41.955976,
+      "lon": -87.679102,
+      "address": "W Belle Plaine Ave & N Damen Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Argyle Market Farmers Market (Argyle and Broadway)",
+      "lat": 41.972578,
+      "lon": -87.65948,
+      "address": "Argyle and Broadway",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Printer's Row Farmers Market (S Dearborn St & W Polk St)",
+      "lat": 41.872282,
+      "lon": -87.629129,
+      "address": "S Dearborn St & W Polk St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "South Shore Farmers Market (77th and Lake Michigan)",
+      "lat": 41.75881,
+      "lon": -87.549731,
+      "address": "77th and Lake Michigan",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Willis Tower Plaza Farmers Market (W Jackson Blvd & S Wacker Dr)",
+      "lat": 41.877344,
+      "lon": -87.63662,
+      "address": "W Jackson Blvd & S Wacker Dr",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Wicker Park & Bucktown Farmers Market (N Wicker Park & Damen Ave)",
+      "lat": 41.910487,
+      "lon": -87.677444,
+      "address": "N Wicker Park & Damen Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "West Humboldt Park Farmers Market & Bazaar Farmers Market (3601 W Chicago Ave)",
+      "lat": 41.89528,
+      "lon": -87.716571,
+      "address": "3601 W Chicago Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Southport Market Farmers Market (1420 West Grace (Blaine School))",
+      "lat": 41.950763,
+      "lon": -87.664725,
+      "address": "1420 West Grace (Blaine School)",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Logan Square Night Market Farmers Market (3107 W Logan Blvd)",
+      "lat": 41.928414,
+      "lon": -87.705367,
+      "address": "3107 W Logan Blvd",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "La Follette Park Farmers Market (1333 N Laramie Ave)",
+      "lat": 41.905049,
+      "lon": -87.755553,
+      "address": "1333 N Laramie Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Columbus Park Farmers Market (Harrison & Central)",
+      "lat": 41.872636,
+      "lon": -87.76501,
+      "address": "Harrison & Central",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Austin Town Center Farmers Market (Lake & Central)",
+      "lat": 41.887841,
+      "lon": -87.765253,
+      "address": "Lake & Central",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Devon Community Monthly Market Farmers Market (2720 W Devon)",
+      "lat": 41.99781,
+      "lon": -87.697437,
+      "address": "2720 W Devon",
+      "_source": "farmers_markets_2013"
+    }
+  ]
+}

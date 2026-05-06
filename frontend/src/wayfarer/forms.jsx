@@ -38,7 +38,9 @@ export function WFInput({ leadLabel, value, defaultValue, placeholder = "", onCh
   return (
     <div style={{
       display: "flex", alignItems: "baseline", gap: 10,
-      borderBottom: `1px solid ${WF.ink}`, padding: "8px 0", ...style,
+      borderBottom: `1px solid ${WF.ink}`, padding: "8px 0",
+      minHeight: 44,
+      ...style,
     }}>
       {leadLabel && (
         <span style={{
@@ -72,7 +74,7 @@ export function WFTextarea({ value, defaultValue, placeholder = "", onChange, ro
         border: "none", outline: "none",
         background: `repeating-linear-gradient(transparent, transparent 23px, ${WF.muteFog} 23px, ${WF.muteFog} 24px)`,
         backgroundAttachment: "local",
-        fontFamily: WF.serif, fontSize: 15, lineHeight: "24px", color: WF.ink,
+        fontFamily: WF.serif, fontSize: 16, lineHeight: "24px", color: WF.ink,
         padding: "0 0 0 0", resize: "vertical", ...style,
       }}
       {...rest}
@@ -106,7 +108,9 @@ export function WFSelect({ value, onChange, children, style = {}, ...rest }) {
 export function WFCheck({ checked = false, onChange, label, style = {} }) {
   return (
     <label style={{
-      display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer", ...style,
+      display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer",
+      minHeight: 44, padding: "4px 0",
+      ...style,
     }}>
       <span style={{
         width: 16, height: 16, border: `1.5px solid ${WF.ink}`,
@@ -132,7 +136,9 @@ export function WFCheck({ checked = false, onChange, label, style = {} }) {
 export function WFRadio({ checked = false, onChange, label, name, style = {} }) {
   return (
     <label style={{
-      display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer", ...style,
+      display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer",
+      minHeight: 44, padding: "4px 0",
+      ...style,
     }}>
       <span style={{
         width: 16, height: 16, border: `1.5px solid ${WF.ink}`, borderRadius: "50%",

@@ -1,4 +1,4 @@
-import React, { Fragment, useState } from "react";
+import { Fragment, useState } from "react";
 import { formatStepLabel, formatBlocks, formatSteps } from "../lib/directionFormat.js";
 import { WFToMark } from "../wayfarer/primitives.jsx";
 
@@ -93,7 +93,8 @@ export function DirectionLedger({
                 fontWeight: 700,
                 letterSpacing: 1.5,
                 textTransform: "uppercase",
-                padding: "5px 10px",
+                padding: "8px 12px",
+                minHeight: 36,
                 cursor: "pointer",
                 color: "var(--ink)",
               }}
@@ -107,7 +108,7 @@ export function DirectionLedger({
       <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
         {visible.map((step, i) => {
           const isActive = i === activeTurnIndex;
-          const isFinal = i === visible.length - 1 && !hasMore;
+          const isFinal = i === visible.length - 1 && (showAll || !hasMore);
           const prev = i > 0 ? visible[i - 1] : null;
           const showLegDivider =
             legs && step.leg_index != null &&
@@ -148,7 +149,8 @@ export function DirectionLedger({
                   gridTemplateColumns: "32px 1fr auto",
                   alignItems: "baseline",
                   columnGap: 12,
-                  padding: "10px 16px",
+                  padding: "12px 16px",
+                  minHeight: 44,
                   borderLeft: isActive ? "3px solid var(--ember)" : "3px solid transparent",
                   borderBottom: isFinal ? "none" : "1px dashed var(--mute-fog)",
                   cursor: onStepClick ? "pointer" : "default",
@@ -241,7 +243,8 @@ export function DirectionLedger({
             background: "transparent",
             border: "none",
             borderTop: "1px solid var(--mute-fog)",
-            padding: "10px 16px",
+            padding: "12px 16px",
+            minHeight: 44,
             fontFamily: "var(--wf-serif)",
             fontStyle: "italic",
             fontSize: 13,

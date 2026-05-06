@@ -7,7 +7,6 @@ logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -28,7 +27,10 @@ from walking import (
     DEFAULT_FLAVOR,
 )
 from geocoding import resolve_location, reverse_geocode_point, LocationOutsideChicagoError, GeocoderDegradedError
-from utils import CHICAGO_SOUTH, CHICAGO_NORTH, CHICAGO_WEST, CHICAGO_EAST
+from utils import (
+    CHICAGO_SOUTH, CHICAGO_NORTH, CHICAGO_WEST, CHICAGO_EAST,
+    haversine_miles, METERS_PER_MILE, quantize_coord,
+)
 from steps import (
     step_length_from_height,
     steps_from_miles,
@@ -38,16 +40,22 @@ from steps import (
     DEFAULT_PACE,
     PACE_TO_MET,
 )
+from explore import explore as compute_explore
+from community_areas import lookup_centroid
+from places import places_in_polygon, residential_heatmap
+from shapely.geometry import shape as _shape
 
-_METERS_PER_MILE = 1609.34
-# Two points within ~0.07 miles of each other are treated as the same location
-_SAME_LOCATION_DEG2: float = 0.001 ** 2
+# Two points within this many miles of each other are treated as the same
+# location. ~0.07 mi (~113 m) was the prior implicit threshold for north-south
+# deltas; using true haversine here makes the guard symmetric in every direction.
+_SAME_LOCATION_THRESHOLD_MILES: float = 0.07
 
 # Per-endpoint rate limits. Overridable via env vars so deploys can tune
 # without a code change (e.g. to relax limits during load testing).
 RATE_LIMIT_HEALTH          = os.getenv("RATE_LIMIT_HEALTH",          "60/minute")
 RATE_LIMIT_REVERSE_GEOCODE = os.getenv("RATE_LIMIT_REVERSE_GEOCODE", "30/minute")
 RATE_LIMIT_ROUTE           = os.getenv("RATE_LIMIT_ROUTE",           "10/minute")
+RATE_LIMIT_EXPLORE         = os.getenv("RATE_LIMIT_EXPLORE",         "10/minute")
 
 # Only honor X-Forwarded-Proto when explicitly told we sit behind a trusted
 # reverse proxy (Railway, Cloudflare, etc.). Without this guard, an attacker
@@ -64,6 +72,13 @@ ALLOWED_ORIGINS = [
     o.strip() for o in _extra_origins.split(",")
     if o.strip() and o.strip() != "*"
 ]
+
+# Dev-tunnel mode: when scripts/dev-tunnel.mjs spawns uvicorn, it sets
+# DEV_TUNNEL_ORIGIN_REGEX to a pattern matching the ephemeral
+# trycloudflare.com hostnames so the dynamic per-session frontend tunnel
+# origin is accepted without manual .env edits. This MUST stay dev-only —
+# production deploys never set this var. See docs/MOBILE_TESTING.md.
+_DEV_TUNNEL_ORIGIN_REGEX = os.getenv("DEV_TUNNEL_ORIGIN_REGEX", "").strip() or None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -87,6 +102,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=_DEV_TUNNEL_ORIGIN_REGEX,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Accept"],
@@ -170,10 +186,133 @@ class RouteRequest(BaseModel):
         return self
 
 
+class ExploreOrigin(BaseModel):
+    """One of two start-point modes for the Neighborhood Explorer.
+
+    Exactly one of `community_area` or (`lat`, `lon`) must be supplied. The
+    `community_area` form anchors the isochrone at the area's representative
+    point from `community_areas.COMMUNITY_AREA_CENTROIDS`; the lat/lon form
+    is for the "📍 My location" mode driven by the browser's geolocation API.
+    """
+    community_area: str | None = Field(default=None, max_length=100)
+    lat: float | None = None
+    lon: float | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_mode(self):
+        has_area = bool(self.community_area and self.community_area.strip())
+        has_coords = self.lat is not None and self.lon is not None
+        if has_area == has_coords:
+            raise ValueError(
+                "origin must have either `community_area` or both `lat` and `lon` (not both, not neither)"
+            )
+        if has_coords:
+            if not (CHICAGO_SOUTH <= self.lat <= CHICAGO_NORTH):
+                raise ValueError("origin.lat is outside the Chicago coverage area")
+            if not (CHICAGO_WEST <= self.lon <= CHICAGO_EAST):
+                raise ValueError("origin.lon is outside the Chicago coverage area")
+        return self
+
+
+class ExploreRequest(BaseModel):
+    origin: ExploreOrigin
+    max_minutes: float = Field(ge=5, le=45)
+    categories: list[str] | None = None
+    height_inches: float | None = None
+
+    @field_validator("height_inches")
+    @classmethod
+    def validate_height(cls, v: float | None) -> float | None:
+        if v is not None and not (36 <= v <= 108):
+            raise ValueError("height_inches must be between 36 and 108")
+        return v
+
+    @field_validator("categories")
+    @classmethod
+    def validate_categories(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        if len(v) > 32:
+            raise ValueError("too many categories (max 32)")
+        cleaned = [c.strip() for c in v if isinstance(c, str) and c.strip()]
+        return cleaned or None
+
+
 @app.get("/health")
 @limiter.limit(RATE_LIMIT_HEALTH)
 async def health(request: Request):
     return {"status": "ok"}
+
+
+@app.post("/explore")
+@limiter.limit(RATE_LIMIT_EXPLORE)
+async def explore_endpoint(request: Request, payload: ExploreRequest):
+    """Return the walkable isochrone polygon for an origin + time budget.
+
+    Response shape:
+        {
+          "origin_coords": [lat, lon],
+          "max_minutes": float,
+          "polygon": GeoJSON Polygon,
+          "reachable_neighborhoods": [str, ...],
+          "stats": { "node_count": int, "area_sq_mi": float },
+          "places": [ {category, subcategory, name, lat, lon, address, source}, ... ],
+          "residential_heatmap": GeoJSON MultiPolygon | null,
+        }
+
+    `categories` filters `places` to the named top-level category keys (omit
+    or send null to return every place inside the polygon). `height_inches`
+    is currently accepted but unused — reserved for future step-count
+    enrichment of the place list.
+    """
+    origin = payload.origin
+    if origin.community_area:
+        coords = lookup_centroid(origin.community_area)
+        if coords is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown community area: {origin.community_area!r}",
+            )
+        origin_lat, origin_lon = coords
+    else:
+        origin_lat, origin_lon = origin.lat, origin.lon
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None, compute_explore, origin_lat, origin_lon, payload.max_minutes,
+    )
+    if result is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Could not anchor the explorer at this origin — either it "
+                "falls outside the Chicago street graph, or no walkable "
+                "vertex is within snapping range."
+            ),
+        )
+
+    # Materialize the GeoJSON polygon as a shapely geometry once so the
+    # place lookup and the residential clip share one parse. Place +
+    # heatmap work runs in the threadpool — both are CPU-bound and the
+    # event loop should not block on shapely's intersection calls for
+    # large isochrones.
+    polygon_geom = _shape(result["polygon"])
+    places, heatmap = await asyncio.gather(
+        loop.run_in_executor(None, places_in_polygon, polygon_geom, payload.categories),
+        loop.run_in_executor(None, residential_heatmap, polygon_geom),
+    )
+
+    return {
+        "origin_coords": [origin_lat, origin_lon],
+        "max_minutes": payload.max_minutes,
+        "polygon": result["polygon"],
+        "reachable_neighborhoods": result["reachable_neighborhoods"],
+        "stats": result["stats"],
+        "places": places,
+        # GeoJSON MultiPolygon (or null if no residential land falls inside
+        # the isochrone — happens for tight Loop-area budgets).
+        "residential_heatmap": heatmap,
+    }
 
 
 @app.get("/reverse-geocode")
@@ -184,12 +323,6 @@ async def reverse_geocode(request: Request, lat: float, lon: float):
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, reverse_geocode_point, lat, lon)
     return result
-
-
-@app.options("/route")
-async def options_route():
-    """Handle CORS preflight requests"""
-    return Response(status_code=200)
 
 
 def _dist2(a, b) -> float:
@@ -212,7 +345,10 @@ def _stitch_legs(legs_raw: list[dict]) -> tuple[list, list[tuple[int, int]]]:
     leg slices share the seam index by design (`legs[i].end == legs[i+1].start`).
     """
     full_path = [list(pt) for pt in legs_raw[0]["path"]]
-    leg_slices: list[tuple[int, int]] = [(0, len(full_path) - 1)]
+    # Guard the seed slice when the first leg's path is empty (a degenerate
+    # routing fallback): emit (0, 0) instead of (0, -1) so downstream slicing
+    # logic doesn't silently swallow the leg geometry.
+    leg_slices: list[tuple[int, int]] = [(0, max(0, len(full_path) - 1))]
     for leg in legs_raw[1:]:
         pts = leg["path"]
         if pts and full_path and _approx_eq(full_path[-1], pts[0]):
@@ -268,13 +404,18 @@ async def route(request: Request, payload: RouteRequest):
                 },
             )
 
-    # Adjacent-duplicate validation (per-leg generalization of _SAME_LOCATION_DEG2).
+    # Adjacent-duplicate validation: true haversine so the threshold is symmetric
+    # in every direction (degrees² shortcuts skew because 1° lon ≠ 1° lat).
     for i in range(len(resolved) - 1):
-        if _dist2(resolved[i], resolved[i + 1]) < _SAME_LOCATION_DEG2:
+        a, b = resolved[i], resolved[i + 1]
+        if haversine_miles(a[0], a[1], b[0], b[1]) < _SAME_LOCATION_THRESHOLD_MILES:
             if not is_multi:
                 raise HTTPException(
                     status_code=400,
-                    detail="Your origin and destination appear to be the same location.",
+                    detail={
+                        "message": "Your origin and destination appear to be the same location.",
+                        "stop_index": 1,
+                    },
                 )
             raise HTTPException(
                 status_code=400,
@@ -300,7 +441,7 @@ async def route(request: Request, payload: RouteRequest):
     def _enrich_directions(directions, leg_index: int | None = None):
         out = []
         for d in directions:
-            seg_miles   = d["distance_meters"] / _METERS_PER_MILE
+            seg_miles   = d["distance_meters"] / METERS_PER_MILE
             seg_minutes = round(d.get("minutes", 0.0) * pace_factor, 1)
             entry = {
                 **d,
