@@ -44,7 +44,7 @@ frontend/handoff/
 npm-debug.log*
 
 # Claude Code per-machine settings
-.claude/settings.local.json
+.claude/
 
 # Personal documentation (not for the repo)
 Human Documentation/

@@ -26,7 +26,7 @@ function formatIssueDate(d = new Date()) {
 }
 
 export const ShareDispatch = forwardRef(function ShareDispatch(
-  { result, originLabel, destLabel, onMapReady, mapInstanceRef },
+  { result, originLabel, destLabel, onMapReady, mapInstanceRef, siteHost },
   ref,
 ) {
   const mapContainerRef = useRef(null);
@@ -354,6 +354,44 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
           {COLOPHON_TEXT}
         </span>
       </div>
+
+      {/* Visit strip — printed URL invites recipients of the PNG to plan
+          their own walk. The full deep-link with stops is carried by the
+          Web Share API / clipboard path; here we only print the host. */}
+      {siteHost && (
+        <div
+          style={{
+            padding: "8px 22px 10px",
+            borderTop: "1px solid var(--mute-fog)",
+            textAlign: "center",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--wf-sans)",
+              fontSize: 9,
+              fontWeight: 800,
+              letterSpacing: 3,
+              textTransform: "uppercase",
+              color: "var(--mute)",
+              marginRight: 10,
+            }}
+          >
+            Plan yours at
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--wf-mono)",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--ink)",
+              letterSpacing: 0.5,
+            }}
+          >
+            {siteHost}
+          </span>
+        </div>
+      )}
     </div>
   );
 });

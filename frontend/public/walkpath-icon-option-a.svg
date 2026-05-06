@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#9c2a1a"/>
+  <!-- padding: 18% on each side → inner 64% of canvas -->
+  <g transform="translate(92.16, 92.16) scale(13.653333333333334)">
+    <!-- ghost back foot -->
+    <path d="M5 16 c0.4 -1.4, 1.6 -2.4, 3 -2.4 c0.6 0, 1 0.2, 1.2 0.6 l0.6 1.6 c0.2 0.6 -0.2 1.2 -0.8 1.4 l-2.6 0.8 c-0.7 0.2 -1.4 -0.4 -1.4 -1.2 c0 -0.3 0 -0.5 0 -0.8 z"
+          fill="#f2ece0" opacity="0.45" stroke="none"/>
+    <circle cx="6.4" cy="13.4" r="0.55" fill="#f2ece0" opacity="0.45"/>
+    <circle cx="8.0" cy="13.0" r="0.55" fill="#f2ece0" opacity="0.45"/>
+    <!-- solid lead foot -->
+    <path d="M13 9 c0.4 -1.4, 1.6 -2.4, 3 -2.4 c0.6 0, 1 0.2, 1.2 0.6 l0.6 1.6 c0.2 0.6 -0.2 1.2 -0.8 1.4 l-2.6 0.8 c-0.7 0.2 -1.4 -0.4 -1.4 -1.2 c0 -0.3 0 -0.5 0 -0.8 z"
+          fill="#f2ece0" stroke="none"/>
+    <circle cx="14.4" cy="6.4" r="0.65" fill="#f2ece0"/>
+    <circle cx="16.0" cy="6.0" r="0.65" fill="#f2ece0"/>
+  </g>
+</svg>

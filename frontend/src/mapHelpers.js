@@ -264,7 +264,8 @@ export const EXPLORE_STROKE_COLOR      = "#171310"; // var(--ink)
 export const EXPLORE_STROKE_WIDTH      = 2;
 export const RESIDENTIAL_FILL_COLOR    = "#9c2a1a"; // var(--ember)
 export const RESIDENTIAL_FILL_OPACITY  = 0.18;
-export const PLACE_CLUSTER_COLOR       = "#171310";
+export const PLACE_CLUSTER_COLOR       = "#b8862a"; // var(--gilt) — Cream value; chosen so cluster bubbles don't blend with the ink-colored polygon stroke
+
 export const PLACE_PIN_STROKE_COLOR    = "#fffbef"; // var(--paper-bright)
 export const PLACE_PIN_TEXT_COLOR      = "#fffbef";
 
@@ -383,8 +384,10 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
   }
 
   // ── Places source (clustered) ────────────────────────────────────
-  // Subcategory filter + GeoJSON shaping happens in MapView so a
-  // `showResidential`-only toggle doesn't re-tile this source.
+  // The caller (MapExploreLayer) owns subcategory filtering and the
+  // GeoJSON shaping of `placeFeatures`, plus the per-category color +
+  // glyph match expressions. Keeping that work in the React layer lets
+  // it be memoised on the user's selection state.
 
   ensureExploreSource(
     map, "explore-places",
@@ -392,7 +395,13 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
     {
       cluster: true,
       clusterRadius: 40,
-      clusterMaxZoom: 13,
+      // Cluster up through zoom 12; from zoom 13 every place is an
+      // individual pin. The default `fitBounds` for a 20-min isochrone
+      // lands around zoom 13, so users see real category pins on the
+      // first frame instead of a single cluster bubble. Larger budgets
+      // (30–45 min) still cluster naturally because they auto-fit
+      // lower.
+      clusterMaxZoom: 12,
     },
     sourceIds,
   );

@@ -1769,7 +1769,9 @@
 
 .share-modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
+  gap: 10px;
 }
 
 .share-download-btn {
@@ -1791,6 +1793,29 @@
 }
 
 .share-download-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.share-link-btn {
+  padding: 10px 22px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+
+.share-link-btn:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.share-link-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }

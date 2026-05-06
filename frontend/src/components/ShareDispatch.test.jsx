@@ -51,4 +51,24 @@ describe("ShareDispatch", () => {
     expect(heading).toHaveTextContent(/Wrigleyville/);
     expect(heading).toHaveTextContent(/Logan Square/);
   });
+
+  it("prints the site host when provided so screenshots advertise the URL", () => {
+    render(
+      <ShareDispatch
+        result={VALID_RESULT}
+        originLabel="A"
+        destLabel="B"
+        siteHost="passage.app"
+      />,
+    );
+    expect(screen.getByText("passage.app")).toBeInTheDocument();
+    expect(screen.getByText(/^plan yours at$/i)).toBeInTheDocument();
+  });
+
+  it("omits the visit strip when siteHost is empty", () => {
+    render(
+      <ShareDispatch result={VALID_RESULT} originLabel="A" destLabel="B" />,
+    );
+    expect(screen.queryByText(/plan yours at/i)).not.toBeInTheDocument();
+  });
 });
