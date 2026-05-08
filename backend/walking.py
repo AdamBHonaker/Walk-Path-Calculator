@@ -14,6 +14,7 @@ import pickle
 import threading
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 
 logger = logging.getLogger(__name__)
 
@@ -127,9 +128,15 @@ _weights_lock: threading.Lock = threading.Lock()
 
 
 def _normalize_edge_str(v) -> str:
-    """Normalize a bulk-read igraph attribute value to a plain non-None string."""
+    """Normalize a bulk-read igraph attribute value to a plain non-None string.
+
+    A list value with a `None` first element (`[None]` — possible when osmnx
+    serializes a missing attribute as null inside a list) used to slip
+    through and surface as `None` to callers that then ran `.strip()` on it.
+    Coerce that case to `""` so downstream string ops are always safe.
+    """
     if isinstance(v, list):
-        return v[0] if v else ""
+        return (v[0] or "") if v else ""
     return v or ""
 
 
@@ -534,6 +541,17 @@ def _haversine_fallback(
     )
 
 
+def _freeze_directions(directions) -> tuple:
+    """Return a tuple of read-only views over the direction dicts.
+
+    The cached `_compute_route_quantized` result is shared across every caller;
+    wrapping each dict in `MappingProxyType` lets us return the cached tuple
+    directly (no per-call defensive copy) while ensuring an accidental write
+    raises `TypeError` instead of silently corrupting the cache.
+    """
+    return tuple(d if isinstance(d, MappingProxyType) else MappingProxyType(d) for d in directions)
+
+
 @lru_cache(maxsize=_ROUTE_CACHE_SIZE)
 def _compute_route_quantized(
     olat_q: int, olon_q: int, dlat_q: int, dlon_q: int,
@@ -544,11 +562,13 @@ def _compute_route_quantized(
 
     G = _load_graph()
     if G is None:
-        return _haversine_fallback(olat, olon, dlat, dlon, flavor)
+        path, directions, minutes = _haversine_fallback(olat, olon, dlat, dlon, flavor)
+        return (path, _freeze_directions(directions), minutes)
 
     sp = _get_shortest_path(olat, olon, dlat, dlon, flavor)
     if sp is None:
-        return _haversine_fallback(olat, olon, dlat, dlon, flavor)
+        path, directions, minutes = _haversine_fallback(olat, olon, dlat, dlon, flavor)
+        return (path, _freeze_directions(directions), minutes)
 
     vpath, epath = sp
     if len(vpath) < 2:
@@ -567,7 +587,7 @@ def _compute_route_quantized(
         minutes = round(total_meters / WALKING_SPEED_MPS / 60, 1)
     else:
         minutes = _build_minutes(olat, olon, dlat, dlon, flavor)
-    return (path, directions, minutes)
+    return (path, _freeze_directions(directions), minutes)
 
 
 def _compute_route(
@@ -581,19 +601,18 @@ def _compute_route(
     Compute and cache all route data in one call.
 
     Coordinates are quantized to ~1m before cache lookup so floating-point
-    jitter on the input cannot defeat the cache.
+    jitter on the input cannot defeat the cache. The cached `directions` are
+    `MappingProxyType` views — read-only by construction, so the previous
+    per-call defensive `dict(d)` copy is unnecessary. `_enrich_directions`
+    in `main.py` is the response-side copy boundary.
     """
     if flavor not in FLAVORS:
         flavor = DEFAULT_FLAVOR
-    path, directions, minutes = _compute_route_quantized(
+    return _compute_route_quantized(
         *quantize_coord(origin_lat, origin_lon),
         *quantize_coord(dest_lat,   dest_lon),
         flavor,
     )
-    # Break the alias on cached direction dicts so callers can mutate them
-    # without corrupting the LRU cache. `path` is a tuple of tuples (immutable)
-    # and `minutes` is a float, so only `directions` needs defensive copying.
-    return (path, tuple(dict(d) for d in directions), minutes)
 
 
 def pace_minutes_factor(pace: str) -> float:
@@ -784,7 +803,9 @@ def walk_paths_alternatives(
       [{"flavor": "fastest", "path": [...], "directions": [...], "minutes": ...}, ...]
 
     Each call hits a per-flavor LRU cache, so repeated requests for the same
-    OD pair are O(flavors) lookups after the first computation.
+    OD pair are O(flavors) lookups after the first computation. `path` is the
+    cached tuple-of-tuples — FastAPI's encoder serialises tuples and lists
+    identically, so passing it through avoids an O(N) per-request rebuild.
     """
     out: list[dict] = []
     for flavor in FLAVORS:
@@ -793,7 +814,7 @@ def walk_paths_alternatives(
         )
         out.append({
             "flavor": flavor,
-            "path": [list(pt) for pt in path],
+            "path": path,
             "directions": list(directions),
             "minutes": minutes,
         })

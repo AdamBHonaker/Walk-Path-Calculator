@@ -53,11 +53,14 @@ def chicago_bbox_contains(lat: float, lon: float) -> bool:
 # fetch_street_graph.py (graph-build filter) to keep them in sync.
 SERVICE_HIGHWAY_TYPES: frozenset[str] = frozenset({"service", "alley"})
 
-# Street-graph coverage — 77 community areas (Chicago city limits only)
-STREET_GRAPH_SOUTH: float = 41.8560
-STREET_GRAPH_NORTH: float = 42.0230
-STREET_GRAPH_WEST:  float = -87.8680
-STREET_GRAPH_EAST:  float = -87.5240
+# Street-graph coverage — full Chicago city limits (77 community areas).
+# Mirrors the CHICAGO_* bbox above so every community-area centroid in
+# `community_areas.COMMUNITY_AREA_CENTROIDS` is inside the loaded graph.
+# Re-run `fetch_street_graph.py --force` whenever these values change.
+STREET_GRAPH_SOUTH: float = CHICAGO_SOUTH
+STREET_GRAPH_NORTH: float = CHICAGO_NORTH
+STREET_GRAPH_WEST:  float = CHICAGO_WEST
+STREET_GRAPH_EAST:  float = CHICAGO_EAST
 
 # OSMnx bbox format: (west, south, east, north)
 STREET_GRAPH_BBOX_OSMNX: tuple = (STREET_GRAPH_WEST, STREET_GRAPH_SOUTH, STREET_GRAPH_EAST, STREET_GRAPH_NORTH)

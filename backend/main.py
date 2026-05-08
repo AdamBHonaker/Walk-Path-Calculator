@@ -344,19 +344,31 @@ def _stitch_legs(legs_raw: list[dict]) -> tuple[list, list[tuple[int, int]]]:
     path plus per-leg `(start, end)` index ranges into that path. Adjacent
     leg slices share the seam index by design (`legs[i].end == legs[i+1].start`).
     """
-    full_path = [list(pt) for pt in legs_raw[0]["path"]]
-    # Guard the seed slice when the first leg's path is empty (a degenerate
-    # routing fallback): emit (0, 0) instead of (0, -1) so downstream slicing
-    # logic doesn't silently swallow the leg geometry.
-    leg_slices: list[tuple[int, int]] = [(0, max(0, len(full_path) - 1))]
+    # `path` entries are the cached tuple-of-tuples from `_compute_route`;
+    # FastAPI's encoder serialises tuples and lists identically, so the
+    # stitched list holds `(lat, lon)` tuples without a per-point list rebuild.
+    # `_approx_eq` indexes into the points either way.
+    full_path = list(legs_raw[0]["path"])
+    # When leg 0's path is empty (a degenerate routing fallback), emit
+    # `(0, -1)` so `path[start:end+1]` evaluates to `[]` — i.e., "no
+    # geometry." A previous fix collapsed this to `(0, 0)`, but once a
+    # later leg appended points, index 0 belonged to *that* leg and the
+    # phantom 1-point slice incorrectly attributed leg 1's start to leg 0.
+    leg_slices: list[tuple[int, int]] = [(0, len(full_path) - 1)]
     for leg in legs_raw[1:]:
         pts = leg["path"]
-        if pts and full_path and _approx_eq(full_path[-1], pts[0]):
+        if not pts:
+            # Empty subsequent leg — same convention as the seed: empty slice
+            # anchored at the current seam so `path[start:end+1] == []`.
+            seam = len(full_path)
+            leg_slices.append((seam, seam - 1))
+            continue
+        if full_path and _approx_eq(full_path[-1], pts[0]):
             start_idx = len(full_path) - 1   # shared seam index
-            full_path.extend(list(pt) for pt in pts[1:])
+            full_path.extend(pts[1:])
         else:
             start_idx = len(full_path)
-            full_path.extend(list(pt) for pt in pts)
+            full_path.extend(pts)
         leg_slices.append((start_idx, len(full_path) - 1))
     return full_path, leg_slices
 
@@ -398,7 +410,7 @@ async def route(request: Request, payload: RouteRequest):
                     "message": (
                         f"Could not find '{stops[i]}' in Chicago. "
                         "Try a neighborhood name or a street address. "
-                        "Coverage: Howard St to 50th St, Lakefront to Pulaski Rd."
+                        "Coverage: the full Chicago city limits (all 77 community areas)."
                     ),
                     "stop_index": i,
                 },
@@ -442,12 +454,23 @@ async def route(request: Request, payload: RouteRequest):
         out = []
         for d in directions:
             seg_miles   = d["distance_meters"] / METERS_PER_MILE
-            seg_minutes = round(d.get("minutes", 0.0) * pace_factor, 1)
+            seg_minutes = round(d["minutes"] * pace_factor, 1) if "minutes" in d else 0.0
+            # Explicit construction (rather than `{**d, "minutes": ...}`) skips
+            # the spread's wasted copy of the source `minutes` value that the
+            # very next key would overwrite. The cached `d` is a
+            # `MappingProxyType` view, so this dict is the response-side copy
+            # boundary either way.
             entry = {
-                **d,
-                "minutes":        seg_minutes,
-                "distance_miles": round(seg_miles, 3),
-                "steps":          steps_from_miles(seg_miles, step_len),
+                "street":          d["street"],
+                "path_type":       d["path_type"],
+                "direction":       d["direction"],
+                "direction_full":  d["direction_full"],
+                "blocks":          d["blocks"],
+                "block_type":      d["block_type"],
+                "minutes":         seg_minutes,
+                "distance_meters": d["distance_meters"],
+                "distance_miles":  round(seg_miles, 3),
+                "steps":           steps_from_miles(seg_miles, step_len),
             }
             if leg_index is not None:
                 entry["leg_index"] = leg_index
@@ -492,7 +515,10 @@ async def route(request: Request, payload: RouteRequest):
             )
             alternatives = [{
                 "flavor": "custom",
-                "path": [list(pt) for pt in path],
+                # Pass the cached tuple-of-tuples through; FastAPI encodes
+                # tuples and lists identically, so the per-point `list(pt)`
+                # rebuild is redundant.
+                "path": path,
                 "directions": list(directions),
                 "minutes": minutes,
             }]
@@ -540,7 +566,10 @@ async def route(request: Request, payload: RouteRequest):
                 None, _compute_route, olat, olon, dlat, dlon, DEFAULT_FLAVOR,
             )
         return {
-            "path":       [list(pt) for pt in path],
+            # Cached tuple-of-tuples; `_stitch_legs` extends the working list
+            # with these points directly (same JSON output, no per-point
+            # rebuild).
+            "path":       path,
             "directions": list(directions),
             "minutes":    minutes,
             "from_label": stops[i],

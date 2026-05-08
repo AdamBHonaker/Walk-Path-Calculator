@@ -2488,3 +2488,255 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ── DirectionLedger ─────────────────────────────────────────
+ * The directions card was previously hand-rolled with ≥10 inline
+ * style blocks — same fonts, same scale, same colors as the rest
+ * of the editorial chrome. Class form keeps font-weight tweaks /
+ * theme overrides in one place. */
+.directions-section {
+  border: 1px solid var(--ink);
+  background: var(--paper-bright);
+  padding: 0;
+}
+
+.directions-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 12px 16px;
+  border-bottom: 2px solid var(--ink);
+}
+
+.directions-heading-eyebrow {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.directions-heading-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.directions-heading-summary {
+  font-family: var(--wf-mono);
+  font-size: 11px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+.directions-copy-btn {
+  background: transparent;
+  border: 1px solid var(--mute-fog);
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 8px 12px;
+  min-height: 36px;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.directions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.direction-leg-divider {
+  padding: 6px 16px;
+  background: var(--paper);
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--mute);
+  text-align: center;
+}
+
+.direction-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 12px 16px;
+  min-height: 44px;
+  border-left: 3px solid transparent;
+  border-bottom: 1px dashed var(--mute-fog);
+  cursor: default;
+  background: transparent;
+}
+
+.direction-row--clickable {
+  cursor: pointer;
+}
+
+.direction-row--active {
+  border-left-color: var(--ember);
+  background: var(--paper);
+}
+
+.direction-row--final {
+  border-bottom: none;
+}
+
+.direction-row-num {
+  font-family: var(--wf-mono);
+  font-size: 11px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.direction-row--active .direction-row-num {
+  color: var(--ember);
+}
+
+.direction-row-label {
+  display: block;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
+.direction-row--active .direction-row-label {
+  color: var(--ink);
+}
+
+.direction-row-meta {
+  display: block;
+  font-family: var(--wf-mono);
+  font-size: 11px;
+  color: var(--mute);
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.direction-row-steps {
+  font-family: var(--wf-mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.directions-arrival {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ink);
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+
+.directions-show-toggle {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--mute-fog);
+  padding: 12px 16px;
+  min-height: 44px;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ember);
+  cursor: pointer;
+  text-align: center;
+}
+
+/* ── CompareDispatch ────────────────────────────────────────
+ * Same migration, same motivation — the inline style blob
+ * encoded the design system's "editorial caps + mono stat"
+ * pattern by hand on every render. */
+.compare-dispatch {
+  border: 1px solid var(--ink);
+  border-top: 3px double var(--ink);
+  padding: 12px 16px 14px;
+  background: var(--paper-bright);
+}
+
+.compare-dispatch-eyebrow {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ember);
+  margin-bottom: 8px;
+}
+
+.compare-dispatch-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 4px;
+  column-gap: 12px;
+}
+
+.compare-dispatch-label {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.compare-dispatch-value {
+  font-family: var(--wf-mono);
+  font-size: 12px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.compare-dispatch-divider {
+  height: 1px;
+  background: var(--mute-fog);
+  margin: 10px 0;
+}
+
+.compare-dispatch-impact {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  font-family: var(--wf-mono);
+  font-size: 12px;
+  color: var(--ember);
+  font-variant-numeric: tabular-nums;
+}
+
+.compare-dispatch-impact-sep {
+  color: var(--mute-fog);
+}
+
+.compare-dispatch-equiv-divider {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+
+.compare-dispatch-equiv {
+  margin: 0;
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--mute);
+  text-align: center;
+  line-height: 1.45;
+}

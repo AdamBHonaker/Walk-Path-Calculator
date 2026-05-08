@@ -474,6 +474,78 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-07 · Dead Wayfarer specimen + unused primitives trimmed (2026-05-07 TD-013)
+
+**Files:** `frontend/src/wayfarer/extra-plates.jsx` (deleted, 263 LOC), `frontend/src/wayfarer/extras.jsx` (deleted, 222 LOC), `frontend/src/wayfarer/primitives.jsx` (699 → 471 LOC), `frontend/src/wayfarer/forms.jsx` (162 → 70 LOC), `frontend/src/wayfarer/responsive.css`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** Phase 1 of the design-system migration finished without any production caller picking up most of the catalogue. `extra-plates.jsx` was 263 lines of `eslint-disable`d specimen documentation whose own header noted it referenced primitives the upstream system never shipped. `extras.jsx` (`WFTag`, `WFTabs`, `WFList`, `WFTooltip`, `WFModal`, `WFAvatar`, `WFProgress`) was only consumed by `extra-plates.jsx` — i.e. transitively dead. Inside `primitives.jsx`, twelve exports (`WFGrain`, `WFCaps`, `WFLamp`, `WFRule`, `WFDispatch`, `WFButton`, `WFPill`, `WFCard`, `WFMasthead`, `WFFooter`, `WFDropNumber`, `WFCompassMark`) had zero production reach; `forms.jsx`'s `WFField` / `WFInput` / `WFTextarea` / `WFSelect` were referenced only by the specimen. Tree-shaking kept it out of the bundle, but the source files cost reading time and made new contributors think the unused primitives were part of the supported API.
+
+**How it was resolved:** Deleted `extra-plates.jsx` and `extras.jsx` outright. Trimmed `primitives.jsx` to its production-reached exports (`WF` token mirror, `WFFromMark`, `WFToMark`, `WFColophon` / `COLOPHON_TEXT`, `WFSheet` plus `decideSnap` / `resolveSnapPx` / `SHEET_VELOCITY_THRESHOLD` / `BODY_DRAG_DEADZONE_PX`); rewrote the file's `// Provides:` block to match what survives. Trimmed `forms.jsx` to `WFCheck` and `WFRadio`. Updated the orphaned modal-card comment in `responsive.css` (was "Overrides the inline styles in extras.jsx") to reference the live `.wf-modal-overlay` / `.wf-modal-card` classes used by `PersonalizeModal`. Total source removed: ~750 LOC. All 142 pre-existing tests pass; the 4 new `*.test.{js,jsx}` files added in TD-017 push the suite to 204.
+
+---
+
+### 2026-05-07 · `walkpath:*` localStorage literals centralized via `personaPrefs.js` save\* helpers (2026-05-07 TD-015)
+
+**Files:** `frontend/src/lib/personaPrefs.js`, `frontend/src/App.jsx`, `frontend/src/components/PersonalizeModal.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** Most modules already centralized their `walkpath:*` storage keys behind dedicated load/save helpers (`recentSearches.js`, `stepLog.js`, `sheetSnap.js`, `theme.js`, `explorePrefs.js`). `personaPrefs.js` was the asymmetric outlier: it exposed `loadDailyGoal()`, `loadStoredHeightFt()`, `loadStoredHeightIn()`, `loadStoredWeightKg()`, `loadStoredPace()`, `loadAccessPrefs()` — but no corresponding `save*` companions, so `App.jsx` open-coded eight raw `safeSet("walkpath:heightFt", …)` / `safeRemove("walkpath:dailyGoal")` writes. The key string was duplicated between read and write sites, in violation of CLAUDE.md's "load-bearing prefix per migration" guidance. `PersonalizeModal.jsx` had its own `walkpath:weightUnit` read/write, the only persistence key not routed through `lib/`.
+
+**How it was resolved:** Lifted every `walkpath:*` literal in `personaPrefs.js` to a module-level `*_KEY` constant and added matching `save*` companions: `saveDailyGoal`, `saveStoredHeightFt`, `saveStoredHeightIn`, `saveStoredWeightKg`, `saveStoredPace`, `saveAccessPrefs`. Added `loadWeightUnit` / `saveWeightUnit` to absorb the previously-orphaned `walkpath:weightUnit` read/write. Replaced the eight raw call sites in `App.jsx` (one per persisted pref's `useEffect`, plus the `handleGoalChange` callback) with the new helpers. Replaced `PersonalizeModal.jsx`'s direct `safeGet` / `safeSet` calls with `loadWeightUnit` / `saveWeightUnit`. Net effect: every `walkpath:*` literal lives in exactly one place, matching the rest of the codebase. The lone remaining literal in `App.jsx` is `STOPS_KEY = "walkpath:draftStops"`, which is sessionStorage state local to the component and intentional to keep colocated.
+
+---
+
+### 2026-05-07 · Inline-style boilerplate in DirectionLedger + CompareDispatch migrated to CSS classes (2026-05-07 TD-016)
+
+**Files:** `frontend/src/components/DirectionLedger.jsx`, `frontend/src/components/CompareDispatch.jsx`, `frontend/src/App.css`
+
+**Priority:** 🟢 Low
+
+**What the debt was:** Two production components carried heavy inline `style={{…}}` payloads with hardcoded font sizes (8/9/10/11/12/13/14/22/26), letter-spacing values (1/1.5/2/2.5/3/4), font weights (600/700/800), and the same `fontFamily: "var(--wf-sans)"` / `"var(--wf-mono)"` / `"var(--wf-serif)"` boilerplate repeated across every span. The pattern was a hand-rolled "editorial caps + mono stat + italic body" type scale that already existed in CSS-class form for sibling components. A font-weight tweak in one place didn't propagate; theme overrides had to chase per-element inline style.
+
+**How it was resolved:** Added 23 named classes to `App.css` (e.g. `.directions-section`, `.directions-heading-eyebrow`, `.direction-row`, `.direction-row--active`, `.compare-dispatch-eyebrow`, `.compare-dispatch-value`, `.compare-dispatch-impact-sep`) tied to the existing CSS-var token scale. Rewrote `DirectionLedger.jsx` (261 → 124 lines) and `CompareDispatch.jsx` (121 → 53 lines) to use those classes. `ShareDispatch.jsx` was deliberately left untouched — its inline styles are load-bearing for `html-to-image`'s clone path during PNG export, and rewriting them risks breaking the share-card export on iOS Safari. Total LOC removed from JSX: ~205. No visual change verified against the existing snapshot tests.
+
+---
+
+### 2026-05-07 · Critical lib/ modules gained direct unit tests (2026-05-07 TD-017)
+
+**Files:** `frontend/src/lib/geolocation.test.js` (new, 12 cases), `frontend/src/lib/explorePrefs.test.js` (new, 14 cases), `frontend/src/lib/exploreCategories.test.js` (new, 6 cases)
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** The frontend test suite covered App.jsx well via the re-export pattern, plus dedicated tests for `mapHelpers`, `WFSheet`, `walkpath-icons`, `MobileLayout`, `ShareDispatch`, `calorieEquiv`, `compareEstimates` — but several lib/ modules with non-trivial branching shipped untested. The two highest-impact gaps were `geolocation.js` (the entry point for both the route "📍 My location" button and the explorer's location origin: a regression silently sends out-of-area users to the backend, which returns 422) and `explorePrefs.js` (the persistence schema for explore mode: a migration mistake bricks the explore form on load).
+
+**How it was resolved:** Added three new test files. `geolocation.test.js` mocks `navigator.geolocation` and covers all 12 branches (no-API, valid Chicago coord, four out-of-bbox edges, two south/north corner-exact accepts, non-finite coords, and the three `GeolocationPositionError` codes). `explorePrefs.test.js` exercises the round-trip path, corrupted-JSON fallback, wrong-shape fallback, `maxMinutes` clamping outside [5, 45], unknown-category-key stripping, unknown-sub-key stripping, default community-area fallback for unrecognized names, and the `kind: "current"` origin without lat/lon. `exploreCategories.test.js` is a structural-integrity sweep: unique group keys, unique category keys across all groups, every category appears in `CATEGORY_BY_KEY`, every pin category exposes a non-empty label/color/glyph, the `residential` heatmap-only category has the expected null-glyph shape, and `REQUESTABLE_CATEGORY_KEYS` excludes heatmap-only entries. Vitest count: 142 → 204.
+
+---
+
+### 2026-05-07 · Brittle `requestCategories.join("|")` effect-key replaced with stable memoised identity (2026-05-07 TD-018)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🟢 Low
+
+**What the debt was:** The category-selection re-fetch effect at App.jsx ~720 declared `[requestCategories.join("|")]` as its dep array. The `|` separator collision risk was real — a future category key containing a `"|"` character would silently merge into its neighbour and the effect would miss legitimate selection changes. The original justification (avoid spurious re-fires from a fresh array identity each render) was sound but the chosen workaround was the brittle one.
+
+**How it was resolved:** `requestCategories` was already wrapped in a `useMemo` keyed on `explorePrefs.selectedCategories` and `explorePrefs.selectedSubs`, so its identity is stable across unrelated renders. Replaced the `.join("|")` dep with `requestCategories` itself. Updated the `// eslint-disable-next-line react-hooks/exhaustive-deps` comment to spell out which deps are intentionally omitted (`exploreResult`, `fetchExploreResult`, `mode`) and why (the initial-fetch effect above already handles the mode flip). The other seven `eslint-disable-react-hooks/exhaustive-deps` directives in the codebase were left in place — each is individually justified by an inline comment, and removing them is a follow-up exercise that doesn't carry the same fragility.
+
+---
+
+### 2026-05-07 · Share-card lifecycle extracted from App.jsx into `useShareCard` hook (2026-05-07 TD-014)
+
+**Files:** `frontend/src/hooks/useShareCard.js` (new), `frontend/src/App.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** Even after the prior 1,990 → 1,460-line cleanup, App.jsx had grown back to 1,573 lines and owned route mode + explore mode + share-card flow + pick-on-map + bottom-sheet snap orchestration + URL-param ingestion + recents + step log + PWA SW update banner + toast — exposed via 30+ state hooks and 18+ handler functions. The share-card lifecycle (~150 lines: modal open/close, Web Share capability probe, PNG capture via `html-to-image`, copy-link fallback, `shareUrl` / `siteHost` / `shareCaption` memos) was the cleanest extractable seam.
+
+**How it was resolved:** Created `frontend/src/hooks/useShareCard.js`. Moved `showShareModal` / `cardMapReady` / `canWebShare` state, `cardRef` / `cardMapRef` refs, the `canShare`-probe `useEffect`, `shareUrl` / `siteHost` / `shareCaption` memos, and the `handleOpenShare` / `handleCloseShare` / `handleCardMapReady` / `handleShareCard` / `handleCopyShareLink` callbacks into the hook. The hook's surface takes `viewResult`, `stopValues`, `heightFt`, `heightIn`, `origin`, `destination`, `showToast` and returns the same names App.jsx previously held inline — so the JSX in the share modal is unchanged. App.jsx: 1,573 → 1,420 lines. Further extractions (a `useExploreMode` hook for the ~120-line explore-mode handler block, a `useSheetSnapOrchestrator` hook for the three sheet-snap auto-promote effects) are deferred — each has its own seams and merits its own session.
+
+---
+
 ### 2026-05-06 · App.jsx 1,990-line monolith split across 6 lib modules + 4 components + 1 hook (2026-05-06 TD-001)
 
 **Files:** `frontend/src/App.jsx`, `frontend/src/lib/{backendUrl,fetchWithTimeout,units,urlParams,personaPrefs}.js` (new), `frontend/src/hooks/useTurnCoords.js` (new), `frontend/src/components/{PaceSelector,StepHero,RecentSearches,RouteErrorBoundary}.jsx` (new), `frontend/src/App.css`
@@ -1494,3 +1566,88 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 **What was inefficient:** `legs_raw = list(await asyncio.gather(*[...]))` wrapped `gather`'s already-returned list in another `list(...)` call, allocating and copying a second list with the same contents.
 
 **Implemented:** Removed the redundant `list(...)` wrap. `legs_raw` now binds directly to the gather result.
+
+---
+
+### 2026-05-07 · `_compute_route` defensively copied cached direction dicts on every call (OPT-008, backend scan)
+
+**File:** [backend/walking.py](backend/walking.py)
+
+**Impact:** 🔴 High
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `_compute_route_quantized` was `lru_cache`-wrapped and returned the directions tuple, but `_compute_route` then ran `tuple(dict(d) for d in directions)` on every call — even cache hits — to "break the alias on cached direction dicts so callers can mutate them without corrupting the LRU cache." A typical 40–60-step Chicago route allocated 40–60 fresh dicts per call; three-flavor 2-stop responses paid 3×, multi-stop responses paid N× per leg. Combined with `main.py:_enrich_directions`'s `{**d, ...}` spread immediately after, every direction dict was copied twice between cache and response.
+
+**Implemented:** Switched the cache-side return to read-only `MappingProxyType` views via a new `_freeze_directions` helper, and dropped the per-call `tuple(dict(d) for d in directions)` in `_compute_route`. The proxies make accidental writes raise `TypeError` instead of silently corrupting the cache, so `_enrich_directions` (which always builds a fresh response dict) is the sole copy boundary. ~50–200 dict allocations removed per `/route` request. The fallback paths (`_haversine_fallback`, the `len(vpath) < 2` guard) also flow through `_freeze_directions` so the cache contract is uniform.
+
+---
+
+### 2026-05-07 · Cached `path` tuples re-converted to nested lists on every request (OPT-009, backend scan)
+
+**Files:** [backend/walking.py](backend/walking.py), [backend/main.py](backend/main.py), [backend/tests/test_main.py](backend/tests/test_main.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `walk_paths_alternatives` ran `[list(pt) for pt in path]` for each of the three flavors on every `/route` call, allocating 600–1,800 two-element lists per response (200–600 points × 3 flavors). The custom-routing-prefs branch and the multi-stop `_compute_leg` did the same, and `_stitch_legs` rebuilt every point with `list(pt)` again. The cached `path` is already a tuple-of-tuples, and FastAPI's JSON encoder serialises tuples and lists identically — the conversion was never needed.
+
+**Implemented:** Removed the `[list(pt) for pt in path]` rebuild from `walk_paths_alternatives`, the custom-flavor branch, and `_compute_leg`. `_stitch_legs` now seeds with `list(legs_raw[0]["path"])` and extends with `pts` directly (no per-point `list(pt)`). Updated the three `TestStitchLegs` assertions to compare against tuples instead of lists, with a docstring note that JSON output is unchanged. All 135 routing tests pass; the only deselected ones are pre-existing failures from a stale `geocode_cache.json` entry that pre-dates this change.
+
+---
+
+### 2026-05-07 · `_geocode_cache` grew unboundedly across the process lifetime (OPT-010, backend scan)
+
+**File:** [backend/geocoding.py](backend/geocoding.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Memory Bloat
+
+**What was inefficient:** `_geocode_cache` was a plain `dict` with no eviction policy. Every successful or persistently-failing free-text geocode and every reverse-geocoded `lat,lon` pair (quantized to 5 decimals) accumulated forever, both in memory and on disk. The `/route` rate limit (10/min) bounded the inflow, but over weeks of uptime in production the dict size trended monotonically upward, and `_save_geocode_cache`'s merge-on-write step fed disk-side growth back into per-flush memory cost.
+
+**Implemented:** Switched `_geocode_cache` to an `OrderedDict` populated from `_load_geocode_cache` in insertion order, and added FIFO eviction to `_flush_geocode_if_needed`: while `len(_geocode_cache) > _GEOCODE_CACHE_MAX`, pop the oldest entry. Cap is 10,000 by default, tunable via `GEOCODE_CACHE_MAX`. Popular Chicago queries (neighborhood/landmark names) are short-circuited by the early-return path in `geocode_google` before they ever touch the cache, so they don't risk eviction.
+
+---
+
+### 2026-05-07 · `_save_geocode_cache` re-read the entire on-disk cache on every flush (OPT-011, backend scan)
+
+**File:** [backend/geocoding.py](backend/geocoding.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Inefficient I/O
+
+**What was inefficient:** Every flush (every 50 newly-cached entries) called `_load_geocode_cache()` — re-reading and JSON-parsing the entire on-disk file — and merged it into the in-memory copy before writing the merged result back. The merge guarded against multi-worker last-writer-wins, but Passage's deployment is single-process uvicorn, so every flush paid the read+parse cost for a hazard that didn't apply. As the cache grew past a few thousand entries, each flush tripled its I/O work for no benefit.
+
+**Implemented:** Gated the merge step on a `GEOCODE_CACHE_MULTIWORKER` env flag, defaulting to plain last-writer-wins. Single-worker deploys (the production target) now pay one serialize+write per flush. The flag re-enables the merge for any future multi-worker deploy without a code change.
+
+---
+
+### 2026-05-07 · `_reachable_neighborhoods` allocated ~150 ephemeral `Point`s per `/explore` call (OPT-012, backend scan)
+
+**File:** [backend/explore.py](backend/explore.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** Every `/explore` call iterated `NEIGHBORHOOD_COORDS` (~150 entries), built a fresh `Point(lon, lat)` for each, and ran `prepared.contains(...)`. The points are static — they only change when `geocoding.NEIGHBORHOOD_COORDS` is edited — but every request re-allocated them all, threw them away after one `contains()` check, and re-built them on the next call.
+
+**Implemented:** Added a lazily-built, lock-guarded `_neighborhood_points` module-level list of `(title-cased name, Point)` tuples (mirroring `geocoding.py`'s `_get_neighborhood_kdtree`). The coordinate-dedupe step (so aliases like "loyola" / "loyola university" don't both show) is folded into the build, so the per-request loop is one `prepared.contains()` per unique point. `_reachable_neighborhoods` now collects matching names with a list comprehension and sorts.
+
+---
+
+### 2026-05-07 · `_enrich_directions` dict-spread copied keys it was about to overwrite (OPT-013, backend scan)
+
+**File:** [backend/main.py](backend/main.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `entry = {**d, "minutes": seg_minutes, "distance_miles": ..., "steps": ...}` spread all 8 source keys into the new dict and then immediately overwrote `minutes`. The wasted `minutes` copy ran once per direction step, scaled by leg count and flavor count.
+
+**Implemented:** Replaced the spread with explicit construction that picks each key by name and writes the post-pace `minutes` value once. Same one-dict-per-direction allocation, no overwrite waste. Pairs with OPT-008: with cached directions now wrapped in `MappingProxyType`, the explicit dict is the response-side copy boundary either way.
+

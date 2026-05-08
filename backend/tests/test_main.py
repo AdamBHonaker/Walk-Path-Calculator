@@ -239,6 +239,78 @@ class TestMultiStopRoutes:
         assert detail["stop_index"] == 2
 
 
+class TestStitchLegs:
+    """Direct coverage for `_stitch_legs` — the seam-sharing and empty-leg
+    invariants are subtle enough that exercising them through `/route` only
+    catches the happy path.
+    """
+
+    @staticmethod
+    def _import():
+        from main import _stitch_legs
+        return _stitch_legs
+
+    def test_shared_seam_drops_duplicate_point(self):
+        stitch = self._import()
+        legs = [
+            {"path": [(41.94, -87.65), (41.93, -87.66), (41.92, -87.67)]},
+            {"path": [(41.92, -87.67), (41.91, -87.68)]},
+        ]
+        path, slices = stitch(legs)
+        assert path == [(41.94, -87.65), (41.93, -87.66), (41.92, -87.67), (41.91, -87.68)]
+        # Adjacent slices share the seam index by design.
+        assert slices == [(0, 2), (2, 3)]
+        assert slices[0][1] == slices[1][0]
+        # Slice semantics: path[start:end+1] reproduces the leg geometry.
+        assert path[slices[0][0]:slices[0][1] + 1] == legs[0]["path"]
+        assert path[slices[1][0]:slices[1][1] + 1] == legs[1]["path"]
+
+    def test_no_shared_seam_keeps_both_endpoints(self):
+        stitch = self._import()
+        legs = [
+            {"path": [(41.94, -87.65), (41.93, -87.66)]},
+            # Leg 1 starts at a point that is NOT within ~1 m of leg 0's end
+            # (the routing engine never produces this for contiguous legs, but
+            # the stitch helper must handle it without dropping points).
+            {"path": [(41.80, -87.60), (41.79, -87.61)]},
+        ]
+        path, slices = stitch(legs)
+        assert path == [(41.94, -87.65), (41.93, -87.66), (41.80, -87.60), (41.79, -87.61)]
+        # Leg 1's start sits at index 2 (no seam collapse), end at 3.
+        assert slices == [(0, 1), (2, 3)]
+
+    def test_empty_first_leg_emits_empty_slice(self):
+        stitch = self._import()
+        legs = [
+            {"path": []},
+            {"path": [(41.92, -87.67), (41.91, -87.68)]},
+        ]
+        path, slices = stitch(legs)
+        # The empty seed must not steal index 0 from leg 1.
+        assert path == [(41.92, -87.67), (41.91, -87.68)]
+        assert slices[0] == (0, -1)
+        assert path[slices[0][0]:slices[0][1] + 1] == []
+        assert slices[1] == (0, 1)
+        assert path[slices[1][0]:slices[1][1] + 1] == legs[1]["path"]
+
+    def test_empty_subsequent_leg_emits_empty_slice_at_seam(self):
+        stitch = self._import()
+        legs = [
+            {"path": [(41.94, -87.65), (41.93, -87.66)]},
+            {"path": []},  # degenerate mid-stitch leg
+            {"path": [(41.92, -87.67), (41.91, -87.68)]},
+        ]
+        path, slices = stitch(legs)
+        # Empty mid-leg contributes nothing to the path; the next leg appends
+        # at the current end (no shared seam between leg 0 end and leg 2 start).
+        assert path == [(41.94, -87.65), (41.93, -87.66), (41.92, -87.67), (41.91, -87.68)]
+        assert slices[0] == (0, 1)
+        # Empty leg gets `(seam, seam - 1)` so path[start:end+1] == [].
+        assert slices[1] == (2, 1)
+        assert path[slices[1][0]:slices[1][1] + 1] == []
+        assert slices[2] == (2, 3)
+
+
 class TestReverseGeocode:
     """Coverage for GET /reverse-geocode — bbox validation, response shape, caching."""
 

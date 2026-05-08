@@ -11,7 +11,7 @@ const ShareDispatch = lazy(() =>
 
 import { calorieEquivalent } from "./calorieEquiv.js";
 import {
-  safeSet, safeRemove, saveJSON,
+  safeRemove,
   loadSessionJSON, saveSessionJSON, safeSessionRemove,
 } from "./lib/storage.js";
 import { Masthead } from "./components/Masthead.jsx";
@@ -35,14 +35,18 @@ import { WPIcon } from "./wayfarer/walkpath-icons.jsx";
 import { WFIcon } from "./wayfarer/icons.jsx";
 import { WFCheck } from "./wayfarer/forms.jsx";
 import { useTurnCoords } from "./hooks/useTurnCoords.js";
+import { useShareCard } from "./hooks/useShareCard.js";
 import { BACKEND_URL } from "./lib/backendUrl.js";
 import { fetchWithTimeout } from "./lib/fetchWithTimeout.js";
 import { lbToKg } from "./lib/units.js";
 import { MAX_STOPS, parseStopsParam, readUrlParams } from "./lib/urlParams.js";
 import {
-  loadDailyGoal,
-  loadStoredHeightFt, loadStoredHeightIn, loadStoredWeightKg,
-  loadStoredPace, loadAccessPrefs,
+  loadDailyGoal, saveDailyGoal,
+  loadStoredHeightFt, saveStoredHeightFt,
+  loadStoredHeightIn, saveStoredHeightIn,
+  loadStoredWeightKg, saveStoredWeightKg,
+  loadStoredPace, saveStoredPace,
+  loadAccessPrefs, saveAccessPrefs,
 } from "./lib/personaPrefs.js";
 import {
   PACE_LABELS,
@@ -221,27 +225,13 @@ export default function App() {
   const [personalizeOpen, setPersonalizeOpen]   = useState(false);
 
   useEffect(() => {
-    saveJSON("walkpath:accessPrefs", { avoidStairs, preferPedestrian });
+    saveAccessPrefs({ avoidStairs, preferPedestrian });
   }, [avoidStairs, preferPedestrian]);
 
-  useEffect(() => {
-    safeSet("walkpath:walkPace", walkPace);
-  }, [walkPace]);
-
-  useEffect(() => {
-    if (heightFt == null) safeRemove("walkpath:heightFt");
-    else safeSet("walkpath:heightFt", String(heightFt));
-  }, [heightFt]);
-
-  useEffect(() => {
-    if (heightIn == null) safeRemove("walkpath:heightIn");
-    else safeSet("walkpath:heightIn", String(heightIn));
-  }, [heightIn]);
-
-  useEffect(() => {
-    if (weightKg == null) safeRemove("walkpath:weightKg");
-    else safeSet("walkpath:weightKg", String(weightKg));
-  }, [weightKg]);
+  useEffect(() => { saveStoredPace(walkPace); }, [walkPace]);
+  useEffect(() => { saveStoredHeightFt(heightFt); }, [heightFt]);
+  useEffect(() => { saveStoredHeightIn(heightIn); }, [heightIn]);
+  useEffect(() => { saveStoredWeightKg(weightKg); }, [weightKg]);
 
   // Persist stop drafts to sessionStorage on every change so a SW-triggered
   // reload (or a normal refresh) restores what the user was typing. Two
@@ -287,20 +277,6 @@ export default function App() {
   const [stepLog, setStepLog]               = useState(loadStepLog);
   const [walkLogged, setWalkLogged]         = useState(false);
   const [activeTurnIndex, setActiveTurnIndex] = useState(null);
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [cardMapReady, setCardMapReady]     = useState(false);
-  // Web Share API capability probe — runs once on mount so the share button
-  // can label itself accurately ("Share" on mobile, "Download PNG" on
-  // desktop) instead of showing an action that won't fire.
-  const [canWebShare, setCanWebShare]       = useState(false);
-  useEffect(() => {
-    try {
-      if (typeof navigator !== "undefined" && typeof navigator.canShare === "function") {
-        const probe = new File([new Blob(["x"], { type: "image/png" })], "probe.png", { type: "image/png" });
-        if (navigator.canShare({ files: [probe] })) setCanWebShare(true);
-      }
-    } catch { /* fall through to download fallback */ }
-  }, []);
   const [pickMode, setPickMode]             = useState(null); // stop id | null
   const [locating, setLocating]             = useState(false);
   const [toastMsg, setToastMsg]             = useState("");
@@ -423,8 +399,6 @@ export default function App() {
   }
 
   const abortRef      = useRef(null);
-  const cardRef       = useRef(null);
-  const cardMapRef    = useRef(null);
   const toastTimerRef = useRef(null);
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
@@ -474,8 +448,7 @@ export default function App() {
 
   const handleGoalChange = useCallback((val) => {
     setDailyGoalState(val);
-    if (val != null) safeSet("walkpath:dailyGoal", String(val));
-    else             safeRemove("walkpath:dailyGoal");
+    saveDailyGoal(val);
   }, []);
 
   function handleSwap() {
@@ -712,12 +685,18 @@ export default function App() {
   // Re-fetch when category selection changes (so the place pins refresh).
   // Origin / maxMinutes changes go through the explicit submit button OR the
   // slider release callback so we don't spam the backend on every drag tick.
+  // `requestCategories` is already memoised, so depending on its identity is
+  // a stable trigger without the brittle `.join("|")` collision risk
+  // (a category key containing "|" would silently merge into its neighbour).
   useEffect(() => {
     if (mode !== "explore") return;
     if (!exploreResult) return; // initial-fetch effect above will handle it
     fetchExploreResult();
+    // exploreResult / fetchExploreResult / mode intentionally omitted: this
+    // effect models "the category selection changed" only. mode flips are
+    // handled by the initial-fetch effect above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestCategories.join("|")]);
+  }, [requestCategories]);
 
   function handleExploreOriginChange(nextOrigin) {
     setExplorePrefs(p => ({ ...p, origin: nextOrigin }));
@@ -854,165 +833,6 @@ export default function App() {
     setRecentSearches([]);
   }
 
-  // ── Share card ────────────────────────────────────────────────────────────
-
-  function handleOpenShare() {
-    setCardMapReady(false);
-    setShowShareModal(true);
-  }
-
-  function handleCloseShare() {
-    setShowShareModal(false);
-    setCardMapReady(false);
-  }
-
-  const handleCardMapReady = useCallback(() => setCardMapReady(true), []);
-
-  // Deep-link URL for the rendered route — same encoding the routing path
-  // uses when it writes window.history (see fetchRoute), so receivers re-hit
-  // /route with identical stops + height.
-  const shareUrl = useMemo(() => {
-    if (typeof window === "undefined" || !viewResult) return "";
-    const stopsArr = Array.isArray(viewResult.stops) && viewResult.stops.length >= 2
-      ? viewResult.stops
-      : stopValues.map(v => v.trim()).filter(Boolean);
-    if (stopsArr.length < 2) return window.location.origin + "/";
-    const params = new URLSearchParams();
-    if (stopsArr.length > 2) {
-      params.set("stops", stopsArr.map(encodeURIComponent).join("|"));
-    } else {
-      params.set("from", stopsArr[0]);
-      params.set("to", stopsArr[1]);
-    }
-    if (heightFt !== null) params.set("hft", String(heightFt));
-    if (heightIn !== null) params.set("hin", String(heightIn));
-    return `${window.location.origin}/?${params.toString()}`;
-  }, [viewResult, stopValues, heightFt, heightIn]);
-
-  // Hostname only — printed onto the share card as a tasteful "plan yours
-  // at …" line. The full URL with stops travels via Web Share / clipboard.
-  const siteHost = useMemo(() => {
-    if (typeof window === "undefined") return "";
-    return window.location.host.replace(/^www\./i, "");
-  }, []);
-
-  const shareCaption = useMemo(() => {
-    if (!viewResult) return "";
-    const steps = viewResult.total_steps?.toLocaleString?.() ?? viewResult.total_steps;
-    return `From ${origin} to ${destination} — ${steps} steps with Passage.`;
-  }, [viewResult, origin, destination]);
-
-  async function handleShareCard() {
-    if (!cardRef.current) return;
-    let overlay = null;
-    try {
-      const { toBlob } = await import("html-to-image");
-
-      // iOS Safari can clear the WebGL backbuffer between MapLibre's `idle`
-      // and the moment html-to-image reads canvas.toDataURL() during clone,
-      // even with preserveDrawingBuffer:true — producing a blank map in the
-      // exported PNG. Snapshot the map ourselves and overlay an <img> so the
-      // clone picks up a stable raster instead of the live canvas.
-      const map = cardMapRef.current;
-      if (map) {
-        await new Promise(resolve => {
-          map.once("render", resolve);
-          map.triggerRepaint();
-        });
-        const mapDataUrl = map.getCanvas().toDataURL("image/png");
-        overlay = document.createElement("img");
-        overlay.src = mapDataUrl;
-        overlay.style.position = "absolute";
-        overlay.style.inset = "0";
-        overlay.style.width = "100%";
-        overlay.style.height = "100%";
-        overlay.style.pointerEvents = "none";
-        overlay.style.zIndex = "10";
-        map.getContainer().appendChild(overlay);
-      }
-
-      // Force the editorial 480px design width during capture so the PNG
-      // doesn't reflow narrower on phones — the visible card stays unchanged
-      // because html-to-image applies the style override only to its DOM
-      // clone. No-op when the visible card is already at design width.
-      const visibleWidth = cardRef.current.getBoundingClientRect().width;
-      const captureOpts = { pixelRatio: 3 };
-      if (visibleWidth < 480) {
-        captureOpts.style = { width: "480px", maxWidth: "480px" };
-      }
-      const blob = await toBlob(cardRef.current, captureOpts);
-      if (!blob) throw new Error("PNG capture returned no data");
-
-      const slugStops = stopValues.map(v => v.trim()).filter(Boolean);
-      const slugSource = slugStops.length >= 2 ? slugStops.join("-to-") : `${origin}-to-${destination}`;
-      const slug = slugSource.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const filename = `walk-${slug}.png`;
-
-      // Prefer the native share sheet — it bundles the card image with a
-      // clickable link back to Passage, which is the whole point of this
-      // flow. Falls through to download on browsers without file-share
-      // support (most desktops).
-      const file = new File([blob], filename, { type: "image/png" });
-      if (
-        typeof navigator !== "undefined" &&
-        typeof navigator.canShare === "function" &&
-        navigator.canShare({ files: [file] })
-      ) {
-        try {
-          await navigator.share({
-            files: [file],
-            url: shareUrl || undefined,
-            title: "Passage",
-            text: shareCaption,
-          });
-          return;
-        } catch (err) {
-          // User dismissed the share sheet — silently bail.
-          if (err?.name === "AbortError") return;
-          // Other share failures (NotAllowedError, etc.) fall through to
-          // download so the user still walks away with something.
-        }
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objectUrl;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(objectUrl);
-    } catch (err) {
-      console.error("[RouteCard] PNG capture failed:", err);
-      showToast("Couldn't render the card. Please try again.");
-    } finally {
-      overlay?.remove();
-    }
-  }
-
-  async function handleCopyShareLink() {
-    if (!shareUrl) return;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(shareUrl);
-      } else {
-        // Fallback for browsers without async clipboard (older Safari, some
-        // in-app webviews). A throwaway textarea + execCommand is the
-        // canonical workaround.
-        const ta = document.createElement("textarea");
-        ta.value = shareUrl;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-      }
-      showToast("Link copied — share it anywhere.");
-    } catch (err) {
-      console.error("[RouteCard] Copy link failed:", err);
-      showToast("Couldn't copy the link. Try long-pressing the URL.");
-    }
-  }
-
   // ── Pick on map ───────────────────────────────────────────────────────────
 
   function handlePickToggle(stopId) {
@@ -1037,6 +857,33 @@ export default function App() {
     clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToastMsg(""), 3500);
   }, []);
+
+  // ── Share card ────────────────────────────────────────────────────────────
+  // Lifecycle (modal open/close, Web Share probe, PNG capture, copy fallback,
+  // shareUrl/siteHost/shareCaption memos) lives in useShareCard so this
+  // component doesn't carry ~150 lines of unrelated detail.
+  const {
+    showShareModal,
+    cardMapReady,
+    canWebShare,
+    cardRef,
+    cardMapRef,
+    shareUrl,
+    siteHost,
+    handleOpenShare,
+    handleCloseShare,
+    handleCardMapReady,
+    handleShareCard,
+    handleCopyShareLink,
+  } = useShareCard({
+    viewResult,
+    stopValues,
+    heightFt,
+    heightIn,
+    origin,
+    destination,
+    showToast,
+  });
 
   // "Use my current location" — populates the first empty stop, or the origin
   // if every stop already has a value. Coverage gating + permission classification

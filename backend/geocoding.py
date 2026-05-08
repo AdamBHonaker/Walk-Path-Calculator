@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+from collections import OrderedDict
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
@@ -114,6 +115,13 @@ logger = logging.getLogger(__name__)
 _GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
 
+# Google API statuses that represent a definitive negative answer or a
+# persistent configuration failure. Caching None for these prevents the same
+# bad query (or a misconfigured API key) from hammering Google indefinitely.
+_PERSISTENT_FAILURE_STATUSES: frozenset[str] = frozenset({
+    "ZERO_RESULTS", "REQUEST_DENIED", "INVALID_REQUEST",
+})
+
 # Latch so the "GOOGLE_MAPS_API_KEY not set" warning fires once per process —
 # every uncached free-text query previously re-emitted it, drowning real errors.
 _missing_api_key_warned: bool = False
@@ -137,12 +145,30 @@ _http_session = requests.Session()
 _geocode_unsaved: int = 0      # entries added since last write
 _GEOCODE_SAVE_EVERY: int = 50  # write to disk every N new entries; atexit handler flushes the rest
 
+# Maximum in-memory cache entries. Beyond this, the oldest insertion is
+# evicted FIFO so a long-running deploy doesn't accumulate every distinct
+# query forever. The default of 10k covers Chicago's neighborhood/landmark
+# table (~150 entries) plus weeks of organic forward+reverse traffic at
+# the existing rate limits with headroom to spare.
+_GEOCODE_CACHE_MAX: int = int(os.getenv("GEOCODE_CACHE_MAX", "10000"))
 
-def _load_geocode_cache() -> dict:
+# Multi-worker deploys (e.g., uvicorn --workers N) each hold a private copy
+# of `_geocode_cache`, so a plain last-writer-wins flush would discard
+# entries another worker learned. The merge-on-write step in
+# `_save_geocode_cache` re-reads the on-disk snapshot first to avoid that.
+# Passage's production target runs a single worker, so the merge is wasted
+# I/O by default; opt in only when running multi-worker.
+_GEOCODE_MULTIWORKER: bool = os.getenv("GEOCODE_CACHE_MULTIWORKER", "").lower() in ("1", "true", "yes")
+
+
+def _load_geocode_cache() -> "OrderedDict[str, object]":
+    """Return the on-disk cache as an OrderedDict so the FIFO eviction in
+    `_flush_geocode_if_needed` keeps the newest entries when the cap is hit.
+    """
+    result: "OrderedDict[str, object]" = OrderedDict()
     if _GEOCODE_CACHE_PATH.exists():
         try:
             raw = json.loads(_GEOCODE_CACHE_PATH.read_text(encoding="utf-8"))
-            result = {}
             for k, v in raw.items():
                 if v is None:
                     result[k] = None
@@ -150,10 +176,9 @@ def _load_geocode_cache() -> dict:
                     result[k] = tuple(v)  # forward geocode: [lat, lon] → (lat, lon)
                 else:
                     result[k] = v         # reverse geocode: {"label": ..., "source": ...}
-            return result
         except Exception as exc:
             logger.warning("Could not load geocode cache: %s", exc)
-    return {}
+    return result
 
 
 def _save_geocode_cache(cache: dict) -> None:
@@ -162,12 +187,12 @@ def _save_geocode_cache(cache: dict) -> None:
     flushes don't race on the tmp file.
     """
     with _geocode_write_lock:
-        # Merge-on-write: under multi-worker deploys each process holds its own
-        # copy of _geocode_cache, so plain last-writer-wins would discard entries
-        # other workers learned. Re-read the on-disk snapshot and union it with
-        # our cache (in-memory wins on conflict) before serializing.
         merged = cache
-        if _GEOCODE_CACHE_PATH.exists():
+        if _GEOCODE_MULTIWORKER and _GEOCODE_CACHE_PATH.exists():
+            # Multi-worker deploys: union the on-disk snapshot with our copy
+            # so concurrent worker writes don't drop each other's entries
+            # (in-memory wins on conflict). Single-worker default skips the
+            # full-file read+parse on every flush.
             try:
                 disk = _load_geocode_cache()
                 if disk:
@@ -188,17 +213,24 @@ def _save_geocode_cache(cache: dict) -> None:
             logger.error("Could not save geocode cache: %s", exc)
 
 
-_geocode_cache: dict = _load_geocode_cache()
+_geocode_cache: "OrderedDict[str, object]" = _load_geocode_cache()
 
 
 def _flush_geocode_if_needed() -> None:
-    """Increment unsaved counter and asynchronously write cache every
-    _GEOCODE_SAVE_EVERY entries. Always called while `_geocode_lock` is held,
-    so the snapshot is consistent. The disk write happens off-thread so request
-    latency doesn't grow with cache size.
+    """Increment unsaved counter, evict oldest entries past the cap, and
+    asynchronously write the cache every _GEOCODE_SAVE_EVERY entries. Always
+    called while `_geocode_lock` is held, so the snapshot is consistent. The
+    disk write happens off-thread so request latency doesn't grow with cache
+    size.
     """
     global _geocode_unsaved
     _geocode_unsaved += 1
+    # Evict the oldest insertions if the cache exceeded its cap. FIFO is good
+    # enough — popular queries (neighborhood names) keep getting re-inserted
+    # via the early-return path in `geocode_google`, which doesn't touch
+    # the cache and so never resets their position.
+    while len(_geocode_cache) > _GEOCODE_CACHE_MAX:
+        _geocode_cache.popitem(last=False)
     if _geocode_unsaved >= _GEOCODE_SAVE_EVERY:
         snapshot = dict(_geocode_cache)
         _geocode_unsaved = 0
@@ -220,44 +252,46 @@ def _flush_geocode_on_exit() -> None:
 
 # ---------------------------------------------------------------------------
 # Neighborhood / landmark coordinates
-# Geographic scope: Howard St (north) → 50th St (south) | Lakefront → Pulaski Rd (west)
+# Geographic scope: full Chicago city limits — all 77 community areas
+# (Howard St on the north → southern city edge near 138th St; Lakefront on
+# the east → western city edge near Harlem Ave / Pulaski Rd).
 # ---------------------------------------------------------------------------
 
 NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
 
     # ── ROGERS PARK / FAR NORTH ──────────────────────────────────────────────
     "rogers park":          (42.0085, -87.6688),
-    "loyola":               (41.9998, -87.6586),
+    "loyola":               (42.0012, -87.6611),
     "loyola university":    (41.9998, -87.6586),
     "granville":            (41.9943, -87.6579),
     "thorndale":            (41.9898, -87.6577),
-    "morse":                (41.9832, -87.6590),
-    "jarvis":               (41.9930, -87.6693),
+    "morse":                (42.0082, -87.6660),
+    "jarvis":               (42.0159, -87.6692),
 
     # ── EDGEWATER ────────────────────────────────────────────────────────────
     "edgewater":            (41.9889, -87.6600),
-    "bryn mawr":            (41.9834, -87.6590),
-    "foster beach":         (41.9791, -87.6403),
-    "foster avenue beach":  (41.9791, -87.6403),
+    "bryn mawr":            (41.9846, -87.6585),
+    "foster beach":         (41.9790, -87.6498),
+    "foster avenue beach":  (41.9790, -87.6498),
 
     # ── ANDERSONVILLE ────────────────────────────────────────────────────────
     "andersonville":        (41.9800, -87.6682),
     "berwyn":               (41.9778, -87.6593),
     "berwyn station":       (41.9778, -87.6593),
-    "swedish american museum": (41.9799, -87.6690),
+    "swedish american museum": (41.9767, -87.6682),
 
     # ── UPTOWN ───────────────────────────────────────────────────────────────
     "uptown":               (41.9650, -87.6550),
-    "wilson":               (41.9648, -87.6575),
-    "lawrence":             (41.9688, -87.6580),
-    "argyle":               (41.9735, -87.6580),
+    "wilson":               (41.9646, -87.6580),
+    "lawrence":             (41.9692, -87.6588),
+    "argyle":               (41.9734, -87.6580),
     "sheridan":             (41.9542, -87.6537),
     "montrose beach":       (41.9643, -87.6384),
     "montrose harbor":      (41.9643, -87.6384),
-    "uptown theatre":       (41.9648, -87.6545),
-    "green mill":           (41.9656, -87.6556),
-    "illinois masonic":     (41.9437, -87.6561),
-    "advocate illinois masonic": (41.9437, -87.6561),
+    "uptown theatre":       (41.9695, -87.6605),
+    "green mill":           (41.9694, -87.6603),
+    "illinois masonic":     (41.9362, -87.6505),
+    "advocate illinois masonic": (41.9362, -87.6505),
 
     # ── LINCOLN SQUARE / RAVENSWOOD ──────────────────────────────────────────
     "lincoln square":       (41.9679, -87.6848),
@@ -269,15 +303,15 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "lakeview":             (41.9433, -87.6513),
     "east lakeview":        (41.9395, -87.6420),
     "boystown":             (41.9444, -87.6491),
-    "addison":              (41.9476, -87.6542),
-    "belmont":              (41.9394, -87.6527),
+    "addison":              (41.9472, -87.6535),
+    "belmont":              (41.9395, -87.6531),
     "southport corridor":   (41.9416, -87.6641),
-    "southport":            (41.9416, -87.6641),
+    "southport":            (41.9438, -87.6636),
     "diversey":             (41.9321, -87.6527),
     "wellington":           (41.9360, -87.6545),
     "paulina":              (41.9437, -87.6705),
-    "diversey harbor":      (41.9321, -87.6385),
-    "theater on the lake":  (41.9258, -87.6334),
+    "diversey harbor":      (41.9307, -87.6341),
+    "theater on the lake":  (41.9271, -87.6307),
 
     # ── LINCOLN PARK ─────────────────────────────────────────────────────────
     "lincoln park":         (41.9228, -87.6482),
@@ -286,19 +320,19 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "armitage":             (41.9175, -87.6513),
     "depaul":               (41.9253, -87.6554),
     "depaul university":    (41.9253, -87.6554),
-    "north avenue beach":   (41.9168, -87.6354),
-    "oz park":              (41.9257, -87.6395),
-    "chicago history museum": (41.9218, -87.6318),
-    "peggy notebaert nature museum": (41.9218, -87.6341),
-    "steppenwolf theatre":  (41.9119, -87.6316),
-    "steppenwolf":          (41.9119, -87.6316),
+    "north avenue beach":   (41.9172, -87.6270),
+    "oz park":              (41.9209, -87.6456),
+    "chicago history museum": (41.9120, -87.6313),
+    "peggy notebaert nature museum": (41.9268, -87.6353),
+    "steppenwolf theatre":  (41.9117, -87.6479),
+    "steppenwolf":          (41.9117, -87.6479),
 
     # ── OLD TOWN ─────────────────────────────────────────────────────────────
     "old town":             (41.9101, -87.6364),
     "sedgwick":             (41.9101, -87.6386),
     "north/clybourn":       (41.9103, -87.6486),
     "north clybourn":       (41.9103, -87.6486),
-    "second city":          (41.9101, -87.6356),
+    "second city":          (41.9052, -87.6302),
     "wells street":         (41.9101, -87.6340),
 
     # ── GOLD COAST ───────────────────────────────────────────────────────────
@@ -306,12 +340,12 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "clark/division":       (41.9046, -87.6312),
     "clark division":       (41.9046, -87.6312),
     "newberry library":     (41.9019, -87.6317),
-    "washington square park": (41.9019, -87.6317),
-    "lurie childrens hospital": (41.9049, -87.6241),
-    "lurie children's hospital": (41.9049, -87.6241),
-    "chicago water tower":  (41.9007, -87.6235),
-    "water tower place":    (41.9007, -87.6235),
-    "pumping station":      (41.9007, -87.6233),
+    "washington square park": (41.8993, -87.6306),
+    "lurie childrens hospital": (41.8965, -87.6212),
+    "lurie children's hospital": (41.8965, -87.6212),
+    "chicago water tower":  (41.8972, -87.6244),
+    "water tower place":    (41.8972, -87.6244),
+    "pumping station":      (41.8972, -87.6244),
 
     # ── RIVER NORTH ──────────────────────────────────────────────────────────
     "river north":          (41.8944, -87.6333),
@@ -358,9 +392,9 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "willis tower":         (41.8789, -87.6359),
     "sears tower":          (41.8789, -87.6359),
     "wrigley building":     (41.8891, -87.6244),
-    "chicago riverwalk":    (41.8876, -87.6291),
-    "lyric opera":          (41.8855, -87.6371),
-    "art museum":           (41.8796, -87.6237),
+    "chicago riverwalk":    (41.8885, -87.6232),
+    "lyric opera":          (41.8823, -87.6374),
+    "art museum":           (41.8872, -87.6542),
     "auditorium theatre":   (41.8762, -87.6263),
     "chicago symphony orchestra": (41.8796, -87.6263),
     "symphony center":      (41.8796, -87.6263),
@@ -417,7 +451,7 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "little village":       (41.8250, -87.7200),
     "south lawndale":       (41.8250, -87.7200),
     "pilsen":               (41.8550, -87.6600),
-    "18th street":          (41.8575, -87.6700),
+    "18th street":          (41.8576, -87.6809),
     "back of the yards":    (41.8100, -87.6550),
     "mckinley park":        (41.8290, -87.6750),
     "brighton park":        (41.8250, -87.6950),
@@ -427,17 +461,17 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "douglas":              (41.8420, -87.6200),
     "grand boulevard":      (41.8200, -87.6150),
     "sox-35th":             (41.8312, -87.6304),
-    "35th street":          (41.8312, -87.6304),
+    "35th street":          (41.8304, -87.6728),
 
     # ── KEY CTA STATIONS (within coverage area) ───────────────────────────────
     "cermak-chinatown":     (41.8534, -87.6306),
-    "pulaski":              (41.8866, -87.7260),
+    "pulaski":              (41.9390, -87.7272),
     "kedzie":               (41.8864, -87.7063),
 
     # ── LOOP TRAIN STATIONS ──────────────────────────────────────────────────
-    "lake":                 (41.8849, -87.6278),
+    "lake":                 (41.8847, -87.6280),
     "monroe":               (41.8806, -87.6278),
-    "jackson":              (41.8781, -87.6278),
+    "jackson":              (41.8783, -87.6276),
     "harrison":             (41.8742, -87.6278),
     "roosevelt":            (41.8674, -87.6278),
     "clark/lake":           (41.8858, -87.6310),
@@ -447,7 +481,7 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "adams/wabash":         (41.8796, -87.6258),
     "quincy":               (41.8784, -87.6340),
     "lasalle/van buren":    (41.8757, -87.6315),
-    "clinton":              (41.8749, -87.6408),
+    "clinton":              (41.8753, -87.6411),
 }
 
 
@@ -575,13 +609,6 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
     if _circuit_is_open():
         raise GeocoderDegradedError(GeocoderDegradedError.DEFAULT_MESSAGE)
 
-    # Statuses that represent a definitive negative answer or a persistent
-    # configuration failure — caching None for these prevents the same bad
-    # query (or a misconfigured API key) from hammering Google indefinitely.
-    _PERSISTENT_FAILURE_STATUSES = {
-        "ZERO_RESULTS", "REQUEST_DENIED", "INVALID_REQUEST",
-    }
-
     coords: "tuple[float, float] | None" = None
     cache_negative = False
     try:
@@ -606,8 +633,21 @@ def geocode_google(query: str) -> "tuple[float, float] | None":
 
         if api_status == "OK" and data.get("results"):
             loc = data["results"][0]["geometry"]["location"]
-            coords = (float(loc["lat"]), float(loc["lng"]))
-            logger.info("Geocoded %s → %s", _redact(query), coords)
+            candidate = (float(loc["lat"]), float(loc["lng"]))
+            # Google's `bounds` parameter is a soft bias — for an ambiguous
+            # query (e.g. "Argyle, Chicago, IL") Google may return a similarly
+            # named place in another state. Reject any result outside the
+            # Chicago bbox so a wrong-city coord can't enter the cache and
+            # poison subsequent reverse-lookups.
+            if not chicago_bbox_contains(*candidate):
+                logger.warning(
+                    "Google returned out-of-bbox coords for %s → %s; ignoring",
+                    _redact(query), candidate,
+                )
+                cache_negative = True
+            else:
+                coords = candidate
+                logger.info("Geocoded %s → %s", _redact(query), coords)
             _circuit_record_success()
         else:
             logger.warning("Google returned status '%s' for %s", api_status, _redact(query))

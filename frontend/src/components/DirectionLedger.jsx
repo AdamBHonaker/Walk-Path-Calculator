@@ -29,75 +29,20 @@ export function DirectionLedger({
     : null;
 
   return (
-    <section
-      className="directions-section"
-      style={{
-        border: "1px solid var(--ink)",
-        background: "var(--paper-bright)",
-        padding: 0,
-      }}
-    >
-      <header
-        className="directions-heading"
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "baseline",
-          padding: "12px 16px",
-          borderBottom: "2px solid var(--ink)",
-          borderTopRightRadius: 0,
-          borderTopLeftRadius: 0,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--wf-sans)",
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: 2,
-            textTransform: "uppercase",
-            color: "var(--ink)",
-          }}
-        >
+    <section className="directions-section">
+      <header className="directions-heading">
+        <span className="directions-heading-eyebrow">
           Plotted route · {directions.length} {directions.length === 1 ? "turn" : "turns"}
         </span>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "baseline",
-            gap: 12,
-          }}
-        >
+        <span className="directions-heading-meta">
           {headerSummary && (
-            <span
-              style={{
-                fontFamily: "var(--wf-mono)",
-                fontSize: 11,
-                color: "var(--ink)",
-                fontVariantNumeric: "tabular-nums",
-                letterSpacing: 0.5,
-              }}
-            >
-              {headerSummary}
-            </span>
+            <span className="directions-heading-summary">{headerSummary}</span>
           )}
           {result && (
             <button
               type="button"
               onClick={handleCopy}
-              style={{
-                background: "transparent",
-                border: "1px solid var(--mute-fog)",
-                fontFamily: "var(--wf-sans)",
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: 1.5,
-                textTransform: "uppercase",
-                padding: "8px 12px",
-                minHeight: 36,
-                cursor: "pointer",
-                color: "var(--ink)",
-              }}
+              className="directions-copy-btn"
             >
               {copied ? "Copied" : "Copy"}
             </button>
@@ -105,7 +50,7 @@ export function DirectionLedger({
         </span>
       </header>
 
-      <ol style={{ listStyle: "none", margin: 0, padding: 0 }}>
+      <ol className="directions-list">
         {visible.map((step, i) => {
           const isActive = i === activeTurnIndex;
           const isFinal = i === visible.length - 1 && (showAll || !hasMore);
@@ -118,22 +63,16 @@ export function DirectionLedger({
           const legLabel = showLegDivider
             ? legs[step.leg_index]?.to_label ?? `Stop ${step.leg_index + 1}`
             : null;
+          const rowCls = [
+            "direction-row",
+            onStepClick && "direction-row--clickable",
+            isActive && "direction-row--active",
+            isFinal && "direction-row--final",
+          ].filter(Boolean).join(" ");
           return (
             <Fragment key={`${step.street ?? step.path_type ?? "step"}-${i}`}>
               {showLegDivider && (
-                <li
-                  style={{
-                    padding: "6px 16px",
-                    background: "var(--paper)",
-                    borderTop: "1px solid var(--ink)",
-                    borderBottom: "1px solid var(--ink)",
-                    fontFamily: "var(--wf-serif)",
-                    fontStyle: "italic",
-                    fontSize: 12,
-                    color: "var(--mute)",
-                    textAlign: "center",
-                  }}
-                >
+                <li className="direction-leg-divider">
                   → Stop {step.leg_index + 1}: {legLabel}
                 </li>
               )}
@@ -144,66 +83,22 @@ export function DirectionLedger({
                 onKeyDown={onStepClick ? (e) => {
                   if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onStepClick(i); }
                 } : undefined}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "32px 1fr auto",
-                  alignItems: "baseline",
-                  columnGap: 12,
-                  padding: "12px 16px",
-                  minHeight: 44,
-                  borderLeft: isActive ? "3px solid var(--ember)" : "3px solid transparent",
-                  borderBottom: isFinal ? "none" : "1px dashed var(--mute-fog)",
-                  cursor: onStepClick ? "pointer" : "default",
-                  background: isActive ? "var(--paper)" : "transparent",
-                }}
+                className={rowCls}
               >
-                <span
-                  style={{
-                    fontFamily: "var(--wf-mono)",
-                    fontSize: 11,
-                    color: isActive ? "var(--ember)" : "var(--mute)",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
+                <span className="direction-row-num">
                   {String(i + 1).padStart(2, "0")}
                 </span>
                 <span>
-                  <span
-                    style={{
-                      display: "block",
-                      fontFamily: "var(--wf-serif)",
-                      fontStyle: "italic",
-                      fontSize: 14,
-                      color: isActive ? "var(--ink)" : "var(--ink-soft)",
-                      lineHeight: 1.35,
-                    }}
-                  >
+                  <span className="direction-row-label">
                     {formatStepLabel(step, i)}
                   </span>
-                  <span
-                    style={{
-                      display: "block",
-                      fontFamily: "var(--wf-mono)",
-                      fontSize: 11,
-                      color: "var(--mute)",
-                      fontVariantNumeric: "tabular-nums",
-                      marginTop: 2,
-                    }}
-                  >
+                  <span className="direction-row-meta">
                     {step.street && step.direction_full && `Head ${step.direction_full} · `}
                     {formatBlocks(step.blocks, step.block_type)}
                     {" · "}{step.minutes} min
                   </span>
                 </span>
-                <span
-                  style={{
-                    fontFamily: "var(--wf-mono)",
-                    fontSize: 11,
-                    color: "var(--ink-soft)",
-                    fontVariantNumeric: "tabular-nums",
-                    whiteSpace: "nowrap",
-                  }}
-                >
+                <span className="direction-row-steps">
                   {formatSteps(step.steps)} steps
                 </span>
               </li>
@@ -213,22 +108,7 @@ export function DirectionLedger({
       </ol>
 
       {(showAll || !hasMore) && directions.length > 0 && (
-        <footer
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-            padding: "12px 16px",
-            borderTop: "1px solid var(--ink)",
-            fontFamily: "var(--wf-sans)",
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: 2,
-            textTransform: "uppercase",
-            color: "var(--ember)",
-          }}
-        >
+        <footer className="directions-arrival">
           Arrive at destination
           <WFToMark size={14} />
         </footer>
@@ -238,20 +118,7 @@ export function DirectionLedger({
         <button
           type="button"
           onClick={() => setShowAll((v) => !v)}
-          style={{
-            width: "100%",
-            background: "transparent",
-            border: "none",
-            borderTop: "1px solid var(--mute-fog)",
-            padding: "12px 16px",
-            minHeight: 44,
-            fontFamily: "var(--wf-serif)",
-            fontStyle: "italic",
-            fontSize: 13,
-            color: "var(--ember)",
-            cursor: "pointer",
-            textAlign: "center",
-          }}
+          className="directions-show-toggle"
         >
           {showAll ? "Show fewer" : `Show all ${directions.length} steps`}
         </button>

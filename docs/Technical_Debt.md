@@ -51,4 +51,10 @@ Known technical debt catalogued for future resolution. Priority: 🔴 High · �
 
 ---
 
+## Tech Debt Scan — 2026-05-07 (frontend/)
+
+*(All 6 items from this scan resolved on 2026-05-07: TD-013 dead Wayfarer specimen + unused primitives, TD-014 share-card extracted from App.jsx into useShareCard, TD-015 walkpath:* literals centralized via personaPrefs save\* helpers, TD-016 inline styles for DirectionLedger / CompareDispatch migrated to CSS classes, TD-017 unit tests added for geolocation / explorePrefs / exploreCategories, TD-018 brittle `requestCategories.join("|")` effect key replaced with stable memoised identity. See [RESOLVED_HISTORY.md](archive/RESOLVED_HISTORY.md).)*
+
+---
+
 

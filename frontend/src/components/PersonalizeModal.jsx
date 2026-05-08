@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { lbToKg, kgToLb } from "../lib/units.js";
-import { safeGet, safeSet } from "../lib/storage.js";
+import { loadWeightUnit, saveWeightUnit } from "../lib/personaPrefs.js";
 import { loadTheme, applyTheme } from "../lib/theme.js";
 
 const FT_OPTIONS = [4, 5, 6, 7];
@@ -23,7 +23,7 @@ export function PersonalizeModal({
   onChangeWeight,
   onChangeGoal,
 }) {
-  const [unit, setUnit] = useState(() => safeGet("walkpath:weightUnit") || "lb");
+  const [unit, setUnit] = useState(loadWeightUnit);
   const [theme, setTheme] = useState(() => loadTheme());
 
   function handleThemeChange(next) {
@@ -86,7 +86,7 @@ export function PersonalizeModal({
       setWeightInput(String(converted));
     }
     setUnit(newUnit);
-    safeSet("walkpath:weightUnit", newUnit);
+    saveWeightUnit(newUnit);
   }
   function handleWeightChange(e) {
     const val = e.target.value;

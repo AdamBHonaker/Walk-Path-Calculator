@@ -190,6 +190,11 @@ export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerI
         "text-field": ["get", "label"],
         "text-size": 12,
         "text-allow-overlap": true,
+        // Must be a single font name — see the explore-places-glyph layer
+        // below for the full story (OpenFreeMap 404s on comma-joined font
+        // fallbacks, which errors the entire tile bucket and would hide
+        // the numbered markers on multi-stop routes).
+        "text-font": ["Noto Sans Bold"],
       },
       paint: {
         "text-color": "#ffffff",

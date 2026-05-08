@@ -8,8 +8,10 @@ Usage:
   python fetch_street_graph.py           # download if missing
   python fetch_street_graph.py --force   # always re-download
 
-Geographic scope: northern Chicago only (20th St→Howard, lakefront→city west edge).
-Defined in utils.STREET_GRAPH_BBOX_OSMNX — edit there to adjust coverage.
+Geographic scope: full Chicago city limits — covers all 77 community areas
+(Howard St on the north, the southern city edge near 138th St, the lakefront,
+and the western city edge at Pulaski Rd / Harlem Ave). Defined in
+utils.STREET_GRAPH_BBOX_OSMNX — edit there to adjust coverage.
 
 The igraph artifact (street_graph_igraph.pkl) is also built automatically.
 The server loads from the .pkl on startup (fast); the .graphml is the source of truth.

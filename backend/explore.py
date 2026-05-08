@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from functools import lru_cache
 from typing import Any
 
@@ -109,27 +110,51 @@ def _polygon_area_sq_mi(polygon) -> float:
     return area_m2 / (METERS_PER_MILE ** 2)
 
 
+# Per-request `Point(lon, lat)` allocation for every entry in
+# NEIGHBORHOOD_COORDS adds up — the table has ~150 entries, the points are
+# static, and shapely's C-level Point init is non-trivial. We build the list
+# once on first call and reuse it across every `/explore` request. The
+# coordinate-dedupe step (aliases like "loyola" / "loyola university") is
+# folded into the build so the per-request loop is one prepared.contains()
+# per unique point.
+_neighborhood_points_lock = threading.Lock()
+_neighborhood_points: "list[tuple[str, Point]] | None" = None
+
+
+def _get_neighborhood_points() -> "list[tuple[str, Point]]":
+    global _neighborhood_points
+    if _neighborhood_points is not None:
+        return _neighborhood_points
+    with _neighborhood_points_lock:
+        if _neighborhood_points is not None:
+            return _neighborhood_points
+        seen: set[tuple[float, float]] = set()
+        points: list[tuple[str, Point]] = []
+        for raw_name, (lat, lon) in NEIGHBORHOOD_COORDS.items():
+            key = (round(lat, 5), round(lon, 5))
+            if key in seen:
+                continue
+            seen.add(key)
+            points.append((raw_name.title(), Point(lon, lat)))
+        _neighborhood_points = points
+    return _neighborhood_points
+
+
 def _reachable_neighborhoods(polygon) -> list[str]:
     """Return NEIGHBORHOOD_COORDS keys whose centroids fall inside `polygon`.
 
     Names are returned in title case (matching how the frontend displays
-    NEIGHBORHOOD_COORDS keys today) and de-duplicated by coordinate so
-    aliases like "loyola" / "loyola university" don't both show.
+    NEIGHBORHOOD_COORDS keys today). Coordinate dedupe (so aliases like
+    "loyola" / "loyola university" don't both show) is baked into the
+    pre-built point list — see `_get_neighborhood_points`.
     """
     if polygon.is_empty:
         return []
-    # Prepared geometry builds the polygon's edge index once so the ~150
+    # Prepared geometry builds the polygon's edge index once so the
     # contains() checks below don't each rebuild it.
     prepared = prep(polygon)
-    seen: set[tuple[float, float]] = set()
-    names: list[str] = []
-    for raw_name, (lat, lon) in NEIGHBORHOOD_COORDS.items():
-        key = (round(lat, 5), round(lon, 5))
-        if key in seen:
-            continue
-        if prepared.contains(Point(lon, lat)):
-            seen.add(key)
-            names.append(raw_name.title())
+    points = _get_neighborhood_points()
+    names = [name for name, pt in points if prepared.contains(pt)]
     names.sort()
     return names
 

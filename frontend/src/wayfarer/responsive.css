@@ -67,12 +67,13 @@
   padding-top: max(0px, var(--safe-top));
 }
 
-/* ── WFModal — full-screen below 480px ──────────────────────
-   Overrides the inline styles in extras.jsx so the modal becomes
-   a full-bleed sheet on phones, with safe-area padding so the
-   content clears the notch and home indicator. !important is
-   intentional — these rules exist to defeat WFModal's own inline
-   defaults at the mobile breakpoint, not arbitrary user styles. */
+/* ── Modal cards — full-screen below 480px ──────────────────
+   Targets the .wf-modal-overlay / .wf-modal-card classes used by
+   PersonalizeModal so the modal becomes a full-bleed sheet on phones,
+   with safe-area padding so the content clears the notch and home
+   indicator. !important is intentional — these rules defeat the
+   component's own inline defaults at the mobile breakpoint, not
+   arbitrary user styles. */
 @media (max-width: 480px) {
   .wf-modal-overlay {
     padding: 0 !important;
