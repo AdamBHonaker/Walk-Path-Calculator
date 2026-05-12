@@ -17,10 +17,7 @@ Chunked plans for upcoming major features, followed by ideas deferred until post
 |---|---------|------|--------|
 | 1 | Neighborhood Explorer (Isochrone) | Structural | High |
 | 2 | Multi-City Support | Structural | Very High |
-
-**Bolt-On Features** (in document order):
-
-_None pending._
+| 3 | Accessibility Mode | Bolt-On | Medium |
 
 **Earlier bolt-on backend fixes & mobile polish:** see `FEATURE_HISTORY.md`.
 
@@ -199,7 +196,38 @@ Every v1 city supports all three flavors (`fastest`, `fewest_turns`, `greenest`)
 
 ---
 
-# Bolt-On Features
+## 3. Accessibility Mode
+**Type:** Bolt-On | **Effort:** Medium | **Area:** Frontend + small backend surface
 
-_No pending bolt-on features. See `FEATURE_HISTORY.md`._
+An opt-in profile in `PersonalizeModal` that recognizes not every Passage user walks. When enabled, the app (a) hardens existing accessibility-aware routing prefs, (b) reframes the personal-progress metric away from step count, and (c) keeps room for richer surface/grade data in a future chunk.
+
+### Scope
+
+**In scope (v1):**
+- New "Mobility" section in `PersonalizeModal` between "Body" and "Display", with a primary toggle: **Mobility profile** → `walking` (default) / `wheeled`.
+- When `wheeled` is selected:
+  - `avoid_stairs` defaults to **on** and is locked on (with copy explaining why).
+  - `prefer_pedestrian` defaults to **on** but remains user-toggleable (some wheeled users prefer streets with curb cuts over narrow footways).
+  - `StepHero` swaps its primary metric from `total_steps` → `total_miles` + `active_minutes`. Calorie estimate is hidden (MET formula is walking-specific and would mislead).
+  - The share card and `RecentSearches` summaries mirror the same swap.
+  - Route motivation copy in `lib/routeFormat.js` reads "rolled" instead of "walked" where it appears in user-facing strings.
+- Persistence: `walkpath:mobilityProfile` in localStorage, loaded via `lib/personaPrefs.js`.
+- No backend schema change required for v1 — the existing `avoid_stairs` / `prefer_pedestrian` fields carry the signal. `personalized_calories` already gates calorie display; the frontend just suppresses the calorie card when `mobilityProfile === "wheeled"`.
+
+**Explicitly NOT in scope (deferred to a follow-up chunk):**
+- Wheelchair wheel-rotation counter. Wheel diameter varies widely (manual 24"/25"/26", sport, kids, power), push technique varies, and rotations aren't a metric the community asks for. Revisit only if user research surfaces real demand; if so, it lives behind a wheel-diameter input inside the Mobility section.
+- Surface-type and curb-cut awareness in the router. Requires OSM `surface=*`, `kerb=*`, `incline=*` enrichment of the pedestrian graph and a new edge-weighting pass — material work, separate plan.
+- Grade/slope awareness (Chicago is flat enough that this is low ROI here, but the API surface should accept a `max_grade` someday for multi-city support).
+
+### Chunks
+
+1. **Persistence + prefs plumbing.** Add `loadMobilityProfile()` / `saveMobilityProfile()` to `lib/personaPrefs.js`. Surface the value into `usePersonalization` so it's available alongside `heightInches`, `weightKg`, `pace`. Wire `avoid_stairs` / `prefer_pedestrian` defaults off this value in `useRouteFetch`.
+2. **Personalize UI.** New "Mobility" section in `PersonalizeModal`. Two-card segmented control (Walking / Wheeled), mirroring the Theme card pattern. When Wheeled is active, render an inline disabled `avoid_stairs` row plus a toggleable `prefer_pedestrian` row. Mobile parity: the section must lay out cleanly inside the bottom-sheet modal.
+3. **Metric reframing.** `StepHero` accepts a `metricMode` prop (`steps` | `distance`). When `wheeled`, it renders distance + active minutes and omits the calorie card. Update `useShareCard` so the captured PNG matches. Update `lib/routeFormat.js` motivation strings to swap "walked" → "rolled" in `wheeled` mode.
+4. **Copy + a11y sweep.** Run the existing a11y pass over the new UI (focus order, aria-labels on the segmented control, color-contrast on disabled rows). Check every visible "step" / "walk" string for `wheeled`-mode appropriateness.
+5. **Tests.** `PersonalizeModal.test.jsx`: profile persists across reopen; switching to wheeled flips both routing prefs. `StepHero.test.jsx`: metric swap. `useRouteFetch.test`: request payload sets `avoid_stairs=true` when profile is `wheeled`. Backend has no new branches to test — existing `avoid_stairs` tests cover the routing path.
+6. **Edge cases.**
+   - User had `avoid_stairs=false` in a deep-link URL but profile is `wheeled` → profile wins; show a one-time inline notice the first time it's overridden.
+   - Share card recipient opens the link with their own (different) profile → recipient's profile drives display; the URL still carries the original stops, not the original metric mode.
+   - `prefer_pedestrian` + custom `flavor` collapse: same behavior as today (single `custom` flavor in the response).
 

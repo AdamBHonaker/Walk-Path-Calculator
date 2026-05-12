@@ -213,6 +213,7 @@ def _save_igraph_artifact(G_nx) -> None:
     """Convert the NetworkX MultiDiGraph to a compact igraph artifact and pickle it."""
     try:
         import igraph as ig
+        import numpy as np
         from shapely import wkt as shapely_wkt
 
         _step_begin("Converting to compact igraph artifact")
@@ -225,7 +226,7 @@ def _save_igraph_artifact(G_nx) -> None:
         attr_name:     list[str]             = []
         attr_highway:  list[str]             = []
         attr_footway:  list[str]             = []
-        attr_geometry: list[list | None]     = []
+        attr_geometry: list                  = []
         filtered = 0
 
         for u, v, data in G_nx.edges(data=True):
@@ -264,31 +265,99 @@ def _save_igraph_artifact(G_nx) -> None:
         if filtered:
             print(f"  Filtered {filtered:,} service/alley edges before saving artifact")
 
+        # Collapse antiparallel directed edge pairs into one undirected edge.
+        # Take min length; first-seen name / highway / footway / geometry.
+        directed_ecount = len(edges)
+        seen_pairs: dict[tuple[int, int], int] = {}
+        dedup_edges:    list[tuple[int, int]] = []
+        dedup_length:   list[float]           = []
+        dedup_name:     list[str]             = []
+        dedup_highway:  list[str]             = []
+        dedup_footway:  list[str]             = []
+        dedup_geometry: list                  = []
+        for i, (u, v) in enumerate(edges):
+            key = (min(u, v), max(u, v))
+            if key not in seen_pairs:
+                seen_pairs[key] = len(dedup_edges)
+                dedup_edges.append((u, v))
+                dedup_length.append(attr_length[i])
+                dedup_name.append(attr_name[i])
+                dedup_highway.append(attr_highway[i])
+                dedup_footway.append(attr_footway[i])
+                dedup_geometry.append(attr_geometry[i])
+            elif attr_length[i] < dedup_length[seen_pairs[key]]:
+                dedup_length[seen_pairs[key]] = attr_length[i]
+        print(f"  Deduplicated to undirected: {len(dedup_edges):,} edges (was {directed_ecount:,} directed)")
+        edges, attr_length, attr_name = dedup_edges, dedup_length, dedup_name
+        attr_highway, attr_footway, attr_geometry = dedup_highway, dedup_footway, dedup_geometry
+
+        # --- compact arrays (format_version 2) ---
+
+        # highway / footway vocab encoding (int8 codes + vocab list)
+        highway_vocab = sorted(set(attr_highway))
+        footway_vocab = sorted(set(attr_footway))
+        hw_to_code = {s: i for i, s in enumerate(highway_vocab)}
+        fw_to_code = {s: i for i, s in enumerate(footway_vocab)}
+        edge_highway_codes = np.array([hw_to_code[h] for h in attr_highway], dtype=np.int8)
+        edge_footway_codes = np.array([fw_to_code[f] for f in attr_footway], dtype=np.int8)
+
+        # lengths as float32 (centimetre precision — more than enough for routing weights)
+        edge_lengths_f32 = np.array(attr_length, dtype=np.float32)
+
+        # sources / targets as int32 (derived from the edges list)
+        edge_sources_i32 = np.array([u for u, _ in edges], dtype=np.int32)
+        edge_targets_i32 = np.array([v for _, v in edges], dtype=np.int32)
+
+        # geometry: quantize (lon, lat) float64 pairs to int32 scaled by 1e5 (~1 m precision)
+        edge_geoms: list = []
+        for coords in attr_geometry:
+            if coords is None:
+                edge_geoms.append(None)
+            else:
+                edge_geoms.append(
+                    np.array(
+                        [(round(lon * 1e5), round(lat * 1e5)) for lon, lat in coords],
+                        dtype=np.int32,
+                    )
+                )
+
+        # igraph graph carries only vertex x/y; all edge data lives in compact arrays
         ig_graph = ig.Graph(
             n=len(nodes),
             edges=edges,
-            directed=True,
+            directed=False,
             vertex_attrs={
                 "x": [float(G_nx.nodes[n].get("x", 0.0)) for n in nodes],
                 "y": [float(G_nx.nodes[n].get("y", 0.0)) for n in nodes],
             },
-            edge_attrs={
-                "length":   attr_length,
-                "name":     attr_name,
-                "highway":  attr_highway,
-                "footway":  attr_footway,
-                "geometry": attr_geometry,
-            },
         )
 
         with open(IGRAPH_PATH, "wb") as f:
-            pickle.dump({"graph": ig_graph}, f, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(
+                {
+                    "format_version":    2,
+                    "prefiltered":       True,
+                    "graph":             ig_graph,
+                    "edge_names":        attr_name,
+                    "edge_lengths_f32":  edge_lengths_f32,
+                    "edge_sources_i32":  edge_sources_i32,
+                    "edge_targets_i32":  edge_targets_i32,
+                    "edge_highway_codes": edge_highway_codes,
+                    "edge_footway_codes": edge_footway_codes,
+                    "highway_vocab":     highway_vocab,
+                    "footway_vocab":     footway_vocab,
+                    "edge_geoms":        edge_geoms,
+                },
+                f,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
 
         artifact_mb = IGRAPH_PATH.stat().st_size / (1024 * 1024)
         _step_end(f"{artifact_mb:.1f} MB, {ig_graph.vcount():,} vertices, {ig_graph.ecount():,} edges")
 
     except Exception as e:
-        print(f"[warning] igraph artifact creation failed ({type(e).__name__}: {e})")
+        print(f"[error] igraph artifact creation failed ({type(e).__name__}: {e})")
+        raise
 
 
 if __name__ == "__main__":

@@ -343,6 +343,7 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
     placeFeatures = [],
     placeExpressions,
     fitPadding = 60,
+    fitOnRender = true,
   } = options || {};
 
   // ── Polygon source ────────────────────────────────────────────────
@@ -476,11 +477,14 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
     },
   }, layerIds);
 
-  // Fit the polygon bounds on every render. Computed inline (no Turf
-  // dependency) by walking the GeoJSON coordinate arrays.
-  const b = polygonBounds(result.polygon);
-  if (b) {
-    map.fitBounds(b, { padding: fitPadding, animate: false, maxZoom: 15 });
+  // Only fit bounds when a new isochrone arrives — not on display-only
+  // changes (category filter, heatmap toggle) so the user's pan/zoom is
+  // preserved while exploring within a result.
+  if (fitOnRender) {
+    const b = polygonBounds(result.polygon);
+    if (b) {
+      map.fitBounds(b, { padding: fitPadding, animate: false, maxZoom: 15 });
+    }
   }
 }
 

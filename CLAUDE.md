@@ -56,8 +56,12 @@ Passage/
     │   │                          #   RouteErrorBoundary, ExploreForm, ExploreCategoryPanel
     │   ├── wayfarer/              # Wayfarer design system (tokens, themes, primitives, forms,
     │   │                          #   icons, walkpath-icons, responsive utilities, motion)
-    │   ├── hooks/
-    │   │   └── useTurnCoords.js   # Maps direction-step distances back to [lat, lon] turn points
+    │   ├── hooks/                 # useTurnCoords (step-distance → [lat,lon] turn points),
+    │   │                          #   useShareCard (share-modal lifecycle + PNG capture),
+    │   │                          #   usePersonalization (height/weight/pace/goal + persistence),
+    │   │                          #   useRouteFetch (route fetch + abort + recents + URL write),
+    │   │                          #   useExploreFetch (explore fetch + abort + requestCategories),
+    │   │                          #   useFollowLocation (watchPosition lifecycle for live map tracking)
     │   ├── compareEstimates.js    # Ride-share vs. walk cost/CO2 comparison
     │   ├── mapHelpers.js          # Map config, route paint (ink/ember), GeoJSON helpers,
     │   │                          #   renderExplore() for the isochrone layers, gesture lock/unlock

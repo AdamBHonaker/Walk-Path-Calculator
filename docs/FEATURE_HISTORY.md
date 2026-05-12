@@ -44,6 +44,24 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Theme Toggle in Personalize Modal | Bolt-On | 2026-05-05 |
 | Geolocation CTA on the map | Bolt-On | 2026-05-05 |
 | Code-splitting MapView for faster cold-load | Bolt-On | 2026-05-05 |
+| Follow My Location (live map tracking) | Bolt-On | 2026-05-11 |
+
+---
+
+## Follow My Location (live map tracking)
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-11
+
+The one-shot "Use my current location" button only seeds an origin — it doesn't help once the user is actually walking the route. Added a continuous "Follow" toggle that streams `watchPosition` fixes, renders a live user-location pin on the map, and re-centers the camera on every update. Works in both route and explore modes.
+
+**What changed:**
+- [frontend/src/lib/geolocation.js](frontend/src/lib/geolocation.js) — new `watchCurrentLocation({ onFix, onError })` wraps `navigator.geolocation.watchPosition` with `enableHighAccuracy: true` and `maximumAge: 0`. Reuses the Chicago-bbox gate and the existing `denied / outside_coverage / unavailable` error vocabulary. Returns a teardown function. `resolveCurrentLocation` left untouched so the existing locate flow doesn't churn.
+- New [frontend/src/hooks/useFollowLocation.js](frontend/src/hooks/useFollowLocation.js) — owns the watch lifecycle, exposes `{ following, position, error, toggle, stop }`. Auto-stops when its `enabled` prop flips false (mode change, no route or explore result) and on unmount.
+- [frontend/src/MapView.jsx](frontend/src/MapView.jsx) — accepts `userPosition` / `following` / `onToggleFollow`. Adds a `walk-path-user-loc` GeoJSON source with two layers: a translucent blue accuracy halo (zoom-interpolated, scaled from the fix's `accuracy` in meters) and a solid blue dot with a white stroke. Auto-`easeTo` on each fix while following — zoom is preserved between fixes but bumped to ≥ 15 on the *first* fix of a session so the pin isn't lost inside a zoomed-out route fit. Manual `dragstart` / `zoomstart` / `rotatestart` / `pitchstart` disengage follow (filtered to user-originated events via the `originalEvent != null` check, so our own `easeTo` doesn't self-cancel). New "Follow / Following" button uses a new `navigation` arrow glyph.
+- [frontend/src/App.jsx](frontend/src/App.jsx) — wires the hook, passes the three props into MapView, stops follow on mode change or when both `viewResult` and `exploreResult` clear, and surfaces `watchPosition` errors through the existing `showToast` copy.
+- [frontend/src/wayfarer/walkpath-icons.jsx](frontend/src/wayfarer/walkpath-icons.jsx) — added the `navigation` arrow so the Follow button is visually distinct from the adjacent `crosshair` locate button.
+- [frontend/src/App.css](frontend/src/App.css) — `.map-follow-btn` mirrors `.map-locate-btn`'s editorial chrome; `--active` inverts ink/paper to signal a live watch. Mobile media query collapses it to a 44 × 44 icon and stacks it directly below the locate button using the same `:has()` re-anchor pattern the unlock button already uses; the unlock button is pushed one further slot down when both are visible.
+
+**Tests:** 14 new (`watchCurrentLocation` + `useFollowLocation`). Full suite is 218/218.
 
 ---
 

@@ -43,6 +43,10 @@ export function MapExploreLayer({
   const sourceIds = useRef([]);
   const mapPaddingRef = useRef(mapPadding);
   useEffect(() => { mapPaddingRef.current = mapPadding; }, [mapPadding]);
+  // Track identity of the last-rendered exploreResult so fitBounds is only
+  // called when a new isochrone arrives, not on display-only re-renders
+  // (category filter, heatmap toggle).
+  const prevExploreResultRef = useRef(null);
 
   // Theme observer: Wayfarer's Cream / Dusk swap is a class flip on
   // `<html>` (e.g. `theme-dusk`). Pin colors come from CSS-var tokens
@@ -152,6 +156,8 @@ export function MapExploreLayer({
         clearExploreLayers(map, layerIds.current, sourceIds.current);
         return;
       }
+      const didResultChange = exploreResult !== prevExploreResultRef.current;
+      prevExploreResultRef.current = exploreResult;
       renderExplore(
         map, exploreResult,
         {
@@ -159,6 +165,7 @@ export function MapExploreLayer({
           placeFeatures,
           placeExpressions,
           fitPadding: mapPaddingRef.current ?? 60,
+          fitOnRender: didResultChange,
         },
         layerIds.current, sourceIds.current,
       );

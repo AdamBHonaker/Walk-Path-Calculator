@@ -24,6 +24,7 @@ export const WP_ICON_NAMES = [
   "bolt",
   "branch",
   "tree",
+  "navigation",
 ];
 
 export function WPIcon({
@@ -194,6 +195,14 @@ export function WPIcon({
           <circle cx="12" cy="9" r="6" />
           {/* hairline trunk */}
           <line x1="12" y1="15" x2="12" y2="21" strokeWidth="1" />
+        </svg>
+      );
+
+    case "navigation":
+      return (
+        <svg {...common}>
+          {/* filled forward arrow — leans right to feel directional */}
+          <path d="M4 20 L12 3 L20 20 L12 16 Z" fill={color} />
         </svg>
       );
 

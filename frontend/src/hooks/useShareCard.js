@@ -1,7 +1,7 @@
 // useShareCard — lifecycle for the editorial route share card.
 //
 // Pulls the share-modal open/close state, Web Share capability probe,
-// PNG capture (via lazy-loaded html-to-image), copy-link fallback,
+// PNG capture (via lazy-loaded modern-screenshot), copy-link fallback,
 // shareable URL / caption / hostname memos, and the toast plumbing for
 // all of the above out of App.jsx, where they were previously ~150
 // inline lines mixed in with route + explore + sheet orchestration.
@@ -95,13 +95,15 @@ export function useShareCard({
     if (!cardRef.current) return;
     let overlay = null;
     try {
-      const { toBlob } = await import("html-to-image");
+      const { domToBlob } = await import("modern-screenshot");
 
       // iOS Safari can clear the WebGL backbuffer between MapLibre's `idle`
-      // and the moment html-to-image reads canvas.toDataURL() during clone,
-      // even with preserveDrawingBuffer:true — producing a blank map in the
-      // exported PNG. Snapshot the map ourselves and overlay an <img> so the
-      // clone picks up a stable raster instead of the live canvas.
+      // and the moment the screenshot lib reads canvas.toDataURL() during
+      // clone, even with preserveDrawingBuffer:true — producing a blank map
+      // in the exported PNG. Snapshot the map ourselves and overlay an <img>
+      // so the clone picks up a stable raster instead of the live canvas.
+      // (Kept after the modern-screenshot swap as defense-in-depth — the lib
+      // claims better iOS behavior but this overlay is cheap insurance.)
       const map = cardMapRef.current;
       if (map) {
         await new Promise(resolve => {
@@ -122,14 +124,14 @@ export function useShareCard({
 
       // Force the editorial 480px design width during capture so the PNG
       // doesn't reflow narrower on phones — the visible card stays unchanged
-      // because html-to-image applies the style override only to its DOM
+      // because modern-screenshot applies the style override only to its DOM
       // clone. No-op when the visible card is already at design width.
       const visibleWidth = cardRef.current.getBoundingClientRect().width;
-      const captureOpts = { pixelRatio: 3 };
+      const captureOpts = { scale: 3 };
       if (visibleWidth < 480) {
         captureOpts.style = { width: "480px", maxWidth: "480px" };
       }
-      const blob = await toBlob(cardRef.current, captureOpts);
+      const blob = await domToBlob(cardRef.current, captureOpts);
       if (!blob) throw new Error("PNG capture returned no data");
 
       const slugStops = stopValues.map(v => v.trim()).filter(Boolean);

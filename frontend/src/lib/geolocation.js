@@ -23,6 +23,51 @@ function inChicagoBbox(lat, lon) {
       && lon >= CHICAGO_WEST  && lon <= CHICAGO_EAST;
 }
 
+// Continuous variant for "follow my location" — wraps `watchPosition` and
+// streams fixes to `onFix({ lat, lon, accuracy })`. Out-of-bbox fixes and
+// permission/availability failures go to `onError({ error })` using the same
+// error vocabulary as `resolveCurrentLocation`. Returns a teardown function.
+//
+// Uses high-accuracy + `maximumAge: 0` because the caller is actively walking
+// and stale fixes would defeat the purpose.
+export function watchCurrentLocation({
+  onFix,
+  onError,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+} = {}) {
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    if (typeof onError === "function") onError({ error: "unavailable" });
+    return () => {};
+  }
+  const watchId = navigator.geolocation.watchPosition(
+    pos => {
+      const lat = pos.coords?.latitude;
+      const lon = pos.coords?.longitude;
+      const accuracy = pos.coords?.accuracy;
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        if (typeof onError === "function") onError({ error: "unavailable" });
+        return;
+      }
+      if (!inChicagoBbox(lat, lon)) {
+        if (typeof onError === "function") onError({ error: "outside_coverage" });
+        return;
+      }
+      if (typeof onFix === "function") {
+        onFix({ lat, lon, accuracy: Number.isFinite(accuracy) ? accuracy : null });
+      }
+    },
+    err => {
+      if (typeof onError !== "function") return;
+      if (err?.code === 1) onError({ error: "denied" });
+      else                 onError({ error: "unavailable" });
+    },
+    { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 0 },
+  );
+  return () => {
+    try { navigator.geolocation.clearWatch(watchId); } catch { /* noop */ }
+  };
+}
+
 export function resolveCurrentLocation({ timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
   if (typeof navigator === "undefined" || !navigator.geolocation) {
     return Promise.resolve({ error: "unavailable" });

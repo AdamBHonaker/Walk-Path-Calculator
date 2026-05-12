@@ -9,7 +9,6 @@ const ShareDispatch = lazy(() =>
   import("./components/ShareDispatch.jsx").then(m => ({ default: m.ShareDispatch }))
 );
 
-import { calorieEquivalent } from "./calorieEquiv.js";
 import {
   safeRemove,
   loadSessionJSON, saveSessionJSON, safeSessionRemove,
@@ -38,36 +37,10 @@ import { useTurnCoords } from "./hooks/useTurnCoords.js";
 import { useShareCard } from "./hooks/useShareCard.js";
 import { BACKEND_URL } from "./lib/backendUrl.js";
 import { fetchWithTimeout } from "./lib/fetchWithTimeout.js";
-import { lbToKg } from "./lib/units.js";
-import { MAX_STOPS, parseStopsParam, readUrlParams } from "./lib/urlParams.js";
-import {
-  loadDailyGoal, saveDailyGoal,
-  loadStoredHeightFt, saveStoredHeightFt,
-  loadStoredHeightIn, saveStoredHeightIn,
-  loadStoredWeightKg, saveStoredWeightKg,
-  loadStoredPace, saveStoredPace,
-  loadAccessPrefs, saveAccessPrefs,
-} from "./lib/personaPrefs.js";
-import {
-  PACE_LABELS,
-  safePaceLabel,
-  motivationMessage,
-  formatDirectionsText,
-} from "./lib/routeFormat.js";
-import {
-  RECENT_KEY,
-  RECENT_MAX,
-  loadRecentSearches,
-  saveRecentSearch,
-  recentEntryStops,
-  formatRecentChip,
-} from "./lib/recentSearches.js";
-import {
-  STEP_LOG_TTL_DAYS,
-  loadStepLog,
-  logWalk,
-  clearStepLog,
-} from "./lib/stepLog.js";
+import { MAX_STOPS, readUrlParams } from "./lib/urlParams.js";
+import { motivationMessage, formatDirectionsText } from "./lib/routeFormat.js";
+import { RECENT_KEY, recentEntryStops } from "./lib/recentSearches.js";
+import { loadStepLog, logWalk, clearStepLog } from "./lib/stepLog.js";
 import { ExploreForm } from "./components/ExploreForm.jsx";
 import { ExploreCategoryPanel } from "./components/ExploreCategoryPanel.jsx";
 import {
@@ -75,44 +48,10 @@ import {
   loadExplorePrefs, saveExplorePrefs,
 } from "./lib/explorePrefs.js";
 import { PIN_CATEGORIES } from "./lib/exploreCategories.js";
-import { fetchExplore } from "./lib/exploreApi.js";
-
-// Re-exports for App.test.jsx — extractions to lib/ stay transparent
-// to the existing test imports.
-export { formatBlocks } from "./lib/directionFormat.js";
-export {
-  calorieEquivalent,
-  RECENT_MAX,
-  loadRecentSearches,
-  saveRecentSearch,
-  recentEntryStops,
-  formatRecentChip,
-  STEP_LOG_TTL_DAYS,
-  loadStepLog,
-  logWalk,
-  clearStepLog,
-  PACE_LABELS,
-  safePaceLabel,
-  motivationMessage,
-  formatDirectionsText,
-  lbToKg,
-  loadDailyGoal,
-  loadStoredPace,
-  parseStopsParam,
-  MAX_STOPS,
-};
-
-// Floor on how long the loading skeleton stays mounted, even when the fetch
-// resolves quickly. Without this, on localhost (~80 ms round-trip) the skeleton
-// flashes for one frame and the user perceives an instant transition that
-// reads as a glitch. 450ms gives the shimmer enough time to land at least one
-// full sweep so the skeleton registers as a deliberate state.
-const MIN_LOADING_MS = 450;
-function ensureMinLoadingDuration(start) {
-  const remaining = MIN_LOADING_MS - (performance.now() - start);
-  if (remaining > 0) return new Promise(r => setTimeout(r, remaining));
-  return Promise.resolve();
-}
+import { usePersonalization } from "./hooks/usePersonalization.js";
+import { useRouteFetch } from "./hooks/useRouteFetch.js";
+import { useExploreFetch } from "./hooks/useExploreFetch.js";
+import { useFollowLocation } from "./hooks/useFollowLocation.js";
 
 let _stopIdCounter = 0;
 function makeStopId() {
@@ -145,19 +84,15 @@ export function saveStoredStops(values) {
 }
 
 export default function App() {
-  // Parse URL params and access prefs once on mount; downstream initializers
-  // and the auto-fetch effect read from these refs instead of re-parsing.
+  // Parse URL params once on mount; downstream initializers and the auto-fetch
+  // effect read from this ref instead of re-parsing.
   const initialUrlParamsRef = useRef(null);
   if (initialUrlParamsRef.current === null) initialUrlParamsRef.current = readUrlParams();
   const initialUrlParams = initialUrlParamsRef.current;
 
-  const initialAccessRef = useRef(null);
-  if (initialAccessRef.current === null) initialAccessRef.current = loadAccessPrefs();
-  const initialAccess = initialAccessRef.current;
-
   const [stops, setStops] = useState(() => {
     // Priority: URL params (shareable links) > sessionStorage draft > empty.
-    // The sessionStorage path is what catches a PWA SW reload mid-edit.
+    // The sessionStorage path catches a PWA SW reload mid-edit.
     if (initialUrlParams.stops?.length) {
       return initialUrlParams.stops.map(v => ({ id: makeStopId(), value: v }));
     }
@@ -206,32 +141,15 @@ export default function App() {
     setStops(prev => prev.slice().reverse().map(s => ({ ...s, id: makeStopId() })));
   }
 
-  // Height and weight: URL params win (shareable links carry hft/hin), then
-  // localStorage. Without this, a PWA SW reload would wipe what the user
-  // entered in the Personalize modal.
-  const [heightFt, setHeightFt]       = useState(() =>
-    initialUrlParams.hft ?? loadStoredHeightFt(),
-  );
-  const [heightIn, setHeightIn]       = useState(() => {
-    if (initialUrlParams.hft != null) return initialUrlParams.hin;
-    return loadStoredHeightIn();
-  });
-  const [weightKg, setWeightKg]       = useState(loadStoredWeightKg);
-  const [dailyGoal, setDailyGoalState] = useState(() => loadDailyGoal());
-  const [walkPace, setWalkPace]         = useState(loadStoredPace);
+  // ── Personalization ────────────────────────────────────────────────────
+  const {
+    heightFt, heightIn, weightKg, dailyGoal, walkPace,
+    avoidStairs, preferPedestrian,
+    setWalkPace, setAvoidStairs, setPreferPedestrian,
+    handleHeightChange, handleWeightChange, handleGoalChange,
+  } = usePersonalization(initialUrlParams);
 
-  const [avoidStairs, setAvoidStairs]           = useState(initialAccess.avoidStairs);
-  const [preferPedestrian, setPreferPedestrian] = useState(initialAccess.preferPedestrian);
-  const [personalizeOpen, setPersonalizeOpen]   = useState(false);
-
-  useEffect(() => {
-    saveAccessPrefs({ avoidStairs, preferPedestrian });
-  }, [avoidStairs, preferPedestrian]);
-
-  useEffect(() => { saveStoredPace(walkPace); }, [walkPace]);
-  useEffect(() => { saveStoredHeightFt(heightFt); }, [heightFt]);
-  useEffect(() => { saveStoredHeightIn(heightIn); }, [heightIn]);
-  useEffect(() => { saveStoredWeightKg(weightKg); }, [weightKg]);
+  const [personalizeOpen, setPersonalizeOpen] = useState(false);
 
   // Persist stop drafts to sessionStorage on every change so a SW-triggered
   // reload (or a normal refresh) restores what the user was typing. Two
@@ -242,57 +160,58 @@ export default function App() {
     else saveStoredStops(values);
   }, [stops]);
 
-  // ── Neighborhood Explorer state ──────────────────────────────────────
-  // `mode` is the top-level switch — "route" (the original feature) vs.
-  // "explore" (the isochrone view). Explore prefs persist on every change
-  // so a user who picks Logan Square + 25 min on Tuesday gets that back
-  // on Wednesday. The result itself is not persisted — it always comes
-  // from a fresh /explore call when the user enters the mode (the polygon
-  // is fast, ~150 ms even at 45 min, so re-fetching is cheaper than
-  // serializing it out).
-  //
-  // A shared route URL (?stops=… or ?from=…&to=…) forces route mode at
-  // boot, overriding whatever was persisted, so the link recipient sees
-  // the route the sender intended. The explorer doesn't have URL state
-  // yet — that's a future enhancement.
+  // ── Mode and Explore prefs ─────────────────────────────────────────────
+  // A shared route URL (?stops=… or ?from=…&to=…) forces route mode at boot
+  // so the link recipient sees the route the sender intended.
   const _hasRouteParams = !!(initialUrlParams.stops?.length
     || (initialUrlParams.from && initialUrlParams.to));
-  const [mode, setModeState]            = useState(() =>
+  const [mode, setModeState] = useState(() =>
     _hasRouteParams ? "route" : loadMode(),
   );
   const [explorePrefs, setExplorePrefs] = useState(loadExplorePrefs);
-  const [exploreResult, setExploreResult]   = useState(null);
-  const [exploreLoading, setExploreLoading] = useState(false);
-  const [exploreError, setExploreError]     = useState("");
   const setMode = useCallback((next) => {
     setModeState(next);
     saveMode(next);
   }, []);
   useEffect(() => { saveExplorePrefs(explorePrefs); }, [explorePrefs]);
 
-  const [result, setResult]           = useState(null);
-  const [loading, setLoading]         = useState(false);
-  const [error, setError]             = useState("");
-  const [recentSearches, setRecentSearches] = useState(loadRecentSearches);
+  // ── Route fetch ────────────────────────────────────────────────────────
+  const {
+    result, loading, error,
+    recentSearches, setRecentSearches,
+    fetchRoute, fetchRouteRef,
+  } = useRouteFetch({
+    heightFt, heightIn, weightKg, dailyGoal, walkPace, avoidStairs, preferPedestrian,
+    initialUrlParams,
+  });
+
+  // ── Explore fetch ──────────────────────────────────────────────────────
+  const {
+    exploreResult, exploreLoading, exploreError, setExploreError,
+    fetchExploreResult, explorePrefsRef,
+  } = useExploreFetch({ mode, explorePrefs });
+
+  // ── Remaining local state ──────────────────────────────────────────────
   const [stepLog, setStepLog]               = useState(loadStepLog);
   const [walkLogged, setWalkLogged]         = useState(false);
   const [activeTurnIndex, setActiveTurnIndex] = useState(null);
   const [pickMode, setPickMode]             = useState(null); // stop id | null
   const [locating, setLocating]             = useState(false);
+  // Follow my location — continuous watchPosition + auto-recenter.
+  // `enabled` is wired below once `viewResult` / `exploreResult` exist.
+  const followLocation = useFollowLocation({ enabled: true });
   const [toastMsg, setToastMsg]             = useState("");
   const [activeFlavor, setActiveFlavor]     = useState("fastest");
   // SW update prompt. With registerType: "prompt" in vite.config.js, a new
-  // service worker waits for our OK before activating — we surface that as
-  // an actionable banner instead of silently reloading mid-session.
+  // service worker waits for our OK before activating.
   const [swUpdateReady, setSwUpdateReady]   = useState(false);
   const swUpdateFnRef = useRef(null);
+  const toastTimerRef = useRef(null);
 
   // Mobile bottom-sheet state. Initial snap is the user's persisted preference
   // (loadSheetSnap), falling back to peek (0). When a new route arrives we
   // auto-promote ONLY from peek — if the user has previously chosen half or
   // full, that preference wins over auto-promote so they don't fight the UI.
-  // The auto-promote itself never writes to storage; only manual drags do
-  // (debounce-write lives in MobileLayout).
   // Mobile (sheet) caps at 480 px. The 481–1023 px tablet range uses the
   // desktop two-column layout with a narrower sidebar (see `app--tablet`
   // in App.css). Same `mainContents` / `mapNode` JSX in both desktop branches
@@ -304,8 +223,7 @@ export default function App() {
   const [mapPadding, setMapPadding] = useState(null);
   const lastResultRef = useRef(null);
   // Once the user manually moves the sheet, stop auto-promoting on result
-  // arrival — they've expressed a preference for this session and the sheet
-  // jumping back up to half on every re-submit feels broken.
+  // arrival — they've expressed a preference for this session.
   const userMovedSheetRef = useRef(false);
   const handleSheetSnapChange = useCallback((idx) => {
     userMovedSheetRef.current = true;
@@ -321,9 +239,7 @@ export default function App() {
   }, [result, isMobile]);
 
   // Mode flip → if the user enters explore mode while the sheet is at peek,
-  // promote it to half so the form is actually visible. Same "respect the
-  // user's explicit drag" guard as the route-result auto-promote: once the
-  // user has moved the sheet manually this session, mode flips don't override.
+  // promote it to half so the form is actually visible.
   useEffect(() => {
     if (!isMobile) return;
     if (mode !== "explore") return;
@@ -331,9 +247,8 @@ export default function App() {
     setSheetSnap(prev => prev === 0 ? 1 : prev);
   }, [mode, isMobile]);
 
-  // Mobile pick-on-map: drop the sheet to peek so the user can see the
-  // map, remember the snap they were at, and restore it once the pick
-  // resolves (whether by tapping a point or cancelling).
+  // Mobile pick-on-map: drop the sheet to peek so the user can see the map,
+  // remember the snap they were at, and restore it once the pick resolves.
   const snapBeforePickRef = useRef(null);
   useEffect(() => {
     if (!isMobile) return;
@@ -361,8 +276,8 @@ export default function App() {
   }, []);
 
   // Overlay the active flavor's per-route fields onto top-level metadata
-  // (origin/dest coords, step length, etc.) so existing renderers — which read
-  // `viewResult.path/directions/total_*` — work unchanged regardless of flavor.
+  // (origin/dest coords, step length, etc.) so existing renderers work
+  // unchanged regardless of flavor.
   const viewResult = useMemo(() => {
     if (!result) return null;
     const routes = Array.isArray(result.routes) ? result.routes : null;
@@ -398,14 +313,7 @@ export default function App() {
     setStepLog([]);
   }
 
-  const abortRef      = useRef(null);
-  const toastTimerRef = useRef(null);
-
-  useEffect(() => () => { abortRef.current?.abort(); }, []);
-
-  // Register the PWA service worker with a needRefresh callback. We import
-  // the virtual module dynamically so test/dev environments (where the
-  // module doesn't exist) silently no-op instead of throwing.
+  // Register the PWA service worker with a needRefresh callback.
   useEffect(() => {
     let cancelled = false;
     import(/* @vite-ignore */ "virtual:pwa-register")
@@ -426,132 +334,9 @@ export default function App() {
     else window.location.reload();
   }
 
-  // Auto-submit once on mount when the page loads with URL-encoded route params
-  useEffect(() => {
-    const p = initialUrlParams;
-    if (p.stops?.length) {
-      fetchRoute(p.stops);
-    } else if (p.from && p.to) {
-      fetchRoute([p.from, p.to]);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleHeightChange = useCallback((ft, inches) => {
-    const toNum = v => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));
-    setHeightFt(toNum(ft));
-    setHeightIn(toNum(inches));
-  }, []);
-
-  const handleWeightChange = useCallback((kg) => {
-    setWeightKg(kg);
-  }, []);
-
-  const handleGoalChange = useCallback((val) => {
-    setDailyGoalState(val);
-    saveDailyGoal(val);
-  }, []);
-
   function handleSwap() {
     if (stops.some(s => !s.value.trim())) return;
     reverseStops();
-  }
-
-  async function fetchRoute(stopsList) {
-    abortRef.current?.abort();
-    abortRef.current = new AbortController();
-    const signal = abortRef.current.signal;
-
-    setLoading(true);
-    setError("");
-    setResult(null);
-
-    const loadStart = performance.now();
-
-    const height_inches =
-      heightFt !== null && heightIn !== null
-        ? heightFt * 12 + heightIn
-        : null;
-
-    const cleanStops = stopsList.map(s => String(s).trim()).filter(Boolean);
-    const multi = cleanStops.length > 2;
-
-    const body = multi
-      ? { stops: cleanStops }
-      : { origin: cleanStops[0], destination: cleanStops[1] };
-
-    try {
-      const res = await fetchWithTimeout(`${BACKEND_URL}/route`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...body,
-          height_inches,
-          weight_kg:         weightKg,
-          daily_goal:        dailyGoal,
-          pace:              walkPace,
-          avoid_stairs:      avoidStairs,
-          prefer_pedestrian: preferPedestrian,
-        }),
-        signal,
-      });
-
-      if (!res.ok) {
-        // 429 (rate limiter) and 503 (circuit breaker, Bolt-On C) both signal
-        // "geocoding is degraded — try again later." Prefer the backend's
-        // structured detail.message when present so the breaker's friendly
-        // "try a Chicago neighborhood name" copy comes through.
-        let msg = `Service error (${res.status})`;
-        try {
-          const d = await res.json();
-          if (d.detail && typeof d.detail === "object" && d.detail.message) {
-            msg = d.detail.message;
-          } else if (typeof d.detail === "string") {
-            msg = d.detail;
-          } else if (res.status === 429) {
-            msg = "The geocoding service is rate-limited — try again in a minute.";
-          }
-        } catch {
-          if (res.status === 429) {
-            msg = "The geocoding service is rate-limited — try again in a minute.";
-          }
-        }
-        throw new Error(msg);
-      }
-
-      const data = await res.json();
-
-      // URL + recents reflect the submitted request — write them immediately,
-      // before the min-loading delay holds the skeleton, so deep-link state is
-      // correct even if the user navigates away mid-skeleton.
-      const urlP = new URLSearchParams();
-      if (multi) {
-        // Encode each stop so a literal "|" inside a label can't be
-        // misread as a separator on the receiving end (parseStopsParam
-        // decodes per segment).
-        urlP.set("stops", cleanStops.map(encodeURIComponent).join("|"));
-      } else {
-        urlP.set("from", cleanStops[0]);
-        urlP.set("to",   cleanStops[1]);
-      }
-      if (heightFt !== null) urlP.set("hft", String(heightFt));
-      if (heightIn !== null) urlP.set("hin", String(heightIn));
-      history.replaceState(null, "", `?${urlP.toString()}`);
-      const updatedRecents = saveRecentSearch(cleanStops);
-      if (updatedRecents) setRecentSearches(updatedRecents);
-
-      await ensureMinLoadingDuration(loadStart);
-      if (signal.aborted) return;
-      setResult(data);
-    } catch (err) {
-      if (err.name === "AbortError" || signal.aborted) return;
-      await ensureMinLoadingDuration(loadStart);
-      if (signal.aborted) return;
-      setError(err.message || "Something went wrong. Please try again.");
-    } finally {
-      // Only flip loading off if this fetch hasn't been superseded — keeps the
-      // newer fetch's skeleton from being clobbered when an aborted one resolves.
-      if (!signal.aborted) setLoading(false);
-    }
   }
 
   async function handleSubmit(e) {
@@ -561,88 +346,10 @@ export default function App() {
     await fetchRoute(cleaned);
   }
 
-  // ── Explore-mode handlers ─────────────────────────────────────────────
-  // Independent abort handle so the explorer's fetch lifecycle doesn't
-  // collide with route fetches when the user toggles modes mid-request.
-  const exploreAbortRef = useRef(null);
-  useEffect(() => () => exploreAbortRef.current?.abort(), []);
+  // ── Explore-mode handlers ──────────────────────────────────────────────
 
-  // Keep the latest origin/maxMinutes/cat selection in a ref so the slider's
-  // onPointerUp callback doesn't capture stale values when the user drags
-  // immediately after editing the area dropdown.
-  const explorePrefsRef = useRef(explorePrefs);
-  useEffect(() => { explorePrefsRef.current = explorePrefs; }, [explorePrefs]);
-
-  // The /explore endpoint accepts top-level category keys only. Subcategories
-  // affect *which pins draw on the map* but not the request itself; the
-  // backend returns every place under a selected parent and the frontend
-  // post-filters by subcategory in `activeSubs`.
-  //
-  // Empty selection → send a sentinel that no category matches. The backend's
-  // category sanitizer collapses `[]` to "all categories" (it treats an empty
-  // list as null), which would otherwise dump thousands of places onto the
-  // map for a user who has selected nothing.
-  const requestCategories = useMemo(() => {
-    const fromCats = explorePrefs.selectedCategories;
-    const fromSubs = explorePrefs.selectedSubs.map(k => k.split("/", 1)[0]);
-    const merged = Array.from(new Set([...fromCats, ...fromSubs]));
-    return merged.length === 0 ? ["__none__"] : merged;
-  }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
-
-  // The set of (category, subcategory) keys that should be visible on the
-  // map. Includes parent-only entries (just the category key) when no sub
-  // filter is in effect for that category, so `places_in_polygon` results
-  // pass straight through.
-  const activeSubsSet = useMemo(() => {
-    const out = new Set();
-    for (const c of explorePrefs.selectedCategories) out.add(c);
-    for (const s of explorePrefs.selectedSubs) out.add(s);
-    return out;
-  }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
-
-  const exploreCategoryStyles = useMemo(
-    () => PIN_CATEGORIES.map(c => ({ key: c.key, color: c.color, glyph: c.glyph })),
-    [],
-  );
-
-  const fetchExploreResult = useCallback(async (overrides = {}) => {
-    const prefs = explorePrefsRef.current;
-    const origin = overrides.origin ?? prefs.origin;
-    const maxMinutes = overrides.maxMinutes ?? prefs.maxMinutes;
-    const categories = overrides.categories ?? requestCategories;
-
-    // Current-location origin requires lat/lon; if it's missing here,
-    // surface a friendly hint instead of hitting the backend.
-    if (origin.kind === "current" && (origin.lat == null || origin.lon == null)) {
-      setExploreError("Allow location access to explore from where you are.");
-      return;
-    }
-
-    exploreAbortRef.current?.abort();
-    exploreAbortRef.current = new AbortController();
-    const signal = exploreAbortRef.current.signal;
-    setExploreLoading(true);
-    setExploreError("");
-    try {
-      const data = await fetchExplore({
-        backendUrl: BACKEND_URL,
-        origin,
-        maxMinutes,
-        categories,
-        signal,
-      });
-      if (signal.aborted) return;
-      setExploreResult(data);
-    } catch (err) {
-      if (err.name === "AbortError" || signal.aborted) return;
-      setExploreError(err.message || "The explorer hit a snag — try again.");
-    } finally {
-      if (!signal.aborted) setExploreLoading(false);
-    }
-  }, [requestCategories]);
-
-  // When the user picks "📍 My location" in ExploreForm, we resolve their
-  // coordinates here and (on success) immediately re-fetch with the new origin.
+  // When the user picks "📍 My location" in ExploreForm, resolve coordinates
+  // and immediately re-fetch with the new origin.
   const handleExploreLocateMe = useCallback(async () => {
     setLocating(true);
     try {
@@ -661,42 +368,13 @@ export default function App() {
       }
       const next = { kind: "current", communityArea: null, lat: loc.lat, lon: loc.lon };
       setExplorePrefs(p => ({ ...p, origin: next }));
-      // Wait for the prefs ref to flush before firing — ref update is sync,
-      // but use the explicit override so we don't race.
+      // Flush the ref manually so fetchExploreResult doesn't race the state update.
       explorePrefsRef.current = { ...explorePrefsRef.current, origin: next };
       fetchExploreResult({ origin: next });
     } finally {
       setLocating(false);
     }
-  }, [fetchExploreResult]);
-
-  // First entry into explore mode → fire an initial fetch so the user sees
-  // an isochrone immediately on switch (no "click Discover to see anything"
-  // dead state). Re-fires when the user changes origin via the form.
-  useEffect(() => {
-    if (mode !== "explore") return;
-    if (exploreResult) return;
-    if (exploreLoading) return;
-    fetchExploreResult();
-    // Intentional: only run on mode-flip-into-explore + when result is empty.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
-
-  // Re-fetch when category selection changes (so the place pins refresh).
-  // Origin / maxMinutes changes go through the explicit submit button OR the
-  // slider release callback so we don't spam the backend on every drag tick.
-  // `requestCategories` is already memoised, so depending on its identity is
-  // a stable trigger without the brittle `.join("|")` collision risk
-  // (a category key containing "|" would silently merge into its neighbour).
-  useEffect(() => {
-    if (mode !== "explore") return;
-    if (!exploreResult) return; // initial-fetch effect above will handle it
-    fetchExploreResult();
-    // exploreResult / fetchExploreResult / mode intentionally omitted: this
-    // effect models "the category selection changed" only. mode flips are
-    // handled by the initial-fetch effect above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestCategories]);
+  }, [fetchExploreResult, setExploreError, explorePrefsRef]);
 
   function handleExploreOriginChange(nextOrigin) {
     setExplorePrefs(p => ({ ...p, origin: nextOrigin }));
@@ -765,9 +443,6 @@ export default function App() {
   function handleSelectAllCategories() {
     setExplorePrefs(p => ({
       ...p,
-      // All pin-style categories get selected at the parent level. Subs are
-      // intentionally cleared — sub-filters are an opt-in narrowing tool, so
-      // "Select all" lands the user on every category at full breadth.
       selectedCategories: PIN_CATEGORIES.map(c => c.key),
       selectedSubs: [],
       showResidentialHeatmap: true,
@@ -783,10 +458,8 @@ export default function App() {
     }));
   }
 
-  // Mobile only: when a place pin is tapped, drop the sheet to peek so
-  // the MapLibre popup over the pin isn't clipped under the sheet body.
-  // Doesn't write to userMovedSheetRef — this is a programmatic, ephemeral
-  // move that should NOT poison the auto-promote logic for future fetches.
+  // Mobile only: when a place pin is tapped, drop the sheet to peek so the
+  // MapLibre popup over the pin isn't clipped under the sheet body.
   const handlePlaceTap = useCallback(() => {
     if (!isMobile) return;
     setSheetSnap(0);
@@ -795,31 +468,35 @@ export default function App() {
   // "Walk here" from a place popover → flip back to route mode and fire a
   // route fetch from the explorer's origin to the clicked place.
   const handlePlaceWalkHere = useCallback(({ lat, lon, name, address }) => {
-    const originName = explorePrefsRef.current.origin.kind === "community_area"
-      ? explorePrefsRef.current.origin.communityArea
-      : "My location";
+    const o = explorePrefsRef.current.origin;
+    const originName = o.kind === "community_area"
+      ? o.communityArea
+      : (o.lat != null && o.lon != null ? `${o.lat.toFixed(5)}, ${o.lon.toFixed(5)}` : null);
+    if (!originName) return;
     const destName = name || address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     setMode("route");
     setStops([
       { id: makeStopId(), value: originName },
       { id: makeStopId(), value: destName },
     ]);
-    fetchRoute([originName, destName]);
-  }, [setMode]);
+    fetchRouteRef.current([originName, destName]);
+  }, [setMode, explorePrefsRef, fetchRouteRef]);
 
-  // Reachable-neighborhood chip → same pattern: route from the explorer's
-  // origin to the clicked neighborhood.
+  // Reachable-neighborhood chip → route from the explorer's origin to the
+  // clicked neighborhood.
   const handleNeighborhoodChip = useCallback((neighborhoodName) => {
-    const originName = explorePrefsRef.current.origin.kind === "community_area"
-      ? explorePrefsRef.current.origin.communityArea
-      : "My location";
+    const o = explorePrefsRef.current.origin;
+    const originName = o.kind === "community_area"
+      ? o.communityArea
+      : (o.lat != null && o.lon != null ? `${o.lat.toFixed(5)}, ${o.lon.toFixed(5)}` : null);
+    if (!originName) return;
     setMode("route");
     setStops([
       { id: makeStopId(), value: originName },
       { id: makeStopId(), value: neighborhoodName },
     ]);
-    fetchRoute([originName, neighborhoodName]);
-  }, [setMode]);
+    fetchRouteRef.current([originName, neighborhoodName]);
+  }, [setMode, explorePrefsRef, fetchRouteRef]);
 
   function handleRecentSelect(item) {
     const itemStops = recentEntryStops(item);
@@ -833,7 +510,7 @@ export default function App() {
     setRecentSearches([]);
   }
 
-  // ── Pick on map ───────────────────────────────────────────────────────────
+  // ── Pick on map ────────────────────────────────────────────────────────
 
   function handlePickToggle(stopId) {
     setPickMode(prev => prev === stopId ? null : stopId);
@@ -858,10 +535,25 @@ export default function App() {
     toastTimerRef.current = setTimeout(() => setToastMsg(""), 3500);
   }, []);
 
-  // ── Share card ────────────────────────────────────────────────────────────
-  // Lifecycle (modal open/close, Web Share probe, PNG capture, copy fallback,
-  // shareUrl/siteHost/shareCaption memos) lives in useShareCard so this
-  // component doesn't carry ~150 lines of unrelated detail.
+  // Follow mode disengages when the user switches modes or clears the active
+  // context (no route AND no explore polygon) — avoids orphan watchers.
+  const followStop = followLocation.stop;
+  useEffect(() => { followStop(); }, [mode, followStop]);
+  useEffect(() => {
+    if (!viewResult && !exploreResult) followStop();
+  }, [viewResult, exploreResult, followStop]);
+
+  // Surface watchPosition errors using the same toast vocabulary as the
+  // one-shot locate flow.
+  const followError = followLocation.error;
+  useEffect(() => {
+    if (!followError) return;
+    if (followError === "denied")           showToast("Location permission denied — try typing a stop instead.");
+    else if (followError === "outside_coverage") showToast("You're outside the Chicago coverage area.");
+    else                                    showToast("Couldn't read your location — try typing a stop instead.");
+  }, [followError, showToast]);
+
+  // ── Share card ─────────────────────────────────────────────────────────
   const {
     showShareModal,
     cardMapReady,
@@ -886,9 +578,7 @@ export default function App() {
   });
 
   // "Use my current location" — populates the first empty stop, or the origin
-  // if every stop already has a value. Coverage gating + permission classification
-  // live in lib/geolocation.js. The reverse-geocode step mirrors handleMapPick:
-  // success → label; failure → coords truncated to 5 decimals.
+  // if every stop already has a value.
   const handleLocateMe = useCallback(async () => {
     if (locating) return;
     setLocating(true);
@@ -936,10 +626,23 @@ export default function App() {
     }
   }, [pickMode]);
 
-  // ── Mode toggle (Route ⇄ Explore) ────────────────────────────────────
-  // Two-button segmented control that lives at the top of the side panel
-  // (desktop) and at the top of the mobile sheet body (mobile). Same JSX
-  // in both surfaces so a flip in one updates the other immediately.
+  // ── Derived map data ───────────────────────────────────────────────────
+
+  // The set of (category, subcategory) keys visible on the map. Includes
+  // parent-only entries when no sub filter is active for that category.
+  const activeSubsSet = useMemo(() => {
+    const out = new Set();
+    for (const c of explorePrefs.selectedCategories) out.add(c);
+    for (const s of explorePrefs.selectedSubs) out.add(s);
+    return out;
+  }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
+
+  const exploreCategoryStyles = useMemo(
+    () => PIN_CATEGORIES.map(c => ({ key: c.key, color: c.color, glyph: c.glyph })),
+    [],
+  );
+
+  // ── Mode toggle (Route ⇄ Explore) ─────────────────────────────────────
   const modeToggle = (
     <div className="mode-toggle" role="tablist" aria-label="Walk planning mode">
       <button
@@ -966,8 +669,7 @@ export default function App() {
   );
 
   // Explore-mode content: the form (origin selector + slider + chips) plus
-  // the category panel. Slotted into the same desktop / mobile shells as
-  // the route form so layout differences come from the wrapping CSS only.
+  // the category panel.
   const exploreContents = (
     <>
       {modeToggle}
@@ -1021,8 +723,7 @@ export default function App() {
   );
 
   // Form, results, and directions — composed once and slotted into either
-  // the desktop two-column layout or the mobile bottom sheet so the JSX
-  // (and React state-tree identity) stays the same in both surfaces.
+  // the desktop two-column layout or the mobile bottom sheet.
   const routeContents = (
     <>
       {modeToggle}
@@ -1281,6 +982,9 @@ export default function App() {
         showResidential={explorePrefs.showResidentialHeatmap}
         onPlaceWalkHere={handlePlaceWalkHere}
         onPlaceTap={handlePlaceTap}
+        userPosition={followLocation.position}
+        following={followLocation.following}
+        onToggleFollow={followLocation.toggle}
       />
     </Suspense>
   );

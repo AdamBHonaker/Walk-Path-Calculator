@@ -9,9 +9,6 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 load_dotenv()
 
@@ -22,7 +19,7 @@ from walking import (
     pace_minutes_factor,
     WALKING_SPEED_MPH,
     _load_graph,
-    _get_flavor_weights,
+    _start_eviction_daemon,
     FLAVORS,
     DEFAULT_FLAVOR,
 )
@@ -50,12 +47,6 @@ from shapely.geometry import shape as _shape
 # deltas; using true haversine here makes the guard symmetric in every direction.
 _SAME_LOCATION_THRESHOLD_MILES: float = 0.07
 
-# Per-endpoint rate limits. Overridable via env vars so deploys can tune
-# without a code change (e.g. to relax limits during load testing).
-RATE_LIMIT_HEALTH          = os.getenv("RATE_LIMIT_HEALTH",          "60/minute")
-RATE_LIMIT_REVERSE_GEOCODE = os.getenv("RATE_LIMIT_REVERSE_GEOCODE", "30/minute")
-RATE_LIMIT_ROUTE           = os.getenv("RATE_LIMIT_ROUTE",           "10/minute")
-RATE_LIMIT_EXPLORE         = os.getenv("RATE_LIMIT_EXPLORE",         "10/minute")
 
 # Only honor X-Forwarded-Proto when explicitly told we sit behind a trusted
 # reverse proxy (Railway, Cloudflare, etc.). Without this guard, an attacker
@@ -80,24 +71,23 @@ ALLOWED_ORIGINS = [
 # production deploys never set this var. See docs/MOBILE_TESTING.md.
 _DEV_TUNNEL_ORIGIN_REGEX = os.getenv("DEV_TUNNEL_ORIGIN_REGEX", "").strip() or None
 
+def _preload_graph() -> None:
+    """Load graph in a background thread so startup doesn't block."""
+    _load_graph()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Pre-loading street graph ...")
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _load_graph)
-    # Pre-warm non-default flavor weights so the first request for these
-    # flavors does not pay the ~50k-edge iteration cost.
-    for flavor in ("fewest_turns", "greenest"):
-        await loop.run_in_executor(None, _get_flavor_weights, flavor)
-    logger.info("Ready.")
+    logger.info("Scheduling background graph preload ...")
+    asyncio.ensure_future(loop.run_in_executor(None, _preload_graph))
+    _start_eviction_daemon()
     yield
 
 
 app = FastAPI(lifespan=lifespan)
 
-limiter = Limiter(key_func=get_remote_address)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -239,13 +229,11 @@ class ExploreRequest(BaseModel):
 
 
 @app.get("/health")
-@limiter.limit(RATE_LIMIT_HEALTH)
 async def health(request: Request):
     return {"status": "ok"}
 
 
 @app.post("/explore")
-@limiter.limit(RATE_LIMIT_EXPLORE)
 async def explore_endpoint(request: Request, payload: ExploreRequest):
     """Return the walkable isochrone polygon for an origin + time budget.
 
@@ -316,7 +304,6 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
 
 
 @app.get("/reverse-geocode")
-@limiter.limit(RATE_LIMIT_REVERSE_GEOCODE)
 async def reverse_geocode(request: Request, lat: float, lon: float):
     if not (CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST):
         raise HTTPException(status_code=422, detail="Location is outside the Chicago coverage area.")
@@ -374,7 +361,6 @@ def _stitch_legs(legs_raw: list[dict]) -> tuple[list, list[tuple[int, int]]]:
 
 
 @app.post("/route")
-@limiter.limit(RATE_LIMIT_ROUTE)
 async def route(request: Request, payload: RouteRequest):
     loop = asyncio.get_running_loop()
 

@@ -59,7 +59,9 @@ def _reachable_indices(orig_idx: int, budget_m: float) -> np.ndarray:
         return np.empty(0, dtype=np.int64)
 
     # `distances` returns a list[list[float]]; one row per source.
-    rows = G.distances(source=orig_idx, weights="length")
+    # Use cached edge-length array (v2 pickle has no "length" igraph attribute).
+    weights = walking._edge_lengths if walking._edge_lengths is not None else "length"
+    rows = G.distances(source=orig_idx, weights=weights)
     if not rows:
         return np.empty(0, dtype=np.int64)
     dists = np.asarray(rows[0], dtype=np.float64)
@@ -159,7 +161,7 @@ def _reachable_neighborhoods(polygon) -> list[str]:
     return names
 
 
-@lru_cache(maxsize=128)
+@lru_cache(maxsize=32)
 def _explore_quantized(
     lat_q: int,
     lon_q: int,

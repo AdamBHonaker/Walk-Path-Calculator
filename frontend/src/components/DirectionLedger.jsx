@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { formatStepLabel, formatBlocks, formatSteps } from "../lib/directionFormat.js";
 import { WFToMark } from "../wayfarer/primitives.jsx";
 
@@ -12,6 +12,13 @@ export function DirectionLedger({
 }) {
   const [showAll, setShowAll] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  // Auto-expand the collapsed list when the active turn is beyond the first 5.
+  useEffect(() => {
+    if (activeTurnIndex != null && activeTurnIndex >= 5) {
+      setShowAll(true);
+    }
+  }, [activeTurnIndex]);
 
   const visible = showAll ? directions : directions.slice(0, 5);
   const hasMore = directions.length > 5;

@@ -26,6 +26,14 @@ export default function MapView({
   resolveLabel    = null,
   onLocateMe      = null,
   locating        = false,
+  // ── Follow my location ───────────────────────────────────────────────
+  // `userPosition` is { lat, lon, accuracy } | null. When set, a pin is
+  // rendered. When `following` is also true, the map re-centers on every
+  // position update (zoom is preserved). Manual gestures (drag/zoom/rotate/
+  // pitch) disengage follow via `onToggleFollow`.
+  userPosition    = null,
+  following       = false,
+  onToggleFollow  = null,
   style           = MAP_STYLE_URL,
   center          = DEFAULT_MAP_CENTER,
   zoom            = DEFAULT_MAP_ZOOM,
@@ -115,6 +123,112 @@ export default function MapView({
     }
   }, [mode, unlocked, pickMode, mapReady]);
 
+  // ── User-location pin (live fix) ──────────────────────────────────────
+  // Adds an empty GeoJSON source + halo/dot layers once on map load. Later
+  // effects mutate the source data when `userPosition` changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const SRC = "walk-path-user-loc";
+    function install() {
+      if (map.getSource(SRC)) return;
+      map.addSource(SRC, {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: `${SRC}-halo`,
+        type: "circle",
+        source: SRC,
+        paint: {
+          "circle-radius": [
+            "interpolate", ["exponential", 2], ["zoom"],
+            10, ["max", 4, ["/", ["coalesce", ["get", "accuracy"], 0], 12]],
+            18, ["max", 12, ["/", ["coalesce", ["get", "accuracy"], 0], 0.6]],
+          ],
+          "circle-color": "#2f6fed",
+          "circle-opacity": 0.18,
+          "circle-stroke-color": "#2f6fed",
+          "circle-stroke-width": 1,
+          "circle-stroke-opacity": 0.35,
+        },
+      });
+      map.addLayer({
+        id: `${SRC}-dot`,
+        type: "circle",
+        source: SRC,
+        paint: {
+          "circle-radius": 6,
+          "circle-color": "#2f6fed",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2,
+        },
+      });
+    }
+    if (map.isStyleLoaded()) install();
+    else map.once("load", install);
+  }, [mapReady]);
+
+  // Sync the user-loc source with the latest fix.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+    const SRC = "walk-path-user-loc";
+    function apply() {
+      const src = map.getSource(SRC);
+      if (!src) return;
+      const features = userPosition
+        ? [{
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [userPosition.lon, userPosition.lat] },
+            properties: { accuracy: userPosition.accuracy ?? 0 },
+          }]
+        : [];
+      src.setData({ type: "FeatureCollection", features });
+    }
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [userPosition, mapReady]);
+
+  // Auto-recenter when following. Zoom is preserved. We bump the zoom up to a
+  // useful walking level only on the first fix of a follow session — otherwise
+  // a route's zoomed-out fit would leave the pin too small to read.
+  const lastFollowFixRef = useRef(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !following || !userPosition) {
+      if (!following) lastFollowFixRef.current = null;
+      return;
+    }
+    const isFirst = lastFollowFixRef.current === null;
+    lastFollowFixRef.current = userPosition;
+    map.easeTo({
+      center: [userPosition.lon, userPosition.lat],
+      zoom: isFirst ? Math.max(map.getZoom(), 15) : map.getZoom(),
+      duration: 600,
+    });
+  }, [following, userPosition, mapReady]);
+
+  // Manual gesture → disengage follow. We only react to user-originated events:
+  // programmatic `easeTo` does not set `originalEvent` on the camera events.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !following || !onToggleFollow) return;
+    function onUserMove(e) {
+      if (e?.originalEvent != null) onToggleFollow();
+    }
+    map.on("dragstart",   onUserMove);
+    map.on("zoomstart",   onUserMove);
+    map.on("rotatestart", onUserMove);
+    map.on("pitchstart",  onUserMove);
+    return () => {
+      map.off("dragstart",   onUserMove);
+      map.off("zoomstart",   onUserMove);
+      map.off("rotatestart", onUserMove);
+      map.off("pitchstart",  onUserMove);
+    };
+  }, [following, onToggleFollow, mapReady]);
+
   function handleUnlock() {
     const map = mapRef.current;
     if (!map) return;
@@ -165,6 +279,21 @@ export default function MapView({
         <button className="map-unlock-btn" onClick={handleUnlock} aria-label="Unlock map gestures">
           <WPIcon name="unlock" size={14} />
           <span className="map-unlock-btn__label">Unlock map</span>
+        </button>
+      )}
+      {onToggleFollow && !pickMode && !styleError && (
+        <button
+          type="button"
+          className={`map-follow-btn${following ? " map-follow-btn--active" : ""}`}
+          onClick={onToggleFollow}
+          aria-pressed={following}
+          aria-label={following ? "Stop following my location" : "Follow my location"}
+          title={following ? "Stop following" : "Follow my location"}
+        >
+          <WPIcon name="navigation" size={14} />
+          <span className="map-follow-btn__label">
+            {following ? "Following" : "Follow"}
+          </span>
         </button>
       )}
       {onLocateMe && !pickMode && !styleError && mode !== "explore" && (

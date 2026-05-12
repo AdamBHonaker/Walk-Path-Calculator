@@ -11,6 +11,66 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
+### 2026-05-11 · "Walk here" and neighborhood chips failed when origin was current location (BUG-033)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🔴 High
+
+**What the bug was:** `handlePlaceWalkHere` and `handleNeighborhoodChip` resolved the explore origin to `"My location"` when `origin.kind === "current"`. The backend geocoder does not recognise that label — Google returns `ZERO_RESULTS` — so every "Walk here" tap from a current-location explore returned a 400 error and the route never plotted.
+
+**How it was resolved:** Both callbacks now read `o.lat` and `o.lon` off the origin object and build a `"${lat.toFixed(5)}, ${lon.toFixed(5)}"` coordinate string, which the backend's `_COORD_RE` fast path resolves without hitting Google. The callbacks short-circuit with an early return if the coords are not yet available (current-location mode before geolocation has resolved).
+
+---
+
+### 2026-05-11 · handlePlaceWalkHere / handleNeighborhoodChip called stale fetchRoute via frozen closure (BUG-034)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** Both callbacks were `useCallback`-wrapped with deps `[setMode]`. Because `setMode` is itself stable, the callbacks were created exactly once at mount and never recreated. Inside them, `fetchRoute` was called directly — but `fetchRoute` is a plain `async function` that re-declares every render, closing over the current personalization prefs. The frozen callbacks called the mount-time `fetchRoute`, ignoring any height / weight / pace changes the user made in the Personalize modal.
+
+**How it was resolved:** Added a `fetchRouteRef` (declared near the other `Ref`s in App.jsx) that is kept in sync with the latest `fetchRoute` closure via a synchronous assignment during render (`fetchRouteRef.current = fetchRoute`). Both frozen callbacks now call `fetchRouteRef.current(...)` instead of `fetchRoute(...)`, mirroring the `submitRef` pattern already used in `ExploreForm.jsx`.
+
+---
+
+### 2026-05-11 · renderExplore fired fitBounds on every re-render, resetting user's map position (BUG-035)
+
+**Files:** `frontend/src/mapHelpers.js`, `frontend/src/map/MapExploreLayer.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `renderExplore` always called `map.fitBounds(...)` at the end of every invocation. `MapExploreLayer`'s render effect depends on `[mode, exploreResult, showResidential, placeFeatures, placeExpressions]`, so toggling a category checkbox or the residential-heatmap switch re-ran `renderExplore` and jumped the map back to fit the full polygon, discarding any pan/zoom the user had performed.
+
+**How it was resolved:** Added a `fitOnRender` option (default `true`) to `renderExplore`'s options object; the `fitBounds` call is now conditional on that flag. `MapExploreLayer` tracks the last-rendered `exploreResult` in a `prevExploreResultRef` and passes `fitOnRender: didResultChange` — true only when the `exploreResult` reference itself changes (a new isochrone fetch), false for display-only re-renders.
+
+---
+
+### 2026-05-11 · Graph eviction didn't clear explore._explore_quantized LRU cache (BUG-036)
+
+**File:** `backend/walking.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `_evict_graph()` cleared `_get_nearest_node_quantized`, `_get_shortest_path_by_node`, and `_compute_route_quantized` but not `explore._explore_quantized`. A subsequent `/explore` request with the same quantized origin+budget would return the stale cached polygon from the prior graph while routing the same pair on the new graph.
+
+**How it was resolved:** Added a local `try/except` import of `_explore_quantized` from `explore` inside `_evict_graph()` (local import avoids the circular import that a module-level import would cause) and called `cache_clear()` on it alongside the other three caches.
+
+---
+
+### 2026-05-11 · DirectionLedger active-turn highlight desynced when list was collapsed and turn was beyond step 5 (BUG-037)
+
+**File:** `frontend/src/components/DirectionLedger.jsx`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** When `showAll` was false, `visible = directions.slice(0, 5)`. `isActive` was computed as `i === activeTurnIndex` using the slice index. If the user clicked a turn dot at index ≥ 5, no row in the collapsed list had a matching `i`, so nothing was highlighted — the direction list gave no visual confirmation while the map dot animated correctly.
+
+**How it was resolved:** Added a `useEffect` (and the `useEffect` import) that calls `setShowAll(true)` whenever `activeTurnIndex` is set and ≥ 5. The list auto-expands and the correct row scrolls into highlight range.
+
+---
+
 ### 2026-05-06 · Haversine fallback direction step omitted `path_type` (BUG-020)
 
 **File:** `backend/walking.py`
@@ -473,6 +533,50 @@ Total test count after changes: **115 tests, all passing**.
 ---
 
 ## Technical Debt Paid Off
+
+### 2026-05-11 · Transitive npm audit highs (`@babel/plugin-transform-modules-systemjs`, `fast-uri`) cleared (2026-05-11 TD-028, TD-029)
+
+**File:** `frontend/package-lock.json`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** Two transitive dev-only advisories were open: TD-028 against `@babel/plugin-transform-modules-systemjs` `>=7.12.0 <=7.29.3` ([GHSA-fv7c-fp4j-7gwp](https://github.com/advisories/GHSA-fv7c-fp4j-7gwp), CVSS 8.2) and TD-029 against `fast-uri` `<=3.1.1` ([GHSA-q3j6-qgpj-74h6](https://github.com/advisories/GHSA-q3j6-qgpj-74h6) + [GHSA-v39h-62p7-jpjc](https://github.com/advisories/GHSA-v39h-62p7-jpjc), CVSS 7.5 each). Both were transitive through the Vite/Rollup/workbox toolchain and never reached the production bundle, but they kept `npm audit` red.
+
+**How it was resolved:** Resolved transitively — no explicit `npm audit fix` run was needed. The `package-lock.json` refresh that came with the PWA-icons / `vite-plugin-pwa@1.2.0` work (commit `22f85fc`) pulled both deps onto fixed versions: `@babel/plugin-transform-modules-systemjs` is now `7.29.4` (advisory range was `<=7.29.3`) and `fast-uri` is now `3.1.2` (advisory range was `<=3.1.1`). Confirmed on 2026-05-11: `npm audit` reports `{ info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 }`; `npm ls` shows the upgraded versions via `vite-plugin-pwa@1.2.0 → workbox-build@7.4.0 → @babel/preset-env@7.29.2` and `→ ajv@8.18.0 → fast-uri@3.1.2`. No source changes; no test impact.
+
+---
+
+### 2026-05-11 · `html-to-image` swapped for `modern-screenshot` in share-card export (2026-05-11 TD-031)
+*(Originally tracked as TD-009b during the in-flight session — renumbered to TD-031 to avoid colliding with two earlier reuses of the TD-009 ID elsewhere in this file. The companion items in the same omnibus split landed as TD-030 (maplibre v4 → v5, immediately below) and TD-032 (React 18 → 19, still open in [Technical_Debt.md](../Technical_Debt.md)).)*
+
+**Files:** `frontend/package.json`, `frontend/package-lock.json`, `frontend/src/hooks/useShareCard.js`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** `html-to-image` `1.11.13` powered the PNG export in `useShareCard.handleShareCard`. Last npm release was 2025-04-19 — over a year stale. `modern-screenshot` (a successor project from the same lineage of dom-to-canvas libraries) is actively maintained (last release ~3 weeks prior to resolution, zero deps, MIT) and explicitly markets better iOS Safari behavior, which directly intersects the existing iOS WebGL-backbuffer workaround in this code path.
+
+**How it was resolved:** Decision was "swap" based on desk research (maintenance recency + drop-in API — couldn't device-test from this seat). `npm uninstall html-to-image && npm install modern-screenshot@^4.7.0`. In `useShareCard.js`, three line-level changes: dynamic import target `html-to-image` → `modern-screenshot`, destructured export `toBlob` → `domToBlob`, capture-options key `pixelRatio: 3` → `scale: 3` (same semantics, different name). The iOS map-snapshot `<img>` overlay was deliberately kept as defense-in-depth even though modern-screenshot is supposed to handle the WebGL clone better — it is cheap, well-understood, and removing it is a separate decision. All 204 Vitest tests pass; production build succeeds (`ShareDispatch` chunk unchanged at 5.49 KB / 1.82 KB gzip; modern-screenshot lazy-loads only when the share modal opens).
+
+**Verification gap:** PNG visual parity (especially iOS Safari output and the printed `siteHost` strip rendering) was not exercised — same constraint as TD-030, no device available here. Manual smoke test required: open the share modal on a route in iOS Safari + Android Chrome, hit Share, confirm the map renders correctly in the exported PNG and the layout matches the current production output. If the export regresses, the rollback is a three-line revert.
+
+---
+
+### 2026-05-11 · `maplibre-gl` upgraded v4.7.1 → v5.24.0 (2026-05-11 TD-030)
+*(Originally tracked as TD-009a during the in-flight session — renumbered to TD-030 to avoid colliding with two earlier reuses of the TD-009 ID elsewhere in this file. Companions: TD-031 (immediately above) and TD-032 (still open).)*
+
+**Files:** `frontend/package.json`, `frontend/package-lock.json`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** `maplibre-gl` was pinned at `^4.7.1` while v5 had been GA for some time, carrying performance + WebGL2 work and the usual cost of staying current. TD-030 was the first slice of the former TD-009 omnibus (split into TD-030 / TD-031 / TD-032 on 2026-05-11) so the maplibre bump could land on its own — smallest blast radius of the three.
+
+**How it was resolved:** Bumped the pin to `^5.24.0` and ran `npm install` (added 4, removed 16, changed 5 packages). No source changes were required — the public API surface used here (`new Map`, `new Marker`, `new Popup`, `setLngLat`, `addTo`, `getSource`, `addSource`, `addLayer`, `setPaintProperty`, `fitBounds`, `flyTo`, `scrollZoom/dragPan/dragRotate/doubleClickZoom/touchZoomRotate/keyboard.disable/enable`, `once/on/off`, `isStyleLoaded`, `triggerRepaint`, `resize`, `remove`, `getCanvas`) is unchanged between v4 and v5. The existing `vi.mock("maplibre-gl", ...)` in `test-setup.js` continued to satisfy every call site. All 204 Vitest tests pass; the production build succeeds (single maplibre chunk at 1,055 KB / 285 KB gzip). The two `npm audit` "high severity" advisories surfaced after install (`@babel/plugin-transform-modules-systemjs`, `fast-uri`) are transitive dev-only deps and not related to the maplibre upgrade — left untouched for separate handling.
+
+**Verification gap:** WebGL paint behavior was not exercised — the test suite stubs maplibre entirely. Visual regressions (route polyline draw-in, explore polygon / heatmap / cluster paint, gesture lock/unlock, marker popups) need a manual iOS Safari + Android Chrome smoke test before this can be considered production-ready.
+
+*Naming note: the references to "TD-028" / "TD-029" in the audit-findings entry immediately above were the originally-assigned IDs for the two transitive npm-audit advisories surfaced during this install; both resolved transitively in the same session via the `vite-plugin-pwa@1.2.0` lockfile refresh. The TD-009 → TD-030/031/032 renumber happened after that, so those IDs are unaffected.*
+
+---
 
 ### 2026-05-07 · Dead Wayfarer specimen + unused primitives trimmed (2026-05-07 TD-013)
 
@@ -1076,6 +1180,90 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 
 ## Efficiency Improvements Implemented
 
+### 2026-05-11 · `import math as _m` inside `_cardinal` closure on every directions build (OPT-007, backend scan)
+
+**File:** [backend/walking.py](../../backend/walking.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `_directions_from_path` used to contain a nested `_cardinal` closure that did `import math as _m` inside its body and used `_m.degrees` / `_m.atan2`. The module already imports `math` at the top of the file, so the local import was a redundant `sys.modules` lookup per direction segment and dead code visually.
+
+**Implemented:** Already resolved by the OPT-005 merged-walker refactor — `_directions_from_path` no longer has a nested `_cardinal` closure. The bearing classification is inlined and references `math.cos` / `math.radians` / `math.degrees` / `math.atan2` directly against the module-level `math` binding (`walking.py:924-926`). No nested import or `_cardinal` helper remains. Verified with `grep "_cardinal\|as _m"` — no matches.
+
+---
+
+### 2026-05-11 · `_compute_route_quantized` ran `_path_coords_from_path` and `_directions_from_path` as separate epath traversals (OPT-005, backend scan)
+
+**File:** [backend/walking.py](../../backend/walking.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** On a cache miss, `_compute_route_quantized` called `_path_coords_from_path(vpath, epath)` and `_directions_from_path(vpath, epath)` back-to-back. Each helper independently iterated the same epath/vpath, indexing the per-edge cache columns (`_edge_geometries` for path; `_edge_names` / `_edge_highways` / `_edge_footways` / `_edge_lengths` for directions). For a 600-edge route this was two full Python passes over the same edges where one merged pass suffices. `compute_route_with_prefs` (the `avoid_stairs` path) repeated the same anti-pattern.
+
+**Implemented:** Added `_build_path_and_directions(vpath, epath)` which walks `zip(epath, vpath, vpath[1:])` exactly once, appending coordinate points and collecting raw direction segments (`name, path_type, length, u, v`) in the same loop, then coalesces same-name adjacent segments into direction-step dicts in a second pass over the in-memory `raw` list (not over the graph). Updated both `_compute_route_quantized` and `compute_route_with_prefs` to call the merged helper. Output is byte-identical to the original two-call sequence; 137 backend tests pass.
+
+---
+
+### 2026-05-11 · `_build_flavor_weights` did per-edge attribute access for a one-time vector build (OPT-004, backend scan)
+
+**File:** [backend/walking.py](../../backend/walking.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Inefficient Data Access
+
+**What was inefficient:** OPT-004 described `_build_flavor_weights` iterating `G.es` and reading `e["length"]` (and for greenest, `e.attributes()` → `_edge_attr(...)`) once per edge, crossing the Python↔igraph boundary ~50k times on each cold build.
+
+**Implemented:** Already resolved through the same column-cache refactor that addressed OPT-003. `_build_flavor_weights` now reads exclusively from module-level columns `_edge_lengths` (numpy float32 in v2 pickles, list[float] in v1 fallback) and `_edge_highways` (decoded list[str]), which are bulk-loaded once at graph load in `_populate_edge_caches` / `_populate_edge_caches_v2`. No `G.es` iteration, `e["length"]` read, or `e.attributes()` call remains in the function. The v2 path is additionally vectorized: `fewest_turns` returns `lengths + _TURN_PENALTY_M` (numpy broadcast) and `greenest` returns `np.where(green_mask, lengths * _GREEN_DISCOUNT, lengths)`.
+
+---
+
+### 2026-05-11 · Per-edge `edge.attributes()` allocated full attribute dict for two-key reads (OPT-003, backend scan)
+
+**File:** [backend/walking.py](../../backend/walking.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `_build_directions` and `_directions_from_path` previously called `attrs = edge.attributes()` for every edge in the route, materializing a fresh dict containing every edge attribute (length, geometry, highway, footway, name, oneway, lanes, …) just to read three keys. For a typical 200–600-edge route, that allocated and discarded 200–600 ~10-key dicts on every cache miss, plus the `_edge_attr` helper added list-handling overhead on each read.
+
+**Implemented:** Already resolved through earlier per-edge cache work — `_populate_edge_caches` and `_populate_edge_caches_v2` materialize `_edge_names`, `_edge_highways`, `_edge_footways`, `_edge_lengths`, `_edge_geometries`, `_edge_sources`, and `_edge_targets` columns once at graph load (v2 pickles decode compact int8/int32 arrays into Python lists/numpy). `_directions_from_path` now indexes those columns directly by edge id (`names_col[eid].strip()`, `highways_col[eid]`, etc.), and `_build_directions` is a thin wrapper that delegates to it. No `edge.attributes()` call or `_edge_attr` helper remains in the codebase. This is strictly better than the suggested per-call bulk slice (`G.es[epath]["name"]`) because the cost is paid once at load, not per request.
+
+---
+
+### 2026-05-11 · Avoid-stairs Dijkstra rebuilds full ~50k-edge weight vector on every request (OPT-002)
+
+**File:** [backend/walking.py](../../backend/walking.py)
+
+**Impact:** 🔴 High
+
+**Category:** Redundant Computation
+
+**What was inefficient:** OPT-002 described `_shortest_path_with_avoid_stairs` rebuilding the full per-edge weight list and layering the stairs penalty in a fresh igraph `e["..."]` iteration on every request — uncached, so identical avoid-stairs requests both paid the full ~50k-edge cost, multiplied by leg count for multi-stop routes.
+
+**Implemented:** The per-`(flavor, "avoid_stairs")` weight cache (`_combined_weights`) and bulk-column attribute reads (`_edge_lengths`, `_edge_highways`) were already in place via [`_get_avoid_stairs_weights`](../../backend/walking.py) — the request-path rebuild described in the entry no longer happens. The remaining cold-build loop that layered the stairs penalty with a Python `for i, h in enumerate(highways): if h == "steps": weights[i] += ...` has been replaced with a vectorized numpy boolean-mask assignment (`stairs_mask = np.fromiter(...); weights[stairs_mask] += _AVOID_STAIRS_PENALTY_M`), removing the last ~50k-iteration Python loop from the once-per-process cold build.
+
+---
+
+### 2026-05-11 · URL-param auto-fetch fires twice in StrictMode dev
+
+**File:** [frontend/src/hooks/useRouteFetch.js](frontend/src/hooks/useRouteFetch.js)
+
+**Impact:** 🟢 Low (dev-only — no production cost)
+
+**Category:** Redundant Computation
+
+**What was inefficient:** React 18's `<StrictMode>` runs every effect twice in dev (mount → cleanup → mount), so the mount-only auto-fetch effect that submits when the page loads with `?from=…&to=…` URL params called `fetchRoute()` twice. The first request was correctly aborted by the second via `abortRef.current?.abort()`, so no duplicate response landed — but the redundant request still hit the backend and produced two `fetchRoute START` log lines on every shareable-link load in dev. Production was unaffected (StrictMode is a no-op in prod builds).
+
+**Implemented:** Added a `didAutoFetch` `useRef(false)` guard inside `useRouteFetch`. The mount effect early-returns when the ref is already true and sets it true before invoking `fetchRoute`. Paired with a comment documenting the safety reasoning (idempotent side effect with verified abort cleanup) and the trade-off (any future side effect added inside the same effect bypasses StrictMode's cleanup verification and must be reviewed).
+
+---
+
 ### 2026-05-06 · Stop drafts persisted to sessionStorage on every keystroke (OPT-013, frontend scan)
 
 **File:** [frontend/src/App.jsx](frontend/src/App.jsx)
@@ -1650,4 +1838,44 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 **What was inefficient:** `entry = {**d, "minutes": seg_minutes, "distance_miles": ..., "steps": ...}` spread all 8 source keys into the new dict and then immediately overwrote `minutes`. The wasted `minutes` copy ran once per direction step, scaled by leg count and flavor count.
 
 **Implemented:** Replaced the spread with explicit construction that picks each key by name and writes the post-pace `minutes` value once. Same one-dict-per-direction allocation, no overwrite waste. Pairs with OPT-008: with cached directions now wrapped in `MappingProxyType`, the explicit dict is the response-side copy boundary either way.
+
+---
+
+### 2026-05-11 · TD-020 through TD-027 — 2026-05-11 tech-debt scan (8 items)
+
+**Priority:** 🟡🟢 Medium / Low
+
+**TD-020 · Tests import through App.jsx re-export shim** — Updated `App.test.jsx` to import each utility from its canonical location (`lib/directionFormat.js`, `calorieEquiv.js`, `lib/units.js`, `lib/personaPrefs.js`, `lib/routeFormat.js`, `lib/recentSearches.js`, `lib/urlParams.js`, `lib/stepLog.js`). Removed the 24-line re-export block (lines 80–103) from `App.jsx`. 204 tests pass.
+
+**TD-021 · `scipy<2.0` upper-bound** — Removed `<2.0` cap from `requirements.txt`; now `scipy>=1.7`.
+
+**TD-022 · `uvicorn` pinned to specific old patch** — Relaxed from `uvicorn==0.30.6` to `uvicorn>=0.30,<1.0`.
+
+**TD-023 · `igraph<0.12` caps a released major** — Removed `<0.12` cap; now `igraph>=0.11`. Note: regenerate `street_graph_igraph.pkl` after upgrading to ensure pickle compat with the new major.
+
+**TD-024 · `_save_igraph_artifact` swallows all exceptions silently** — Changed `except Exception` in `fetch_street_graph.py` to log `[error]` (was `[warning]`) and re-raise, so a failed artifact build fails the process visibly rather than silently falling back to the slow graphml path.
+
+**TD-025 · `walk_path`/`walk_minutes` dead public API** — Deleted both functions and the "Public API" section header from `walking.py`. Neither was imported by any caller.
+
+**TD-026 · Stale comment references non-existent `steps.PACE_TO_MPH`** — Corrected to reference `steps.PACE_TO_MET` and clarified that only the pace *keys* (not values) must stay in sync.
+
+**TD-027 · Stale "Chunk 5/6" references in `places.py`** — Rewrote the module docstring to describe the current two-file load (`places_osm.json` + `places_curated.json`) rather than referring to implementation phases.
+
+---
+
+### 2026-05-11 · App.jsx hook extraction — TD-019
+
+**Files:** `frontend/src/App.jsx`, `frontend/src/hooks/usePersonalization.js` (new), `frontend/src/hooks/useRouteFetch.js` (new), `frontend/src/hooks/useExploreFetch.js` (new)
+
+**Priority:** 🔴 High
+
+**What the debt was:** `App.jsx` had grown to 1420 lines of a single React component managing 20+ `useState` calls, four abort-controller refs, a dozen `useEffect` hooks, route-fetch logic, explore-mode fetch logic, and personalization state — all interleaved with layout branching and JSX. No natural entry point for new contributors; any change risked cross-cutting regressions.
+
+**How it was resolved:** Extracted three self-contained vertical slices:
+
+- **`usePersonalization(initialUrlParams)`** — height / weight / pace / goal / accessibility state + all five localStorage persistence effects + `handleHeightChange`, `handleWeightChange`, `handleGoalChange` callbacks. The hook reads initial access prefs once via an internal ref and returns the full personalization surface.
+- **`useRouteFetch({ …prefs, initialUrlParams })`** — route fetch + `AbortController` lifecycle + `MIN_LOADING_MS` floor + URL write + `recentSearches` state + the `fetchRouteRef` ref-sync pattern + the mount-time auto-submit effect. Returns `{ result, loading, error, recentSearches, setRecentSearches, fetchRoute, fetchRouteRef }`.
+- **`useExploreFetch({ mode, explorePrefs })`** — explore fetch + `AbortController` lifecycle + `explorePrefsRef` sync + `requestCategories` memo + mode-entry initial-fetch effect + category-change re-fetch effect. Returns `{ exploreResult, exploreLoading, exploreError, setExploreError, fetchExploreResult, explorePrefsRef }`.
+
+`App.jsx` shrank from 1420 to ~840 lines. All 204 tests pass unchanged — the refactor is purely structural with no behavioral difference.
 

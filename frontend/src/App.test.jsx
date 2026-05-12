@@ -1,14 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import App, {
-  formatBlocks, motivationMessage, calorieEquivalent, lbToKg,
-  loadDailyGoal, loadStoredPace,
-  loadRecentSearches, saveRecentSearch, RECENT_MAX,
-  parseStopsParam, formatRecentChip, recentEntryStops, MAX_STOPS,
-  loadStepLog, logWalk, clearStepLog, STEP_LOG_TTL_DAYS,
-  PACE_LABELS,
-} from "./App.jsx";
+import App from "./App.jsx";
+import { formatBlocks } from "./lib/directionFormat.js";
+import { calorieEquivalent } from "./calorieEquiv.js";
+import { lbToKg } from "./lib/units.js";
+import { loadDailyGoal, loadStoredPace } from "./lib/personaPrefs.js";
+import { PACE_LABELS, motivationMessage } from "./lib/routeFormat.js";
+import { RECENT_MAX, loadRecentSearches, saveRecentSearch, recentEntryStops, formatRecentChip } from "./lib/recentSearches.js";
+import { parseStopsParam, MAX_STOPS } from "./lib/urlParams.js";
+import { STEP_LOG_TTL_DAYS, loadStepLog, logWalk, clearStepLog } from "./lib/stepLog.js";
 
 // ── formatBlocks ─────────────────────────────────────────────────────────
 
