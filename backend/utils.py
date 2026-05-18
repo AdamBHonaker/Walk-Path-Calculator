@@ -40,6 +40,12 @@ CHICAGO_NORTH: float = 42.02
 CHICAGO_WEST:  float = -87.94
 CHICAGO_EAST:  float = -87.52
 
+# Bias-bbox string in Google Geocoding API format ("SW|NE"). No longer used
+# by runtime code (the LocationIQ cutover gave geocoding.py its own viewbox
+# constant). Retained for `backend/scripts/verify_neighborhood_coords.py`,
+# which is intentionally still pointed at Google as an independent
+# cross-source for landmark verification. Safe to remove if that script
+# ever migrates off Google.
 CHICAGO_BBOX_GOOGLE: str = f"{CHICAGO_SOUTH},{CHICAGO_WEST}|{CHICAGO_NORTH},{CHICAGO_EAST}"
 
 

@@ -1,26 +1,46 @@
 """
 Location geocoding for Passage.
 
-Resolution order for any query:
-  1. Exact match against NEIGHBORHOOD_COORDS (instant, no network)
-  2. Fuzzy match against NEIGHBORHOOD_COORDS (instant, no network)
-  3. Google Maps Geocoding API (network call, biased to Chicago)
+Resolution order for any free-text query:
+  1. Coord-pair regex                    (instant, no network)
+  2. Exact NEIGHBORHOOD_COORDS match     (instant, no network)
+  3. Fuzzy NEIGHBORHOOD_COORDS match     (instant, no network)
+  4. local_search.forward()              (instant, SQLite mmap)
+                                         - Chicago OSM addresses
+                                         - Chicago OSM cross-streets
+                                         - POIs from places_*.json
+  5. geocode_external() -> LocationIQ    (network, free tier)
 
-Requires GOOGLE_MAPS_API_KEY in .env for step 3. Steps 1 and 2 work offline.
+The Tier-5 fallback is cached durably in `chicago_geocode.db` so any string
+that ever resolves once is served locally on every subsequent call. The
+breaker around Tier 5 still trips on 429 / persistent-failure responses.
 """
 
 import atexit as _atexit
 import hashlib
-import json
 import logging
 import os
 import re
+import sqlite3
 import threading
 import time
-from collections import OrderedDict
 from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
+
+import requests
+
+from utils import (
+    CHICAGO_EAST,
+    CHICAGO_NORTH,
+    CHICAGO_SOUTH,
+    CHICAGO_WEST,
+    chicago_bbox_contains,
+    haversine_miles,
+    METERS_PER_MILE,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def _redact(query: str) -> str:
@@ -29,14 +49,19 @@ def _redact(query: str) -> str:
         return "<empty>"
     return "q#" + hashlib.sha256(query.encode("utf-8")).hexdigest()[:10]
 
-import requests
 
-from utils import (
-    CHICAGO_BBOX_GOOGLE,
-    chicago_bbox_contains,
-    haversine_miles,
-    METERS_PER_MILE,
-)
+def _redact_coord(lat: "float | None", lon: "float | None") -> str:
+    """Quantize a lat/lon to ~1 km precision for logging.
+
+    Free-text geocoder queries commonly resolve to user homes / workplaces, so
+    the resolved coordinate is the same PII `_redact()` exists to keep out of
+    logs. Two decimals (~1.1 km at Chicago latitude) keeps the diagnostic
+    value (is it in Chicago? is it lakefront vs. west side?) without pinning
+    the user to an address.
+    """
+    if lat is None or lon is None:
+        return "(?, ?)"
+    return f"({lat:.2f}, {lon:.2f})"
 
 
 class LocationOutsideChicagoError(Exception):
@@ -50,9 +75,10 @@ class LocationOutsideChicagoError(Exception):
 
 
 class GeocoderDegradedError(Exception):
-    """Raised when the Google geocoder has recently returned 429 and the
-    circuit breaker is open. Neighborhood-name queries do not trip this —
-    only queries that would need to hit Google."""
+    """Raised when the hosted geocoder has recently returned 429 and the
+    circuit breaker is open. Neighborhood / address / intersection / POI
+    queries do not trip this — only queries that would need to hit the
+    hosted fallback."""
 
     DEFAULT_MESSAGE = (
         "The geocoding service is overloaded — try a Chicago neighborhood "
@@ -60,12 +86,12 @@ class GeocoderDegradedError(Exception):
     )
 
 
-# ── Circuit breaker for Google 429s ───────────────────────────────────────
-# When Google returns HTTP 429 (or API status OVER_QUERY_LIMIT), open the
-# breaker for an exponentially-increasing cool-off (60s → 120s → 240s, capped
-# at 5 min). During cool-off, `geocode_google` raises GeocoderDegradedError
-# without making a network call. The first call after cool-off is a probe;
-# success closes the breaker and resets backoff.
+# ── Circuit breaker for hosted-geocoder 429s ─────────────────────────────────
+# When LocationIQ returns HTTP 429 (or its `{"error":"Rate Limited..."}` body),
+# open the breaker for an exponentially-increasing cool-off (60s -> 120s ->
+# 240s, capped at 5 min). During cool-off, the network call is skipped and
+# `GeocoderDegradedError` is raised. The first call after cool-off probes the
+# service; success closes the breaker and resets backoff.
 _CIRCUIT_INITIAL_COOLOFF_S: float = 60.0
 _CIRCUIT_MAX_COOLOFF_S: float = 300.0
 _circuit_open_until: float = 0.0
@@ -88,7 +114,7 @@ def _circuit_trip_429() -> None:
         )
         _circuit_open_until = time.time() + cooloff
         logger.warning(
-            "Google geocoder 429 — circuit breaker open for %.0fs (trip=%d)",
+            "LocationIQ 429 -- circuit breaker open for %.0fs (trip=%d)",
             cooloff, _circuit_consecutive_trips,
         )
 
@@ -98,7 +124,7 @@ def _circuit_record_success() -> None:
     global _circuit_open_until, _circuit_consecutive_trips
     with _circuit_lock:
         if _circuit_consecutive_trips > 0:
-            logger.info("Google geocoder recovered — circuit breaker closed")
+            logger.info("LocationIQ recovered -- circuit breaker closed")
         _circuit_open_until = 0.0
         _circuit_consecutive_trips = 0
 
@@ -110,152 +136,179 @@ def _circuit_reset_for_test() -> None:
         _circuit_open_until = 0.0
         _circuit_consecutive_trips = 0
 
-logger = logging.getLogger(__name__)
 
-_GOOGLE_GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
-_GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+# ── LocationIQ HTTP client ──────────────────────────────────────────────────
 
-# Google API statuses that represent a definitive negative answer or a
-# persistent configuration failure. Caching None for these prevents the same
-# bad query (or a misconfigured API key) from hammering Google indefinitely.
-_PERSISTENT_FAILURE_STATUSES: frozenset[str] = frozenset({
-    "ZERO_RESULTS", "REQUEST_DENIED", "INVALID_REQUEST",
-})
+_LOCATIONIQ_BASE = "https://us1.locationiq.com/v1"
+_LOCATIONIQ_API_KEY = os.getenv("LOCATIONIQ_API_KEY", "")
+_LOCATIONIQ_TIMEOUT_S = 5
 
-# Latch so the "GOOGLE_MAPS_API_KEY not set" warning fires once per process —
-# every uncached free-text query previously re-emitted it, drowning real errors.
+# Chicago viewbox for LocationIQ — note its `viewbox` parameter takes
+# `min_lon,max_lat,max_lon,min_lat` (NW, SE) rather than the GIS-standard
+# (min, min, max, max). The `bounded=1` flag tells LocationIQ to restrict
+# results to inside the viewbox rather than just preferring them.
+_LOCATIONIQ_VIEWBOX = f"{CHICAGO_WEST},{CHICAGO_NORTH},{CHICAGO_EAST},{CHICAGO_SOUTH}"
+
+_http_session = requests.Session()
+
+# Latch so the missing-API-key warning fires at most once per process.
 _missing_api_key_warned: bool = False
 
 
 def _warn_missing_api_key() -> None:
-    """Log the missing-API-key warning at most once per process."""
     global _missing_api_key_warned
     if not _missing_api_key_warned:
-        logger.warning("GOOGLE_MAPS_API_KEY not set — geocoding unavailable")
+        logger.warning("LOCATIONIQ_API_KEY not set -- hosted fallback unavailable")
         _missing_api_key_warned = True
 
-_GEOCODE_CACHE_PATH = Path(__file__).parent / "geocode_cache.json"
-_geocode_lock = threading.Lock()
-# Serializes disk writes so a background flush triggered while another is
-# still serializing can't race on tmp+rename. Distinct from `_geocode_lock`
-# (which guards the in-memory dict) to avoid blocking request threads on I/O.
-_geocode_write_lock = threading.Lock()
-_http_session = requests.Session()
 
-_geocode_unsaved: int = 0      # entries added since last write
-_GEOCODE_SAVE_EVERY: int = 50  # write to disk every N new entries; atexit handler flushes the rest
+# ── SQLite-backed cache ─────────────────────────────────────────────────────
 
-# Maximum in-memory cache entries. Beyond this, the oldest insertion is
-# evicted FIFO so a long-running deploy doesn't accumulate every distinct
-# query forever. The default of 10k covers Chicago's neighborhood/landmark
-# table (~150 entries) plus weeks of organic forward+reverse traffic at
-# the existing rate limits with headroom to spare.
-_GEOCODE_CACHE_MAX: int = int(os.getenv("GEOCODE_CACHE_MAX", "10000"))
-
-# Multi-worker deploys (e.g., uvicorn --workers N) each hold a private copy
-# of `_geocode_cache`, so a plain last-writer-wins flush would discard
-# entries another worker learned. The merge-on-write step in
-# `_save_geocode_cache` re-reads the on-disk snapshot first to avoid that.
-# Passage's production target runs a single worker, so the merge is wasted
-# I/O by default; opt in only when running multi-worker.
-_GEOCODE_MULTIWORKER: bool = os.getenv("GEOCODE_CACHE_MULTIWORKER", "").lower() in ("1", "true", "yes")
+# Cache lives in the same chicago_geocode.db file that local_search reads.
+# A dedicated write connection (separate from local_search's read-only
+# connection) lets concurrent reads continue during a cache insert.
+_CACHE_DB_PATH = Path(__file__).resolve().parent / "data" / "chicago_geocode.db"
+_cache_lock = threading.Lock()
+_cache_db: sqlite3.Connection | None = None
 
 
-def _load_geocode_cache() -> "OrderedDict[str, object]":
-    """Return the on-disk cache as an OrderedDict so the FIFO eviction in
-    `_flush_geocode_if_needed` keeps the newest entries when the cap is hit.
+def _cache_connect() -> sqlite3.Connection | None:
+    """Open the writeable cache DB, or return None if the artifact is missing.
+
+    A missing DB is recoverable: forward / reverse calls just skip caching
+    and continue to hit LocationIQ on every miss. That's expected during
+    a fresh clone before the ingestion scripts run.
     """
-    result: "OrderedDict[str, object]" = OrderedDict()
-    if _GEOCODE_CACHE_PATH.exists():
-        try:
-            raw = json.loads(_GEOCODE_CACHE_PATH.read_text(encoding="utf-8"))
-            for k, v in raw.items():
-                if v is None:
-                    result[k] = None
-                elif isinstance(v, list):
-                    result[k] = tuple(v)  # forward geocode: [lat, lon] → (lat, lon)
-                else:
-                    result[k] = v         # reverse geocode: {"label": ..., "source": ...}
-        except Exception as exc:
-            logger.warning("Could not load geocode cache: %s", exc)
-    return result
-
-
-def _save_geocode_cache(cache: dict) -> None:
-    """Serialize and atomically write `cache` to disk. Safe to call from a
-    background thread; serialized via `_geocode_write_lock` so concurrent
-    flushes don't race on the tmp file.
-    """
-    with _geocode_write_lock:
-        merged = cache
-        if _GEOCODE_MULTIWORKER and _GEOCODE_CACHE_PATH.exists():
-            # Multi-worker deploys: union the on-disk snapshot with our copy
-            # so concurrent worker writes don't drop each other's entries
-            # (in-memory wins on conflict). Single-worker default skips the
-            # full-file read+parse on every flush.
-            try:
-                disk = _load_geocode_cache()
-                if disk:
-                    merged = {**disk, **cache}
-            except Exception as exc:
-                logger.warning("Could not merge existing geocode cache: %s", exc)
-        tmp = _GEOCODE_CACHE_PATH.with_suffix(".tmp")
-        try:
-            tmp.write_text(
-                json.dumps(
-                    {k: list(v) if isinstance(v, tuple) else v for k, v in merged.items()},
-                    ensure_ascii=False, separators=(",", ":"),
-                ),
-                encoding="utf-8",
+    global _cache_db
+    if _cache_db is not None:
+        return _cache_db
+    with _cache_lock:
+        if _cache_db is not None:
+            return _cache_db
+        if not _CACHE_DB_PATH.exists():
+            logger.warning(
+                "%s missing -- LocationIQ responses will not be cached. "
+                "Run backend/scripts/build_*.py to populate it.",
+                _CACHE_DB_PATH,
             )
-            tmp.replace(_GEOCODE_CACHE_PATH)
-        except Exception as exc:
-            logger.error("Could not save geocode cache: %s", exc)
+            return None
+        conn = sqlite3.connect(str(_CACHE_DB_PATH), check_same_thread=False, isolation_level=None)
+        # WAL gives us non-blocking reads alongside writes. autocommit
+        # (isolation_level=None) avoids transaction-management overhead
+        # for the single-row cache updates we do.
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+        except sqlite3.OperationalError:
+            pass
+        conn.row_factory = sqlite3.Row
+        _cache_db = conn
+        return _cache_db
 
 
-_geocode_cache: "OrderedDict[str, object]" = _load_geocode_cache()
+# Sentinel used to distinguish "cache miss" from "cached negative result".
+# `_cache_get_forward` returns NEG_HIT when the table has a row with
+# lat/lon = NULL (meaning we previously asked and got nothing), so callers
+# don't re-query LocationIQ for known-bad queries.
+class _Neg:
+    __slots__ = ()
+    def __repr__(self): return "<NEG_HIT>"
+NEG_HIT = _Neg()
 
 
-def _flush_geocode_if_needed() -> None:
-    """Increment unsaved counter, evict oldest entries past the cap, and
-    asynchronously write the cache every _GEOCODE_SAVE_EVERY entries. Always
-    called while `_geocode_lock` is held, so the snapshot is consistent. The
-    disk write happens off-thread so request latency doesn't grow with cache
-    size.
-    """
-    global _geocode_unsaved
-    _geocode_unsaved += 1
-    # Evict the oldest insertions if the cache exceeded its cap. FIFO is good
-    # enough — popular queries (neighborhood names) keep getting re-inserted
-    # via the early-return path in `geocode_google`, which doesn't touch
-    # the cache and so never resets their position.
-    while len(_geocode_cache) > _GEOCODE_CACHE_MAX:
-        _geocode_cache.popitem(last=False)
-    if _geocode_unsaved >= _GEOCODE_SAVE_EVERY:
-        snapshot = dict(_geocode_cache)
-        _geocode_unsaved = 0
-        threading.Thread(
-            target=_save_geocode_cache, args=(snapshot,), daemon=True,
-        ).start()
+def _cache_get_forward(query: str):
+    """Return (lat, lon) tuple on hit, NEG_HIT for a cached negative, or None on miss."""
+    db = _cache_connect()
+    if db is None:
+        return None
+    row = db.execute(
+        "SELECT lat, lon FROM cached_forward WHERE query = ?", (query,),
+    ).fetchone()
+    if row is None:
+        return None
+    if row["lat"] is None or row["lon"] is None:
+        return NEG_HIT
+    return (float(row["lat"]), float(row["lon"]))
+
+
+def _cache_set_forward(query: str, coords: "tuple[float, float] | None", source: str) -> None:
+    """Store (lat, lon) or a negative entry (None) for `query`."""
+    db = _cache_connect()
+    if db is None:
+        return
+    lat = coords[0] if coords is not None else None
+    lon = coords[1] if coords is not None else None
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO cached_forward (query, lat, lon, source, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (query, lat, lon, source, int(time.time())),
+        )
+    except sqlite3.Error as exc:
+        logger.warning("cached_forward write failed for %s: %s", _redact(query), exc)
+
+
+def _cache_get_reverse(lat: float, lon: float) -> dict | None:
+    """Return {"label", "source"} on hit, or None on miss."""
+    db = _cache_connect()
+    if db is None:
+        return None
+    lat_q = round(lat * 1e5)
+    lon_q = round(lon * 1e5)
+    row = db.execute(
+        "SELECT label, source FROM cached_reverse WHERE lat_q = ? AND lon_q = ?",
+        (lat_q, lon_q),
+    ).fetchone()
+    if row is None:
+        return None
+    return {"label": row["label"], "source": row["source"]}
+
+
+def _cache_set_reverse(lat: float, lon: float, label: str, source: str) -> None:
+    db = _cache_connect()
+    if db is None:
+        return
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO cached_reverse (lat_q, lon_q, label, source, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (round(lat * 1e5), round(lon * 1e5), label, source, int(time.time())),
+        )
+    except sqlite3.Error as exc:
+        logger.warning("cached_reverse write failed for %s: %s", _redact_coord(lat, lon), exc)
+
+
+def _cache_clear_forward_for_test(query: str) -> None:
+    """Test hook: remove a single forward-cache entry. Used by the breaker
+    tests so a synthetic query is guaranteed to hit the network path."""
+    db = _cache_connect()
+    if db is None:
+        return
+    try:
+        db.execute("DELETE FROM cached_forward WHERE query = ?", (query,))
+    except sqlite3.Error:
+        pass
 
 
 @_atexit.register
-def _flush_geocode_on_exit() -> None:
-    if _geocode_unsaved > 0:
-        # Snapshot under the read lock so we don't iterate a dict another
-        # thread is mutating; the write lock then waits on any in-flight
-        # background flush, ensuring this final write goes last.
-        with _geocode_lock:
-            snapshot = dict(_geocode_cache)
-        _save_geocode_cache(snapshot)
+def _close_cache_db() -> None:
+    global _cache_db
+    db = _cache_db
+    if db is None:
+        return
+    try:
+        db.close()
+    except Exception:
+        pass
+    _cache_db = None
 
 
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # Neighborhood / landmark coordinates
 # Geographic scope: full Chicago city limits — all 77 community areas
 # (Howard St on the north → southern city edge near 138th St; Lakefront on
 # the east → western city edge near Harlem Ave / Pulaski Rd).
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
 NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
 
@@ -321,7 +374,7 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
     "depaul":               (41.9253, -87.6554),
     "depaul university":    (41.9253, -87.6554),
     "north avenue beach":   (41.9172, -87.6270),
-    "oz park":              (41.9209, -87.6456),
+    "oz park":               (41.9209, -87.6456),
     "chicago history museum": (41.9120, -87.6313),
     "peggy notebaert nature museum": (41.9268, -87.6353),
     "steppenwolf theatre":  (41.9117, -87.6479),
@@ -485,9 +538,9 @@ NEIGHBORHOOD_COORDS: dict[str, tuple[float, float]] = {
 }
 
 
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # Street abbreviation normalization
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
 _ABBR_PAIRS = (
     ("ave",  "avenue"),
@@ -520,17 +573,17 @@ def _normalize_street_abbr(query: str) -> str:
     return _STREET_ABBR_RE.sub(_replace, query)
 
 
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # Fuzzy neighborhood matching
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
 _FUZZY_STOP_WORDS: frozenset[str] = frozenset(
     {"the", "of", "a", "an", "and", "at", "in", "on", "chicago"}
 )
 # 0.95 is calibrated against the regression set in test_main.py
 # `TestFuzzyMatchRegression`. Letting it slip below 0.94 starts admitting
-# false positives like "huntington" → "uptown" (the Bolt-On B bug); above
-# 0.96 starts rejecting legitimate typos like "broonzeville" → "bronzeville".
+# false positives like "huntington" -> "uptown"; above 0.96 starts rejecting
+# legitimate typos like "broonzeville" -> "bronzeville".
 _FUZZY_THRESHOLD = 0.95
 
 
@@ -546,11 +599,7 @@ def _word_index() -> dict[str, frozenset[str]]:
 
 @lru_cache(maxsize=1024)
 def fuzzy_match_neighborhood(query: str) -> "tuple[tuple[float, float] | None, str | None]":
-    """
-    Fuzzy-match a lowercased, stripped query against NEIGHBORHOOD_COORDS.
-    Requires similarity ≥ 0.95 and at least one meaningful word in common.
-    Returns (coords, matched_key) or (None, None).
-    """
+    """Fuzzy-match a lowercased, stripped query against NEIGHBORHOOD_COORDS."""
     q_words = set(query.split()) - _FUZZY_STOP_WORDS
 
     if len(q_words) > 1:
@@ -563,8 +612,6 @@ def fuzzy_match_neighborhood(query: str) -> "tuple[tuple[float, float] | None, s
     else:
         candidate_keys = set(NEIGHBORHOOD_COORDS.keys())
 
-    # Keep the constant query in seq2 so its b2j index is built once and reused
-    # across all candidates; only seq1 changes per iteration.
     matcher = SequenceMatcher(None, "", query)
     best_score = 0.0
     best_key: str | None = None
@@ -580,119 +627,188 @@ def fuzzy_match_neighborhood(query: str) -> "tuple[tuple[float, float] | None, s
     return None, None
 
 
-# ---------------------------------------------------------------------------
-# Google Maps geocoding
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# LocationIQ forward + reverse
+# ─────────────────────────────────────────────────────────────────────────────
 
-def geocode_google(query: str) -> "tuple[float, float] | None":
+def geocode_external(query: str) -> "tuple[float, float] | None":
+    """Forward geocode `query` via LocationIQ, biased to Chicago.
+
+    Results (positive and negative) are cached in chicago_geocode.db so the
+    same query never hits the network twice. Returns None when the API key
+    is missing, the response says no match, or the result falls outside
+    Chicago's bbox. Raises `GeocoderDegradedError` when the breaker is open.
     """
-    Geocode a free-text query using Google Maps API, biased to Chicago.
-    Results are cached in-memory and persisted to geocode_cache.json.
-    Returns None if GOOGLE_MAPS_API_KEY is not set or geocoding fails.
+    # 1. Cache hit short-circuits the network call (whether positive or negative).
+    cached = _cache_get_forward(query)
+    if cached is NEG_HIT:
+        return None
+    if cached is not None:
+        return cached  # tuple[float, float]
 
-    Raises `GeocoderDegradedError` when the circuit breaker is open
-    (recent 429 from Google). Cached results bypass the breaker.
-    """
-    if query in _geocode_cache:
-        return _geocode_cache[query]
+    if not _LOCATIONIQ_API_KEY:
+        _warn_missing_api_key()
+        return None
 
-    with _geocode_lock:
-        if query in _geocode_cache:
-            return _geocode_cache[query]
-        if not _GOOGLE_API_KEY:
-            _warn_missing_api_key()
-            return None
-    # Lock released here — network I/O happens without holding the lock so
-    # concurrent uncached queries don't serialise behind each other's round-trip.
-
-    # Circuit breaker check: skip network call entirely while degraded.
+    # 2. Breaker check -- skip network during cool-off.
     if _circuit_is_open():
         raise GeocoderDegradedError(GeocoderDegradedError.DEFAULT_MESSAGE)
 
+    # 3. Real network call.
     coords: "tuple[float, float] | None" = None
     cache_negative = False
+    biased_query = query if "chicago" in query.lower() else f"{query}, Chicago, IL"
     try:
         resp = _http_session.get(
-            _GOOGLE_GEOCODE_URL,
+            f"{_LOCATIONIQ_BASE}/search",
             params={
-                "address": query if "chicago" in query.lower() else query + ", Chicago, IL",
-                "key": _GOOGLE_API_KEY,
-                "components": "country:US",
-                "bounds": CHICAGO_BBOX_GOOGLE,
+                "key": _LOCATIONIQ_API_KEY,
+                "q": biased_query,
+                "format": "json",
+                "limit": 1,
+                "countrycodes": "us",
+                "viewbox": _LOCATIONIQ_VIEWBOX,
+                "bounded": 1,
+                "normalizeaddress": 1,
             },
-            timeout=5,
+            headers={"Accept": "application/json"},
+            timeout=_LOCATIONIQ_TIMEOUT_S,
         )
-        # 429 / OVER_QUERY_LIMIT trips the breaker. Tested both paths: Google
-        # may return the API-status alone (HTTP 200 with status=OVER_QUERY_LIMIT)
-        # or both together (HTTP 429 + status=OVER_QUERY_LIMIT).
-        data = resp.json() if resp.content else {}
-        api_status = data.get("status")
-        if resp.status_code == 429 or api_status == "OVER_QUERY_LIMIT":
+
+        # 429 -> trip breaker. LocationIQ returns plain 429 for rate-limited;
+        # 401 / 403 for bad API key; 404 for "no result"; 200 for hits.
+        if resp.status_code == 429:
             _circuit_trip_429()
             raise GeocoderDegradedError(GeocoderDegradedError.DEFAULT_MESSAGE)
 
-        if api_status == "OK" and data.get("results"):
-            loc = data["results"][0]["geometry"]["location"]
-            candidate = (float(loc["lat"]), float(loc["lng"]))
-            # Google's `bounds` parameter is a soft bias — for an ambiguous
-            # query (e.g. "Argyle, Chicago, IL") Google may return a similarly
-            # named place in another state. Reject any result outside the
-            # Chicago bbox so a wrong-city coord can't enter the cache and
-            # poison subsequent reverse-lookups.
-            if not chicago_bbox_contains(*candidate):
-                logger.warning(
-                    "Google returned out-of-bbox coords for %s → %s; ignoring",
-                    _redact(query), candidate,
-                )
-                cache_negative = True
+        if resp.status_code == 404:
+            # Definitive "no match" -- cache negatively so we don't retry.
+            cache_negative = True
+            _circuit_record_success()
+        elif resp.status_code in (401, 403):
+            # Bad / missing API key. Don't cache (so a key fix takes effect
+            # immediately) and don't probe the breaker (it's a config issue,
+            # not a rate-limit issue).
+            logger.error(
+                "LocationIQ %s for %s -- check LOCATIONIQ_API_KEY",
+                resp.status_code, _redact(query),
+            )
+        elif resp.status_code == 200:
+            data = resp.json() if resp.content else []
+            if isinstance(data, list) and data:
+                entry = data[0]
+                try:
+                    candidate = (float(entry["lat"]), float(entry["lon"]))
+                except (KeyError, TypeError, ValueError):
+                    candidate = None
+                if candidate is None:
+                    cache_negative = True
+                elif not chicago_bbox_contains(*candidate):
+                    logger.warning(
+                        "LocationIQ returned out-of-bbox coords for %s -> %s; ignoring",
+                        _redact(query), _redact_coord(*candidate),
+                    )
+                    cache_negative = True
+                else:
+                    coords = candidate
+                    logger.info("LocationIQ geocoded %s -> %s", _redact(query), _redact_coord(*coords))
             else:
-                coords = candidate
-                logger.info("Geocoded %s → %s", _redact(query), coords)
+                cache_negative = True
             _circuit_record_success()
         else:
-            logger.warning("Google returned status '%s' for %s", api_status, _redact(query))
-            if api_status in _PERSISTENT_FAILURE_STATUSES:
-                cache_negative = True
-            # Any non-error API status is also a successful probe (the breaker
-            # cares about 429/OVER_QUERY_LIMIT, not about whether we found a
-            # match). Reset only if currently tripped to avoid pointless writes.
-            if api_status:
-                _circuit_record_success()
+            logger.warning(
+                "LocationIQ returned unexpected status %s for %s",
+                resp.status_code, _redact(query),
+            )
     except GeocoderDegradedError:
         raise
     except Exception as exc:
-        logger.error("Google geocoding failed for %s: %s", _redact(query), exc)
+        logger.error("LocationIQ forward failed for %s: %s", _redact(query), exc)
 
-    # Re-acquire lock to write result; guard against a concurrent thread that
-    # already stored an answer while we were on the network.
-    with _geocode_lock:
-        if query not in _geocode_cache:
-            if coords is not None:
-                _geocode_cache[query] = coords
-                _flush_geocode_if_needed()
-            elif cache_negative:
-                _geocode_cache[query] = None
-                _flush_geocode_if_needed()
+    # 4. Write result through.
+    if coords is not None:
+        _cache_set_forward(query, coords, "locationiq")
+    elif cache_negative:
+        _cache_set_forward(query, None, "locationiq")
     return coords
 
 
+def _reverse_geocode_external(lat: float, lon: float) -> "str | None":
+    """Reverse geocode via LocationIQ; return a short label or None.
+
+    Honors the same 429 breaker as `geocode_external`. The caller is
+    responsible for caching successful labels into `cached_reverse`.
+    """
+    if not _LOCATIONIQ_API_KEY:
+        _warn_missing_api_key()
+        return None
+    if _circuit_is_open():
+        return None
+    try:
+        resp = _http_session.get(
+            f"{_LOCATIONIQ_BASE}/reverse",
+            params={
+                "key": _LOCATIONIQ_API_KEY,
+                "lat": lat,
+                "lon": lon,
+                "format": "json",
+                "normalizeaddress": 1,
+                "zoom": 18,
+            },
+            headers={"Accept": "application/json"},
+            timeout=_LOCATIONIQ_TIMEOUT_S,
+        )
+        if resp.status_code == 429:
+            _circuit_trip_429()
+            return None
+        if resp.status_code == 404:
+            _circuit_record_success()
+            return None
+        if resp.status_code in (401, 403):
+            logger.error(
+                "LocationIQ reverse %s -- check LOCATIONIQ_API_KEY", resp.status_code,
+            )
+            return None
+        if resp.status_code != 200:
+            logger.warning("LocationIQ reverse unexpected %s", resp.status_code)
+            return None
+        data = resp.json() if resp.content else {}
+        display = (data.get("display_name") or "").strip()
+        _circuit_record_success()
+        if not display:
+            return None
+        # LocationIQ returns full multi-comma addresses ("123 Main St, ...,
+        # Cook County, Illinois, 60601, United States of America"). Trim
+        # everything after the ZIP for a tighter label.
+        m = re.search(r",\s*(\d{5})(?:-\d{4})?\b", display)
+        if m:
+            display = display[: m.end()]
+        # Strip a trailing ", USA" if any leftover punctuation didn't catch
+        # earlier (defensive — display_name format can vary).
+        display = re.sub(r",\s*(USA|United States(?: of America)?)\s*$", "", display).strip()
+        return display or None
+    except Exception as exc:
+        logger.error("LocationIQ reverse failed for %s: %s", _redact_coord(lat, lon), exc)
+        return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main resolution entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
 _COORD_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
 
-# ---------------------------------------------------------------------------
-# Main resolution entry point
-# ---------------------------------------------------------------------------
 
 def resolve_location(query: str) -> "tuple[float, float] | None":
-    """
-    Convert a free-text Chicago location query to (lat, lon).
+    """Convert a free-text Chicago location query to (lat, lon).
 
-    Tries in order: coordinate pair → exact neighborhood match → fuzzy match → Google Maps.
-    Returns None if all fail.
+    Cascade order:
+        coord pair  ->  NEIGHBORHOOD_COORDS exact  ->  fuzzy match
+                    ->  local_search.forward (SQLite addresses/intersections/POIs)
+                    ->  LocationIQ (via geocode_external)
 
-    Raises `LocationOutsideChicagoError` when a path resolves to real coordinates
-    that fall outside Chicago's bbox — e.g., Google geocoded "Huntington WV" to
-    its real location, or the user typed an explicit lat/lon outside Chicago.
-    Callers convert this to an HTTP 422 with a structured "not in Chicago" error.
+    Raises `LocationOutsideChicagoError` when a path resolves to real
+    coordinates outside Chicago's bbox.
     """
     coords = _resolve_location_inner(query)
     if coords is not None and not chicago_bbox_contains(*coords):
@@ -701,8 +817,6 @@ def resolve_location(query: str) -> "tuple[float, float] | None":
 
 
 def _resolve_location_inner(query: str) -> "tuple[float, float] | None":
-    # Fast path: already a coordinate pair (e.g. from pick-on-map). The bbox
-    # check in `resolve_location` will reject pairs outside Chicago.
     m = _COORD_RE.match(query)
     if m:
         return float(m.group(1)), float(m.group(2))
@@ -718,20 +832,27 @@ def _resolve_location_inner(query: str) -> "tuple[float, float] | None":
     if coords:
         return coords
 
-    return geocode_google(q)
+    # Tier 2 -- local SQLite-backed search. Lazy import to keep the geocoding
+    # module loadable in test fixtures that don't have chicago_geocode.db.
+    try:
+        from local_search import forward as _local_forward  # noqa: PLC0415
+        coords = _local_forward(q)
+        if coords:
+            return coords
+    except Exception as exc:
+        logger.warning("local_search.forward failed for %s: %s", _redact(q), exc)
+
+    # Tier 3 -- LocationIQ
+    return geocode_external(q)
 
 
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 # Reverse geocoding
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
 
-_REV_THRESHOLD_MI: float = 200.0 / METERS_PER_MILE  # 200 m in miles
+_REV_THRESHOLD_MI: float = 200.0 / METERS_PER_MILE          # 200 m in miles — neighborhood tier
+_REV_ADDRESS_THRESHOLD_MI: float = 50.0 / METERS_PER_MILE   # 50 m in miles — address tier
 
-
-# Lazy-built KDTree over NEIGHBORHOOD_COORDS for O(log n) nearest-neighbor lookup
-# in `reverse_geocode_point`. Uses (lon, lat) Euclidean distance as a coarse pre-
-# filter; final ranking uses true Haversine on the top-k candidates so result
-# ordering matches the previous linear scan exactly.
 _neighborhood_kdtree = None
 _neighborhood_names: tuple[str, ...] = ()
 _neighborhood_coords_arr = None
@@ -743,76 +864,35 @@ def _get_neighborhood_kdtree():
     if _neighborhood_kdtree is not None:
         return _neighborhood_kdtree
     with _neighborhood_kdtree_lock:
-        # Double-checked: another thread may have built it while we waited.
         if _neighborhood_kdtree is not None:
             return _neighborhood_kdtree
-        from scipy.spatial import cKDTree  # local import: keeps module import light
+        from scipy.spatial import cKDTree
         import numpy as np
 
         items = list(NEIGHBORHOOD_COORDS.items())
         names = tuple(name for name, _ in items)
         coords = np.array([[lon, lat] for _, (lat, lon) in items], dtype=float)
         tree = cKDTree(coords)
-        # Publish names/coords BEFORE the tree handle so any thread that sees a
-        # non-None _neighborhood_kdtree is guaranteed to see the matching names.
         _neighborhood_names = names
         _neighborhood_coords_arr = coords
         _neighborhood_kdtree = tree
     return _neighborhood_kdtree
 
 
-def _reverse_geocode_google(lat: float, lon: float) -> "str | None":
-    """Call Google reverse geocode; return a short human label or None.
-
-    Honors the same 429/`OVER_QUERY_LIMIT` circuit breaker as `geocode_google`:
-    when the breaker is open we skip the network call entirely, and 429
-    responses (or `status=OVER_QUERY_LIMIT`) trip it for the next request.
-    Falls back silently to the caller's "coordinates" label when degraded.
-    """
-    if not _GOOGLE_API_KEY:
-        _warn_missing_api_key()
-        return None
-    if _circuit_is_open():
-        return None
-    try:
-        resp = _http_session.get(
-            _GOOGLE_GEOCODE_URL,
-            params={"latlng": f"{lat},{lon}", "key": _GOOGLE_API_KEY},
-            timeout=5,
-        )
-        data = resp.json() if resp.content else {}
-        api_status = data.get("status")
-        if resp.status_code == 429 or api_status == "OVER_QUERY_LIMIT":
-            _circuit_trip_429()
-            return None
-        if api_status == "OK" and data.get("results"):
-            # Prefer the most specific (first) result's formatted_address
-            addr = data["results"][0].get("formatted_address", "")
-            # Strip country suffix for brevity
-            addr = re.sub(r",\s*USA\s*$", "", addr).strip()
-            _circuit_record_success()
-            return addr or None
-        if api_status:
-            # Healthy reply with no usable result still proves Google is up;
-            # close the breaker if it was tripped by an earlier request.
-            _circuit_record_success()
-    except Exception as exc:
-        logger.error("Google reverse geocode failed for (%s, %s): %s", lat, lon, exc)
-    return None
-
-
 def reverse_geocode_point(lat: float, lon: float) -> dict:
-    """
-    Reverse geocode a (lat, lon) to a human-readable label.
-    Returns {"label": str, "source": str}.
-    """
-    cache_key = f"rev:{lat:.5f},{lon:.5f}"
+    """Reverse geocode a (lat, lon) to a human-readable label.
 
-    # 1. Fast cache check under lock
-    with _geocode_lock:
-        cached = _geocode_cache.get(cache_key)
-        if isinstance(cached, dict):
-            return cached
+    Returns {"label": str, "source": str}. Cascade:
+        1. cached_reverse SQLite hit
+        2. nearest neighborhood within 200 m
+        3. nearest OSM address-point within ~50 m (via local_search)
+        4. LocationIQ fallback (cached on success)
+        5. coordinate-string fallback (never cached)
+    """
+    # 1. Cache hit
+    cached = _cache_get_reverse(lat, lon)
+    if cached is not None:
+        return cached
 
     # 2. Nearest neighborhood via KDTree pre-filter, Haversine final ranking
     tree = _get_neighborhood_kdtree()
@@ -831,18 +911,27 @@ def reverse_geocode_point(lat: float, lon: float) -> dict:
 
     if best_name and best_dist <= _REV_THRESHOLD_MI:
         result = {"label": best_name.title(), "source": "neighborhood"}
-    else:
-        # 3. Google reverse geocode (network I/O, no lock needed)
-        label = _reverse_geocode_google(lat, lon)
-        if label:
-            result = {"label": label, "source": "google"}
-        else:
-            result = {"label": f"{lat:.5f}, {lon:.5f}", "source": "coordinates"}
+        _cache_set_reverse(lat, lon, result["label"], result["source"])
+        return result
 
-    # 4. Write result under lock — but skip the "coordinates" fallback so a
-    # transient Google failure doesn't permanently poison this lat/lon.
-    if result["source"] != "coordinates":
-        with _geocode_lock:
-            _geocode_cache[cache_key] = result
-            _flush_geocode_if_needed()
-    return result
+    # 3. Nearest OSM address-point (Tier 2 reverse)
+    try:
+        from local_search import nearest_address as _local_nearest  # noqa: PLC0415
+        addr = _local_nearest(lat, lon, max_miles=_REV_ADDRESS_THRESHOLD_MI)
+        if addr is not None:
+            result = {"label": addr["raw"], "source": "address"}
+            _cache_set_reverse(lat, lon, result["label"], result["source"])
+            return result
+    except Exception as exc:
+        logger.warning("local_search.nearest_address failed: %s", exc)
+
+    # 4. LocationIQ fallback
+    label = _reverse_geocode_external(lat, lon)
+    if label:
+        result = {"label": label, "source": "locationiq"}
+        _cache_set_reverse(lat, lon, result["label"], result["source"])
+        return result
+
+    # 5. Coordinate fallback -- intentionally NOT cached so a transient
+    # network failure doesn't permanently poison this lat/lon.
+    return {"label": f"{lat:.5f}, {lon:.5f}", "source": "coordinates"}

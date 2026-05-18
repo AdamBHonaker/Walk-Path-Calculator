@@ -2,12 +2,23 @@
 Street-network walking time calculator using igraph + scipy.
 
 The pedestrian street graph is loaded from the pre-built igraph artifact
-(street_graph_igraph.pkl) produced by fetch_street_graph.py in CTA-Transit-PWA,
-or falls back to parsing street_graph.graphml via igraph directly.
+(`street_graph_igraph.pkl`) produced by `fetch_street_graph.py`, or falls
+back to parsing `street_graph.graphml` via igraph directly. Both paths
+feed the same `_populate_edge_caches{_v2}` pipeline.
 
 Walking speed assumption: 3 mph (1.34 m/s) — a comfortable pedestrian pace.
+
+Greenest-routing edge attributes (FEAT-4, shipped 2026-05-14):
+`format_version: 3` pickles carry per-edge `tree_canopy_score` +
+`park_proximity_score` arrays, consumed by `_build_flavor_weights` for
+the greenest flavor. A v2 pickle or a graphml-only load lacks these
+columns; `_load_graph()` refuses to boot rather than silently degrading
+greenest to the legacy footway-only discount. See the "Greenest-routing
+graph release runbook" section in CLAUDE.md for the build chain,
+refresh cadence, and the three-tier rollback recipe.
 """
 
+import hashlib
 import logging
 import math
 import os
@@ -72,9 +83,24 @@ _AVOID_STAIRS_PENALTY_M = 10_000.0
 _TURN_PENALTY_M = 30.0
 
 # Highway tags that route as "greener" (off-street paths, plazas, trails).
-# Note: park polygons are out of scope for v1 — see docs/FEATURE_HISTORY.md.
 _GREEN_HIGHWAYS = {"footway", "path", "cycleway", "pedestrian", "track"}
-_GREEN_DISCOUNT = 0.6
+_GREEN_DISCOUNT = 0.6  # legacy footway-only discount for v1 graphml / pre-FEAT-4 v2 pickles
+
+# Feature 4 "Greenest Routing — Tree + Park Edge Weights" weight formula.
+#
+#   greenest_weight = base_weight * max(_GREEN_DETOUR_FLOOR,
+#       1 - _GREEN_FOOTWAY_WEIGHT * is_footway_or_path
+#         - _GREEN_CANOPY_WEIGHT  * tree_canopy_score
+#         - _GREEN_PARK_WEIGHT    * park_proximity_score
+#   )
+#
+# Starting values from FEATURE_PLANS.md "Resolved design decisions"; the chunk-2
+# calibration round is the explicit forum for tuning these against fixture routes.
+# Keep them as named constants so the rationale is greppable.
+_GREEN_FOOTWAY_WEIGHT = 0.20
+_GREEN_CANOPY_WEIGHT  = 0.15
+_GREEN_PARK_WEIGHT    = 0.15
+_GREEN_DETOUR_FLOOR   = 0.5
 
 
 def _highway_path_type(highway: str, footway: str) -> str:
@@ -117,6 +143,12 @@ _edge_geometries: "list              | None" = None   # list[None | np.ndarray i
 # Endpoint columns sourced from compact arrays (v2) or G.get_edgelist() (v1).
 _edge_sources:    "np.ndarray        | None" = None   # int32 (v2) or list[int] (v1)
 _edge_targets:    "np.ndarray        | None" = None   # int32 (v2) or list[int] (v1)
+# Feature 4 chunk 1 (format_version >= 3): per-edge greenest-routing signals.
+# Both arrays are float32 in [0, 1]. Populated only from v3+ pickles; v1 / v2
+# loads leave them as None and the greenest weight function falls back to the
+# legacy footway-only discount (`_GREEN_DISCOUNT`).
+_edge_tree_canopy:    "np.ndarray | None" = None
+_edge_park_proximity: "np.ndarray | None" = None
 
 # Cache of weight vectors used by routing variants that layer extra penalties
 # on top of a flavor (currently only avoid_stairs). Keyed by (flavor, variant).
@@ -136,6 +168,54 @@ _last_graph_access: float = 0.0
 # Override with GRAPH_EVICTION_TTL_SECONDS env var; set to 0 to disable.
 _EVICTION_TTL_SECONDS: float = float(os.getenv("GRAPH_EVICTION_TTL_SECONDS", "3600"))
 
+# Optional SHA-256 of the expected `street_graph_igraph.pkl` artifact. When set,
+# _load_graph hashes the file before unpickling and refuses to load on a
+# mismatch — pickle.load is RCE-by-design, so verifying the bytes against a
+# known-good digest closes the attack surface from "anything that can replace
+# this file gets code execution" down to "anything that can replace this file
+# AND the env var". Leave unset to skip the check (warns once on load).
+_STREET_GRAPH_SHA256: str = os.getenv("STREET_GRAPH_SHA256", "").strip().lower()
+_pickle_hash_warned: bool = False
+
+
+def _sha256_of_file(path: Path, chunk_size: int = 1 << 20) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify_pickle_integrity(path: Path) -> bool:
+    """Return True iff it is safe to pickle.load `path`.
+
+    - With STREET_GRAPH_SHA256 set: hash and compare; mismatch → refuse.
+    - Without the env var: warn once and allow load (backward compat).
+    """
+    global _pickle_hash_warned
+    if not _STREET_GRAPH_SHA256:
+        if not _pickle_hash_warned:
+            logger.warning(
+                "STREET_GRAPH_SHA256 not set — loading %s without integrity check. "
+                "Set the env var to the expected SHA-256 to enable hash verification.",
+                path,
+            )
+            _pickle_hash_warned = True
+        return True
+    actual = _sha256_of_file(path)
+    if actual != _STREET_GRAPH_SHA256:
+        logger.error(
+            "Refusing to load %s — SHA-256 mismatch (expected %s..., got %s...). "
+            "Pickle deserialization is RCE-by-design; failing closed.",
+            path, _STREET_GRAPH_SHA256[:12], actual[:12],
+        )
+        return False
+    logger.info("%s SHA-256 verified", path.name)
+    return True
+
 
 def _normalize_edge_str(v) -> str:
     """Normalize a bulk-read igraph attribute value to a plain non-None string.
@@ -146,8 +226,9 @@ def _normalize_edge_str(v) -> str:
     Coerce that case to `""` so downstream string ops are always safe.
     """
     if isinstance(v, list):
-        return (v[0] or "") if v else ""
-    return v or ""
+        first = v[0] if v else None
+        return "" if first is None else str(first)
+    return "" if v is None else str(v)
 
 
 def _populate_edge_caches(G: "ig.Graph") -> None:
@@ -155,7 +236,7 @@ def _populate_edge_caches(G: "ig.Graph") -> None:
     and service edges are filtered. Subsequent routing reads index these lists
     instead of doing per-edge igraph attribute lookups."""
     global _edge_names, _edge_highways, _edge_footways, _edge_lengths, _edge_geometries
-    global _edge_sources, _edge_targets
+    global _edge_sources, _edge_targets, _edge_tree_canopy, _edge_park_proximity
     n = G.ecount()
     attrs = G.es.attributes()
     raw_names    = G.es["name"]     if "name"     in attrs else [""]   * n
@@ -171,6 +252,10 @@ def _populate_edge_caches(G: "ig.Graph") -> None:
     edgelist = G.get_edgelist()
     _edge_sources = [u for u, _ in edgelist]
     _edge_targets = [v for _, v in edgelist]
+    # v1 graphml does not carry greenest-routing edge attributes; greenest
+    # falls back to the legacy footway-only discount.
+    _edge_tree_canopy    = None
+    _edge_park_proximity = None
     # Invalidate any cached weight vectors derived from a prior graph load.
     _flavor_weights.clear()
     _combined_weights.clear()
@@ -183,9 +268,14 @@ def _populate_edge_caches_v2(G: "ig.Graph", data: dict) -> None:
     igraph graph (which carries only vertex x/y). Highway/footway strings are
     decoded from int8 codes so downstream string ops (_highway_path_type,
     _build_flavor_weights) need no changes.
+
+    format_version>=3 additionally carries `edge_tree_canopy_f32` +
+    `edge_park_proximity_f32` for the Feature 4 greenest weight function.
+    A v2 pickle (no greenest signals) leaves both arrays as None and the
+    greenest weight falls back to the legacy footway-only discount.
     """
     global _edge_names, _edge_highways, _edge_footways, _edge_lengths, _edge_geometries
-    global _edge_sources, _edge_targets
+    global _edge_sources, _edge_targets, _edge_tree_canopy, _edge_park_proximity
     hw_vocab = data["highway_vocab"]
     fw_vocab = data["footway_vocab"]
     _edge_names      = data["edge_names"]
@@ -195,6 +285,8 @@ def _populate_edge_caches_v2(G: "ig.Graph", data: dict) -> None:
     _edge_sources    = data["edge_sources_i32"]    # numpy int32
     _edge_targets    = data["edge_targets_i32"]    # numpy int32
     _edge_geometries = data["edge_geoms"]          # list[None | np.ndarray int32 (N,2)]
+    _edge_tree_canopy    = data.get("edge_tree_canopy_f32")    # v3+ only
+    _edge_park_proximity = data.get("edge_park_proximity_f32") # v3+ only
     _flavor_weights.clear()
     _combined_weights.clear()
 
@@ -239,17 +331,30 @@ def _load_graph() -> "ig.Graph | None":
         G: "ig.Graph | None" = None
 
         _pickle_data: "dict | None" = None
+        _pickle_integrity_failed = False
         if IGRAPH_PATH.exists():
-            logger.info("Loading igraph artifact from %s ...", IGRAPH_PATH)
-            try:
-                with open(IGRAPH_PATH, "rb") as f:
-                    _pickle_data = pickle.load(f)
-                G = _pickle_data["graph"]
-                logger.info("igraph loaded: %s vertices, %s edges", f"{G.vcount():,}", f"{G.ecount():,}")
-            except (pickle.UnpicklingError, OSError, ValueError, KeyError) as e:
-                logger.warning("igraph pickle failed (%s: %s) — trying graphml fallback", type(e).__name__, e)
-                G = None
-                _pickle_data = None
+            if not _verify_pickle_integrity(IGRAPH_PATH):
+                # Fail closed: do not silently fall through to graphml, because
+                # an attacker who can replace the pickle file may also have
+                # replaced the graphml. Mark load as failed and exit; the
+                # operator must intervene (rotate the artifact, update the
+                # env var, or run without the prebuilt graph).
+                _pickle_integrity_failed = True
+            else:
+                logger.info("Loading igraph artifact from %s ...", IGRAPH_PATH)
+                try:
+                    with open(IGRAPH_PATH, "rb") as f:
+                        _pickle_data = pickle.load(f)
+                    G = _pickle_data["graph"]
+                    logger.info("igraph loaded: %s vertices, %s edges", f"{G.vcount():,}", f"{G.ecount():,}")
+                except (pickle.UnpicklingError, OSError, ValueError, KeyError) as e:
+                    logger.warning("igraph pickle failed (%s: %s) — trying graphml fallback", type(e).__name__, e)
+                    G = None
+                    _pickle_data = None
+
+        if _pickle_integrity_failed:
+            _graph_load_failed = True
+            return None
 
         if G is None:
             if not GRAPH_PATH.exists():
@@ -312,6 +417,31 @@ def _load_graph() -> "ig.Graph | None":
         else:
             _populate_edge_caches(G)
 
+        # Feature 4 chunk 3: fail-fast posture for missing greenest signals.
+        # A v2 pickle / graphml-only load lacks `tree_canopy_score` +
+        # `park_proximity_score` columns, so greenest would silently degrade to
+        # the legacy footway-only discount. That's strictly worse than refusing
+        # to boot the route — operators will notice an unavailable `/route`
+        # quickly, but degraded greenest would ship silently. Matches the
+        # SHA-256 integrity check's "fail closed" posture above.
+        n_edges = G.ecount()
+        canopy_ok = _edge_tree_canopy    is not None and len(_edge_tree_canopy)    == n_edges
+        parks_ok  = _edge_park_proximity is not None and len(_edge_park_proximity) == n_edges
+        if not (canopy_ok and parks_ok):
+            fv = _pickle_data.get("format_version", 1) if _pickle_data else "graphml"
+            logger.error(
+                "Refusing to load %s — greenest routing requires per-edge "
+                "tree_canopy_score + park_proximity_score attributes (Feature 4 "
+                "chunk 1), but canopy_ok=%s parks_ok=%s vs %s edges. "
+                "format_version=%s. Rebuild the pickle: `python fetch_street_graph.py`. "
+                "This guard is intentional — silent degradation of `greenest` is a "
+                "worse outcome than haversine fallback for the whole route flow.",
+                IGRAPH_PATH if _pickle_data is not None else GRAPH_PATH,
+                canopy_ok, parks_ok, n_edges, fv,
+            )
+            _graph_load_failed = True
+            return None
+
         _graph_cache = G
         _last_graph_access = _time.monotonic()
 
@@ -326,6 +456,7 @@ def _evict_graph() -> None:
     global _graph_cache, _coord_kdtree, _vertex_lats, _vertex_lons, _kdtree_to_vertex
     global _edge_names, _edge_highways, _edge_footways, _edge_lengths, _edge_geometries
     global _edge_sources, _edge_targets, _graph_load_failed
+    global _edge_tree_canopy, _edge_park_proximity
 
     with _graph_lock:
         if _graph_cache is None:
@@ -345,6 +476,8 @@ def _evict_graph() -> None:
         _edge_geometries = None
         _edge_sources = None
         _edge_targets = None
+        _edge_tree_canopy = None
+        _edge_park_proximity = None
         _flavor_weights.clear()
         _combined_weights.clear()
         _graph_load_failed = False  # eviction is deliberate; allow reload on next request
@@ -413,13 +546,24 @@ def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "np.ndarray | list[floa
     v2 pickle: returns numpy arrays (vectorized, no string shorthand).
     v1 fallback: may return the string "length" for fastest so igraph uses its
     own internal attribute; other flavors return list[float] as before.
+
+    Greenest (Feature 4): when the v3 pickle's `tree_canopy_score` and
+    `park_proximity_score` columns are present, the weight is
+        L * max(_GREEN_DETOUR_FLOOR,
+                1 - _GREEN_FOOTWAY_WEIGHT * is_footway_or_path
+                  - _GREEN_CANOPY_WEIGHT  * tree_canopy_score
+                  - _GREEN_PARK_WEIGHT    * park_proximity_score)
+    The `max(…, _GREEN_DETOUR_FLOOR)` floor caps any single edge's discount
+    at 0.5×, which keeps the greenest path within ~2× of the fastest distance.
+    When the columns are missing (v1 graphml or v2 pickle), greenest falls
+    back to the legacy footway-only `_GREEN_DISCOUNT` multiplier.
     """
     lengths = _edge_lengths
     if lengths is None:
         return "length"
 
     if isinstance(lengths, np.ndarray):
-        # v2 path — vectorized
+        # v2+ path — vectorized
         if flavor == "fastest":
             return lengths
         if flavor == "fewest_turns":
@@ -427,10 +571,22 @@ def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "np.ndarray | list[floa
         if flavor == "greenest":
             highways = _edge_highways or [""] * len(lengths)
             green_mask = np.array([h in _GREEN_HIGHWAYS for h in highways], dtype=bool)
+            canopy = _edge_tree_canopy
+            parks  = _edge_park_proximity
+            if canopy is not None and parks is not None \
+                    and len(canopy) == len(lengths) and len(parks) == len(lengths):
+                # v3: combined discount, with a per-edge 0.5× detour floor.
+                discount = 1.0 \
+                    - _GREEN_FOOTWAY_WEIGHT * green_mask.astype(np.float32) \
+                    - _GREEN_CANOPY_WEIGHT  * canopy.astype(np.float32) \
+                    - _GREEN_PARK_WEIGHT    * parks.astype(np.float32)
+                np.maximum(discount, _GREEN_DETOUR_FLOOR, out=discount)
+                return lengths * discount
+            # v2 fallback: legacy footway-only discount.
             return np.where(green_mask, lengths * _GREEN_DISCOUNT, lengths)
         return lengths
 
-    # v1 fallback — list[float] path
+    # v1 graphml fallback — list[float] path. Greenest signals never present.
     if flavor == "fastest":
         return "length"
     if flavor == "fewest_turns":
@@ -569,53 +725,6 @@ def _build_minutes(
         return _haversine_walk_minutes(origin_lat, origin_lon, dest_lat, dest_lon)
 
 
-def _path_coords_from_path(vpath: tuple, epath: tuple) -> tuple:
-    """Build the same coordinate sequence as `_build_path` from a known vpath/epath.
-
-    Reads geometry from the cached `_edge_geometries` column. The cache is
-    populated unconditionally inside `_load_graph`, so any caller that has a
-    routed `vpath`/`epath` is guaranteed to see a populated cache.
-    """
-    if len(vpath) < 2:
-        return ()
-
-    geoms = _edge_geometries
-
-    result_coords: list[tuple[float, float]] = []
-    for eid, u, v in zip(epath, vpath, vpath[1:]):
-        geom_raw = geoms[eid]
-
-        if geom_raw is not None:
-            # v2: int32 array scaled by 1e5; v1: list of (lon, lat) float tuples.
-            # Decode int32 to float64 on the fly — result is a temporary (N,2) array.
-            geom_coords = geom_raw / 1e5 if isinstance(geom_raw, np.ndarray) else geom_raw
-            u_lon = _vertex_lons[u]
-            u_lat = _vertex_lats[u]
-            du_start = (geom_coords[0][0] - u_lon)**2 + (geom_coords[0][1] - u_lat)**2
-            du_end   = (geom_coords[-1][0] - u_lon)**2 + (geom_coords[-1][1] - u_lat)**2
-            # Iterate forward or reverse without copying the geometry array.
-            reverse = bool(du_start > du_end)
-            n = len(geom_coords)
-            head_idx = n - 1 if reverse else 0
-            head_lon, head_lat = float(geom_coords[head_idx][0]), float(geom_coords[head_idx][1])
-            first = (head_lat, head_lon)
-            last  = result_coords[-1] if result_coords else None
-            skip_first = bool(last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9)
-            if reverse:
-                rng = range(n - 2, -1, -1) if skip_first else range(n - 1, -1, -1)
-            else:
-                rng = range(1, n) if skip_first else range(n)
-            for j in rng:
-                lon, lat = float(geom_coords[j][0]), float(geom_coords[j][1])
-                result_coords.append((lat, lon))
-        else:
-            if not result_coords:
-                result_coords.append((_vertex_lats[u], _vertex_lons[u]))
-            result_coords.append((_vertex_lats[v], _vertex_lons[v]))
-
-    return tuple(result_coords)
-
-
 def _build_directions(
     origin_lat: float,
     origin_lon: float,
@@ -635,7 +744,8 @@ def _build_directions(
         vpath, epath = path
         if len(vpath) < 2:
             return ()
-        return _directions_from_path(vpath, epath)
+        _, directions = _build_path_and_directions(vpath, epath)
+        return directions
 
     except Exception as e:
         logger.warning("walk_directions fallback: %s: %s", type(e).__name__, e)
@@ -666,7 +776,8 @@ def _build_path(
         vpath, epath = path
         if len(vpath) < 2:
             return ((origin_lat, origin_lon), (dest_lat, dest_lon))
-        return _path_coords_from_path(vpath, epath)
+        coords, _ = _build_path_and_directions(vpath, epath)
+        return coords
 
     except Exception as e:
         logger.error("routing failed: %s: %s", type(e).__name__, e)
@@ -879,74 +990,13 @@ def compute_route_with_prefs(
 _CARDINAL_DIRS: tuple[str, ...] = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 
 
-def _directions_from_path(vpath: tuple, epath: tuple) -> tuple:
-    """Build the same direction-step tuples as _build_directions from a known vpath/epath.
-
-    Reads names/highways/footways/lengths from the per-edge cache columns,
-    which `_load_graph` populates unconditionally — any caller that has a
-    routed `vpath`/`epath` is guaranteed to see populated columns.
-    """
-    if len(vpath) < 2:
-        return ()
-
-    names_col    = _edge_names
-    highways_col = _edge_highways
-    footways_col = _edge_footways
-    lengths_col  = _edge_lengths
-
-    raw: list[tuple[str, str, float, int, int]] = []
-    for eid, u, v in zip(epath, vpath, vpath[1:]):
-        name = names_col[eid].strip()
-        path_type = "" if name else _highway_path_type(highways_col[eid], footways_col[eid])
-        length = float(lengths_col[eid])
-        raw.append((name, path_type, length, u, v))
-
-    steps: list[dict] = []
-    i = 0
-    n = len(raw)
-    while i < n:
-        name, path_type = raw[i][0], raw[i][1]
-        total_length = 0.0
-        edge_count = 0
-        start_v = raw[i][3]
-        end_v = raw[i][4]
-        while i < n and raw[i][0] == name and raw[i][1] == path_type:
-            total_length += raw[i][2]
-            edge_count   += 1
-            end_v = raw[i][4]
-            i += 1
-        lat1, lon1 = _vertex_lats[start_v], _vertex_lons[start_v]
-        lat2, lon2 = _vertex_lats[end_v],   _vertex_lons[end_v]
-        minutes = round(total_length / WALKING_SPEED_MPS / 60, 1)
-        # Scale the longitude delta by cos(lat) so the cardinal classification
-        # matches physical bearing — without this, ~5° of true headings near
-        # the inter-cardinal boundaries flip to the wrong cardinal at Chicago lat.
-        cos_lat = math.cos(math.radians(lat1))
-        deg = math.degrees(math.atan2((lon2 - lon1) * cos_lat, lat2 - lat1)) % 360
-        cardinal = _CARDINAL_DIRS[round(deg / 45) % 8]
-        avg_edge_m = total_length / edge_count
-        is_long  = avg_edge_m >= _BLOCK_TYPE_THRESHOLD
-        block_m  = _LONG_BLOCK_METERS if is_long else _SHORT_BLOCK_METERS
-        blocks   = max(0.5, round(total_length / block_m * 2) / 2)
-        steps.append({
-            "street":         name,
-            "path_type":      path_type,
-            "direction":      cardinal,
-            "direction_full": _DIRECTION_FULL.get(cardinal, cardinal),
-            "blocks":         blocks,
-            "block_type":     "long" if is_long else "short",
-            "minutes":        minutes,
-            "distance_meters": round(total_length, 1),
-        })
-    return tuple(steps)
-
-
 def _build_path_and_directions(vpath: tuple, epath: tuple) -> "tuple[tuple, tuple]":
     """Single epath traversal that emits both the coordinate path and direction-step tuples.
 
-    Replaces two independent passes over the same edges (`_path_coords_from_path`
-    and `_directions_from_path`) with one combined walk. Output is identical to
-    calling both helpers in sequence.
+    The sole `(vpath, epath) -> (coords, directions)` builder. `_build_path` and
+    `_build_directions` route the routed case through here and pick the half
+    they need; the haversine-fallback case in both callers builds its return
+    value inline.
     """
     if len(vpath) < 2:
         return ((), ())

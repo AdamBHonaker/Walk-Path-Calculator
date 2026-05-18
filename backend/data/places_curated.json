@@ -3,8 +3,8 @@
     "sources": [
       {
         "name": "cpl_locations",
-        "url": "https://data.cityofchicago.org/resource/x8fc-8rcq.json",
-        "fetched_at": "2026-05-06T05:42:20Z",
+        "url": "https://data.cityofchicago.org/api/v3/views/x8fc-8rcq/query.json",
+        "fetched_at": "2026-05-12T08:12:04Z",
         "count": 81
       },
       {
@@ -12,11 +12,245 @@
         "url": "https://data.cityofchicago.org/resource/i8y3-ytj4.json",
         "fetched_at": "2026-05-06T05:42:21Z",
         "count": 24
+      },
+      {
+        "name": "cps_schools",
+        "url": "https://data.cityofchicago.org/api/v3/views/p83k-txqt/query.json",
+        "fetched_at": "2026-05-12T08:19:23Z",
+        "count": 650
+      },
+      {
+        "name": "cpd_stations",
+        "url": "https://data.cityofchicago.org/api/v3/views/z8bn-74gv/query.json",
+        "fetched_at": "2026-05-12T08:19:30Z",
+        "count": 23
+      },
+      {
+        "name": "cfd_stations",
+        "url": "https://data.cityofchicago.org/api/v3/views/28km-gtjn/query.json",
+        "fetched_at": "2026-05-12T08:19:42Z",
+        "count": 92
       }
     ],
-    "count": 105
+    "count": 870
   },
   "places": [
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Bridgeport Farmers Market (35th & Wallace)",
+      "lat": 41.830703,
+      "lon": -87.641442,
+      "address": "35th & Wallace",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Beverly Farmers Market (W 95th St & S Longwood Dr)",
+      "lat": 41.721123,
+      "lon": -87.66914,
+      "address": "W 95th St & S Longwood Dr",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Daley Plaza Farmers Market (W Washington St & N Dearborn St)",
+      "lat": 41.883462,
+      "lon": -87.630012,
+      "address": "W Washington St & N Dearborn St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Federal Plaza Farmers Market (W Adams St & S Dearborn St)",
+      "lat": 41.879122,
+      "lon": -87.629617,
+      "address": "W Adams St & S Dearborn St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Pullman Farmers Market (E 111th Pl & S Cottage Grove Ave)",
+      "lat": 41.691825,
+      "lon": -87.610065,
+      "address": "E 111th Pl & S Cottage Grove Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Hyde Park Farmers Market (53rd & Hyde Park)",
+      "lat": 41.799948,
+      "lon": -87.583658,
+      "address": "53rd & Hyde Park",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Lincoln Park Farmers Market (W Armitage Ave & N Orchard St)",
+      "lat": 41.918214,
+      "lon": -87.646118,
+      "address": "W Armitage Ave & N Orchard St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Lincoln Square Farmers Market (W Leland Ave & N Western Ave)",
+      "lat": 41.966484,
+      "lon": -87.68875,
+      "address": "W Leland Ave & N Western Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Museum of Contemporary Art/Streeterville Farmers Market (E Chicago Ave & N Mies Van Der Rohe Way)",
+      "lat": 41.896769,
+      "lon": -87.621831,
+      "address": "E Chicago Ave & N Mies Van Der Rohe Way",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Division Street Farmers Market (W Division St & N Dearborn St)",
+      "lat": 41.903923,
+      "lon": -87.629986,
+      "address": "W Division St & N Dearborn St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Garfield Park Conservatory Farmers Market (300 N. Central Park)",
+      "lat": 41.885319,
+      "lon": -87.717682,
+      "address": "300 N. Central Park",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Northcenter Farmers Market (W Belle Plaine Ave & N Damen Ave)",
+      "lat": 41.955976,
+      "lon": -87.679102,
+      "address": "W Belle Plaine Ave & N Damen Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Argyle Market Farmers Market (Argyle and Broadway)",
+      "lat": 41.972578,
+      "lon": -87.65948,
+      "address": "Argyle and Broadway",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Printer's Row Farmers Market (S Dearborn St & W Polk St)",
+      "lat": 41.872282,
+      "lon": -87.629129,
+      "address": "S Dearborn St & W Polk St",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "South Shore Farmers Market (77th and Lake Michigan)",
+      "lat": 41.75881,
+      "lon": -87.549731,
+      "address": "77th and Lake Michigan",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Willis Tower Plaza Farmers Market (W Jackson Blvd & S Wacker Dr)",
+      "lat": 41.877344,
+      "lon": -87.63662,
+      "address": "W Jackson Blvd & S Wacker Dr",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Wicker Park & Bucktown Farmers Market (N Wicker Park & Damen Ave)",
+      "lat": 41.910487,
+      "lon": -87.677444,
+      "address": "N Wicker Park & Damen Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "West Humboldt Park Farmers Market & Bazaar Farmers Market (3601 W Chicago Ave)",
+      "lat": 41.89528,
+      "lon": -87.716571,
+      "address": "3601 W Chicago Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Southport Market Farmers Market (1420 West Grace (Blaine School))",
+      "lat": 41.950763,
+      "lon": -87.664725,
+      "address": "1420 West Grace (Blaine School)",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Logan Square Night Market Farmers Market (3107 W Logan Blvd)",
+      "lat": 41.928414,
+      "lon": -87.705367,
+      "address": "3107 W Logan Blvd",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "La Follette Park Farmers Market (1333 N Laramie Ave)",
+      "lat": 41.905049,
+      "lon": -87.755553,
+      "address": "1333 N Laramie Ave",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Columbus Park Farmers Market (Harrison & Central)",
+      "lat": 41.872636,
+      "lon": -87.76501,
+      "address": "Harrison & Central",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Austin Town Center Farmers Market (Lake & Central)",
+      "lat": 41.887841,
+      "lon": -87.765253,
+      "address": "Lake & Central",
+      "_source": "farmers_markets_2013"
+    },
+    {
+      "category": "grocery",
+      "subcategory": "farmers_market",
+      "name": "Devon Community Monthly Market Farmers Market (2720 W Devon)",
+      "lat": 41.99781,
+      "lon": -87.697437,
+      "address": "2720 W Devon",
+      "_source": "farmers_markets_2013"
+    },
     {
       "category": "libraries",
       "subcategory": null,
@@ -747,220 +981,6889 @@
       "_source": "cpl_locations"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Bridgeport Farmers Market (35th & Wallace)",
-      "lat": 41.830703,
-      "lon": -87.641442,
-      "address": "35th & Wallace",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bronzeville Classical",
+      "lat": 41.819249,
+      "lon": -87.626621,
+      "address": "8 W Root St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Beverly Farmers Market (W 95th St & S Longwood Dr)",
-      "lat": 41.721123,
-      "lon": -87.66914,
-      "address": "W 95th St & S Longwood Dr",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Chicagoquest Hs",
+      "lat": 41.907797,
+      "lon": -87.645561,
+      "address": "1443 N Ogden Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Daley Plaza Farmers Market (W Washington St & N Dearborn St)",
-      "lat": 41.883462,
-      "lon": -87.630012,
-      "address": "W Washington St & N Dearborn St",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Great Lakes",
+      "lat": 41.742671,
+      "lon": -87.559907,
+      "address": "8401 S Saginaw Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Federal Plaza Farmers Market (W Adams St & S Dearborn St)",
-      "lat": 41.879122,
-      "lon": -87.629617,
-      "address": "W Adams St & S Dearborn St",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lasalle",
+      "lat": 41.9139,
+      "lon": -87.637565,
+      "address": "1734 N Orleans St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Pullman Farmers Market (E 111th Pl & S Cottage Grove Ave)",
-      "lat": 41.691825,
-      "lon": -87.610065,
-      "address": "E 111th Pl & S Cottage Grove Ave",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kelvyn Park Hs",
+      "lat": 41.927918,
+      "lon": -87.735999,
+      "address": "4343 W Wrightwood Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Hyde Park Farmers Market (53rd & Hyde Park)",
-      "lat": 41.799948,
-      "lon": -87.583658,
-      "address": "53rd & Hyde Park",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Chatham",
+      "lat": 41.730131,
+      "lon": -87.60698,
+      "address": "9035 S Langley Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Lincoln Park Farmers Market (W Armitage Ave & N Orchard St)",
-      "lat": 41.918214,
-      "lon": -87.646118,
-      "address": "W Armitage Ave & N Orchard St",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Solomon",
+      "lat": 41.993942,
+      "lon": -87.724043,
+      "address": "6206 N Hamlin Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Lincoln Square Farmers Market (W Leland Ave & N Western Ave)",
-      "lat": 41.966484,
-      "lon": -87.68875,
-      "address": "W Leland Ave & N Western Ave",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hughes C",
+      "lat": 41.860518,
+      "lon": -87.731777,
+      "address": "4247 W 15Th St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Museum of Contemporary Art/Streeterville Farmers Market (E Chicago Ave & N Mies Van Der Rohe Way)",
-      "lat": 41.896769,
-      "lon": -87.621831,
-      "address": "E Chicago Ave & N Mies Van Der Rohe Way",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Henderson",
+      "lat": 41.790591,
+      "lon": -87.671887,
+      "address": "5650 S Wolcott Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Division Street Farmers Market (W Division St & N Dearborn St)",
-      "lat": 41.903923,
-      "lon": -87.629986,
-      "address": "W Division St & N Dearborn St",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ombudsman - West Hs",
+      "lat": 41.874673,
+      "lon": -87.687842,
+      "address": "2401 W. Congress Pkwy",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Garfield Park Conservatory Farmers Market (300 N. Central Park)",
-      "lat": 41.885319,
-      "lon": -87.717682,
-      "address": "300 N. Central Park",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Corkery",
+      "lat": 41.845602,
+      "lon": -87.731193,
+      "address": "2510 S Kildare Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Northcenter Farmers Market (W Belle Plaine Ave & N Damen Ave)",
-      "lat": 41.955976,
-      "lon": -87.679102,
-      "address": "W Belle Plaine Ave & N Damen Ave",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Young Es",
+      "lat": 41.906791,
+      "lon": -87.767143,
+      "address": "1434 N Parkside Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Argyle Market Farmers Market (Argyle and Broadway)",
-      "lat": 41.972578,
-      "lon": -87.65948,
-      "address": "Argyle and Broadway",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Columbia Explorers",
+      "lat": 41.811069,
+      "lon": -87.704199,
+      "address": "4520 S Kedzie Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Printer's Row Farmers Market (S Dearborn St & W Polk St)",
-      "lat": 41.872282,
-      "lon": -87.629129,
-      "address": "S Dearborn St & W Polk St",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chappell",
+      "lat": 41.975894,
+      "lon": -87.683264,
+      "address": "2135 W Foster Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "South Shore Farmers Market (77th and Lake Michigan)",
-      "lat": 41.75881,
-      "lon": -87.549731,
-      "address": "77th and Lake Michigan",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Global Citizenship",
+      "lat": 41.807579,
+      "lon": -87.740097,
+      "address": "4647 W 47Th St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Willis Tower Plaza Farmers Market (W Jackson Blvd & S Wacker Dr)",
-      "lat": 41.877344,
-      "lon": -87.63662,
-      "address": "W Jackson Blvd & S Wacker Dr",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mcdowell",
+      "lat": 41.733132,
+      "lon": -87.58959,
+      "address": "1419 E 89Th St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Wicker Park & Bucktown Farmers Market (N Wicker Park & Damen Ave)",
-      "lat": 41.910487,
-      "lon": -87.677444,
-      "address": "N Wicker Park & Damen Ave",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Addams",
+      "lat": 41.857208,
+      "lon": -87.644888,
+      "address": "1814 S Union Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "West Humboldt Park Farmers Market & Bazaar Farmers Market (3601 W Chicago Ave)",
-      "lat": 41.89528,
-      "lon": -87.716571,
-      "address": "3601 W Chicago Ave",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Stevenson",
+      "lat": 41.747107,
+      "lon": -87.731666,
+      "address": "8010 S Kostner Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Southport Market Farmers Market (1420 West Grace (Blaine School))",
-      "lat": 41.950763,
-      "lon": -87.664725,
-      "address": "1420 West Grace (Blaine School)",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pilsen",
+      "lat": 41.858849,
+      "lon": -87.662209,
+      "address": "1420 W 17Th St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Logan Square Night Market Farmers Market (3107 W Logan Blvd)",
-      "lat": 41.928414,
-      "lon": -87.705367,
-      "address": "3107 W Logan Blvd",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brown R",
+      "lat": 41.664873,
+      "lon": -87.638958,
+      "address": "12607 S Union Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "La Follette Park Farmers Market (1333 N Laramie Ave)",
-      "lat": 41.905049,
-      "lon": -87.755553,
-      "address": "1333 N Laramie Ave",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Curie Hs",
+      "lat": 41.80306,
+      "lon": -87.722042,
+      "address": "4959 S Archer Ave",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Columbus Park Farmers Market (Harrison & Central)",
-      "lat": 41.872636,
-      "lon": -87.76501,
-      "address": "Harrison & Central",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Clark Hs",
+      "lat": 41.872885,
+      "lon": -87.753325,
+      "address": "5101 W Harrison St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Austin Town Center Farmers Market (Lake & Central)",
-      "lat": 41.887841,
-      "lon": -87.765253,
-      "address": "Lake & Central",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jackson M",
+      "lat": 41.734125,
+      "lon": -87.646767,
+      "address": "917 W 88Th St",
+      "_source": "cps_schools"
     },
     {
-      "category": "grocery",
-      "subcategory": "farmers_market",
-      "name": "Devon Community Monthly Market Farmers Market (2720 W Devon)",
-      "lat": 41.99781,
-      "lon": -87.697437,
-      "address": "2720 W Devon",
-      "_source": "farmers_markets_2013"
+      "category": "schools",
+      "subcategory": null,
+      "name": "Camelot - Excel South Shore Hs",
+      "lat": 41.759749,
+      "lon": -87.556487,
+      "address": "7530 S South Shore Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Burr",
+      "lat": 41.912358,
+      "lon": -87.668661,
+      "address": "1621 W Wabansia Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Esmond",
+      "lat": 41.68942,
+      "lon": -87.669159,
+      "address": "1865 W Montvale Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gregory",
+      "lat": 41.870742,
+      "lon": -87.718666,
+      "address": "3715 W Polk St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chiarts Hs",
+      "lat": 41.899377,
+      "lon": -87.694945,
+      "address": "2714 W Augusta Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pulaski",
+      "lat": 41.918486,
+      "lon": -87.683801,
+      "address": "2230 W Mclean Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Prosser Hs",
+      "lat": 41.920059,
+      "lon": -87.761048,
+      "address": "2148 N Long Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cooper",
+      "lat": 41.856031,
+      "lon": -87.667227,
+      "address": "1624 W 19Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mann",
+      "lat": 41.748274,
+      "lon": -87.574816,
+      "address": "8050 S Chappel Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Garvey",
+      "lat": 41.706603,
+      "lon": -87.647577,
+      "address": "10309 S Morgan St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sandoval",
+      "lat": 41.792346,
+      "lon": -87.710987,
+      "address": "5534 S Saint Louis Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Solorio Hs",
+      "lat": 41.795201,
+      "lon": -87.711059,
+      "address": "5400 S St Louis Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ebinger",
+      "lat": 42.004408,
+      "lon": -87.81117,
+      "address": "7350 W Pratt Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bradwell",
+      "lat": 41.754365,
+      "lon": -87.557142,
+      "address": "7736 S Burnham Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Collins Hs",
+      "lat": 41.864149,
+      "lon": -87.702042,
+      "address": "1313 S Sacramento Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Irving Park",
+      "lat": 41.950891,
+      "lon": -87.710492,
+      "address": "3820 N Spaulding Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mayer",
+      "lat": 41.923204,
+      "lon": -87.657287,
+      "address": "2250 N Clifton Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Fairfield",
+      "lat": 41.780904,
+      "lon": -87.692115,
+      "address": "6201 S Fairfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Tech Hs",
+      "lat": 41.863301,
+      "lon": -87.659095,
+      "address": "1301 W 14Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Morton",
+      "lat": 41.889178,
+      "lon": -87.705108,
+      "address": "431 N Troy St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "King Es",
+      "lat": 41.765335,
+      "lon": -87.641335,
+      "address": "644 W 71St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Manley Hs",
+      "lat": 41.870939,
+      "lon": -87.699896,
+      "address": "2935 W Polk St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Albany Park",
+      "lat": 41.971504,
+      "lon": -87.710609,
+      "address": "4929 N Sawyer Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Shields",
+      "lat": 41.815909,
+      "lon": -87.689647,
+      "address": "4250 S Rockwell St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hitch",
+      "lat": 41.983672,
+      "lon": -87.779123,
+      "address": "5625 N Mcvicker Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Johnson",
+      "lat": 41.861836,
+      "lon": -87.703139,
+      "address": "1420 S Albany Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Taft Hs",
+      "lat": 41.982961,
+      "lon": -87.791547,
+      "address": "6530 W Bryn Mawr Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Julian Hs",
+      "lat": 41.705859,
+      "lon": -87.653749,
+      "address": "10330 S Elizabeth St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Blair",
+      "lat": 41.776556,
+      "lon": -87.790604,
+      "address": "6751 W 63Rd Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Avalon Park",
+      "lat": 41.748247,
+      "lon": -87.591654,
+      "address": "8045 S Kenwood Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Polaris",
+      "lat": 41.89255,
+      "lon": -87.707796,
+      "address": "620 N Sawyer Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "West Park",
+      "lat": 41.906907,
+      "lon": -87.732443,
+      "address": "1425 N Tripp Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Learn - Excel",
+      "lat": 41.88732,
+      "lon": -87.702071,
+      "address": "3021 W Carroll Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Franklin",
+      "lat": 41.9066,
+      "lon": -87.635513,
+      "address": "225 W Evergreen Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Grissom",
+      "lat": 41.662481,
+      "lon": -87.553307,
+      "address": "12810 S Escanaba Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Harte",
+      "lat": 41.793447,
+      "lon": -87.586855,
+      "address": "1556 E 56Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Stagg",
+      "lat": 41.758925,
+      "lon": -87.649217,
+      "address": "7424 S Morgan St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Washington H Es",
+      "lat": 41.728534,
+      "lon": -87.596257,
+      "address": "9130 S University Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Perspectives - Leadership Hs",
+      "lat": 41.738791,
+      "lon": -87.626501,
+      "address": "8522 S Lafayette Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Legacy",
+      "lat": 41.856962,
+      "lon": -87.708508,
+      "address": "3318 W Ogden Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Decatur",
+      "lat": 42.009289,
+      "lon": -87.704619,
+      "address": "7030 N Sacramento Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Till",
+      "lat": 41.775424,
+      "lon": -87.609357,
+      "address": "6543 S Champlain Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Tamayo",
+      "lat": 41.79993,
+      "lon": -87.693862,
+      "address": "5135 S California Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Wrightwood",
+      "lat": 41.745365,
+      "lon": -87.692614,
+      "address": "8130 S California Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Black",
+      "lat": 41.729692,
+      "lon": -87.576643,
+      "address": "9101 S Euclid Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jefferson Hs",
+      "lat": 41.867832,
+      "lon": -87.680418,
+      "address": "1100 S Hamilton Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Locke J",
+      "lat": 41.931762,
+      "lon": -87.795604,
+      "address": "2828 N Oak Park Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ward J",
+      "lat": 41.84398,
+      "lon": -87.635356,
+      "address": "2701 S Shields Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Learn - Middle",
+      "lat": 41.88732,
+      "lon": -87.702724,
+      "address": "3021 W Carroll Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Multicultural Hs",
+      "lat": 41.835282,
+      "lon": -87.735283,
+      "address": "3120 S Kostner Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Goode Hs",
+      "lat": 41.75375,
+      "lon": -87.707345,
+      "address": "7651 S Homan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Westinghouse Hs",
+      "lat": 41.889977,
+      "lon": -87.707332,
+      "address": "3223 W Franklin Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hoyne",
+      "lat": 41.733338,
+      "lon": -87.568228,
+      "address": "8905 S Crandon Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Casals",
+      "lat": 41.904503,
+      "lon": -87.714234,
+      "address": "3501 W Potomac Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Belding",
+      "lat": 41.958938,
+      "lon": -87.73402,
+      "address": "4257 N Tripp Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mcnair",
+      "lat": 41.897819,
+      "lon": -87.746731,
+      "address": "4820 W Walton St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ryder",
+      "lat": 41.735379,
+      "lon": -87.638843,
+      "address": "8716 S Wallace St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Washington Hs",
+      "lat": 41.688137,
+      "lon": -87.53757,
+      "address": "3535 E 114Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brighton Park",
+      "lat": 41.8239,
+      "lon": -87.692077,
+      "address": "3825 S Washtenaw Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sadlowski",
+      "lat": 41.704859,
+      "lon": -87.527985,
+      "address": "3930 E 105Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bass",
+      "lat": 41.774246,
+      "lon": -87.653532,
+      "address": "1140 W 66Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hope Learning Academy",
+      "lat": 41.883362,
+      "lon": -87.668077,
+      "address": "1628 W Washington",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Oriole Park",
+      "lat": 41.978501,
+      "lon": -87.812054,
+      "address": "5424 N Oketo Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "U Of C - Woodlawn Hs",
+      "lat": 41.780412,
+      "lon": -87.59738,
+      "address": "6300 S University Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Truman",
+      "lat": 41.965295,
+      "lon": -87.659239,
+      "address": "1145 W Wilson Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ogden Hs",
+      "lat": 41.893548,
+      "lon": -87.659405,
+      "address": "1250 W Erie St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Telpochcalli",
+      "lat": 41.847947,
+      "lon": -87.696006,
+      "address": "2832 W 24Th Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Norwood Park",
+      "lat": 41.988153,
+      "lon": -87.802979,
+      "address": "5900 N Nina Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hay",
+      "lat": 41.899171,
+      "lon": -87.755813,
+      "address": "1018 N Laramie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sullivan Hs",
+      "lat": 42.002688,
+      "lon": -87.669192,
+      "address": "6631 N Bosworth Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Carter",
+      "lat": 41.789828,
+      "lon": -87.622453,
+      "address": "5740 S Michigan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Foster Park",
+      "lat": 41.738425,
+      "lon": -87.668099,
+      "address": "8530 S Wood St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Prussing",
+      "lat": 41.965619,
+      "lon": -87.772414,
+      "address": "4650 N Menard Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Bond",
+      "lat": 41.653663,
+      "lon": -87.605039,
+      "address": "13300 S Langley Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hamline",
+      "lat": 41.807242,
+      "lon": -87.661175,
+      "address": "4747 S Bishop St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Scholastic Achievement",
+      "lat": 41.880447,
+      "lon": -87.742539,
+      "address": "4651 W Madison St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dixon",
+      "lat": 41.743669,
+      "lon": -87.609979,
+      "address": "8306 S Saint Lawrence Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Golder Hs",
+      "lat": 41.895282,
+      "lon": -87.664483,
+      "address": "1454 W Superior St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Burnside",
+      "lat": 41.728481,
+      "lon": -87.607435,
+      "address": "650 E 91St Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Skinner",
+      "lat": 41.879103,
+      "lon": -87.659419,
+      "address": "1260 W Adams St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Thorp J",
+      "lat": 41.733324,
+      "lon": -87.54428,
+      "address": "8914 S Buffalo Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Northside Prep Hs",
+      "lat": 41.981315,
+      "lon": -87.708708,
+      "address": "5501 N Kedzie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Agassiz",
+      "lat": 41.934126,
+      "lon": -87.656229,
+      "address": "2851 N Seminary Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lindblom Hs",
+      "lat": 41.782041,
+      "lon": -87.671662,
+      "address": "6130 S Wolcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Plamondon",
+      "lat": 41.860259,
+      "lon": -87.692526,
+      "address": "2642 W 15Th Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Harvard",
+      "lat": 41.757341,
+      "lon": -87.632737,
+      "address": "7525 S Harvard",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Madison",
+      "lat": 41.759548,
+      "lon": -87.590712,
+      "address": "7433 S Dorchester Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Disney Ii Hs",
+      "lat": 41.952488,
+      "lon": -87.721364,
+      "address": "3900 N Lawndale Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Budlong",
+      "lat": 41.975754,
+      "lon": -87.696556,
+      "address": "2701 W Foster Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Art In Motion",
+      "lat": 41.760034,
+      "lon": -87.583328,
+      "address": "7415 S East End Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dirksen",
+      "lat": 41.973715,
+      "lon": -87.841041,
+      "address": "8601 W Foster Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "New Sullivan",
+      "lat": 41.743829,
+      "lon": -87.542928,
+      "address": "8331 S Mackinaw Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Christopher House",
+      "lat": 41.922181,
+      "lon": -87.757522,
+      "address": "5235 W Belden Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Clay",
+      "lat": 41.654558,
+      "lon": -87.544614,
+      "address": "13231 S Burley Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Payton Hs",
+      "lat": 41.901575,
+      "lon": -87.635385,
+      "address": "1034 N Wells St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pritzker",
+      "lat": 41.907053,
+      "lon": -87.677761,
+      "address": "2009 W Schiller St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hurley",
+      "lat": 41.766785,
+      "lon": -87.719541,
+      "address": "3849 W 69Th Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Courtenay",
+      "lat": 41.962308,
+      "lon": -87.663853,
+      "address": "4420 N Beacon St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Progressive Leadership",
+      "lat": 41.77417,
+      "lon": -87.615842,
+      "address": "6620 S Dr Martin Luther King Jr Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jungman",
+      "lat": 41.858065,
+      "lon": -87.652302,
+      "address": "1746 S Miller St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Spencer",
+      "lat": 41.884876,
+      "lon": -87.750445,
+      "address": "214 N Lavergne Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lasalle Ii",
+      "lat": 41.902914,
+      "lon": -87.673696,
+      "address": "1148 N Honore St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Phillips Hs",
+      "lat": 41.82388,
+      "lon": -87.619796,
+      "address": "244 E Pershing Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Morrill",
+      "lat": 41.784313,
+      "lon": -87.688549,
+      "address": "6011 S Rockwell St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Fernwood",
+      "lat": 41.711184,
+      "lon": -87.640414,
+      "address": "10041 S Union Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Muchin Hs",
+      "lat": 41.88274,
+      "lon": -87.626338,
+      "address": "1 N State St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Disney Ii Es",
+      "lat": 41.950461,
+      "lon": -87.730678,
+      "address": "3815 N Kedvale Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Caldwell",
+      "lat": 41.739226,
+      "lon": -87.580729,
+      "address": "8546 S Cregier Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gale",
+      "lat": 42.021091,
+      "lon": -87.671939,
+      "address": "1631 W Jonquil Ter",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Reavis",
+      "lat": 41.804174,
+      "lon": -87.604925,
+      "address": "834 E 50Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gage Park Hs",
+      "lat": 41.791013,
+      "lon": -87.688954,
+      "address": "5630 S Rockwell St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Moos",
+      "lat": 41.912505,
+      "lon": -87.696941,
+      "address": "1711 N California Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Latino Youth",
+      "lat": 41.854665,
+      "lon": -87.69543,
+      "address": "2001 S California Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Harlan Hs",
+      "lat": 41.718372,
+      "lon": -87.620623,
+      "address": "9652 S Michigan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nettelhorst",
+      "lat": 41.941637,
+      "lon": -87.644561,
+      "address": "3252 N Broadway St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Camelot - Excel Southwest Hs",
+      "lat": 41.764988,
+      "lon": -87.690957,
+      "address": "7050 S Washtenaw Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Columbus",
+      "lat": 41.899566,
+      "lon": -87.681938,
+      "address": "1003 N Leavitt St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Parker",
+      "lat": 41.77078,
+      "lon": -87.634086,
+      "address": "6800 S Stewart Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Locke A",
+      "lat": 41.877248,
+      "lon": -87.705235,
+      "address": "3141 W Jackson Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Turner-Drew",
+      "lat": 41.725609,
+      "lon": -87.630164,
+      "address": "9300 S Princeton Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Waters",
+      "lat": 41.964365,
+      "lon": -87.691333,
+      "address": "4540 N Campbell Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Talman",
+      "lat": 41.794048,
+      "lon": -87.690261,
+      "address": "5450 S Talman Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Haines",
+      "lat": 41.849958,
+      "lon": -87.633806,
+      "address": "247 W 23Rd Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Drw Hs",
+      "lat": 41.869328,
+      "lon": -87.711654,
+      "address": "931 S Homan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bridge",
+      "lat": 41.949114,
+      "lon": -87.798669,
+      "address": "3800 N New England Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Greene",
+      "lat": 41.829669,
+      "lon": -87.671492,
+      "address": "3525 S Honore St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Funston",
+      "lat": 41.917617,
+      "lon": -87.716892,
+      "address": "2010 N Central Park Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chalmers",
+      "lat": 41.866435,
+      "lon": -87.695259,
+      "address": "2745 W Roosevelt Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ray",
+      "lat": 41.792348,
+      "lon": -87.594752,
+      "address": "5631 S Kimbark Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Avalon/South Shore",
+      "lat": 41.743179,
+      "lon": -87.587928,
+      "address": "1501 E 83Rd Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Langford",
+      "lat": 41.784681,
+      "lon": -87.657169,
+      "address": "6010 S Throop St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Bulls Hs",
+      "lat": 41.878809,
+      "lon": -87.678195,
+      "address": "2040 W Adams St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Marquette",
+      "lat": 41.773881,
+      "lon": -87.69703,
+      "address": "6550 S Richmond St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Vocational Hs",
+      "lat": 41.737174,
+      "lon": -87.573268,
+      "address": "2100 E 87Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Whitney",
+      "lat": 41.84008,
+      "lon": -87.725546,
+      "address": "2815 S Komensky Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Peterson",
+      "lat": 41.981557,
+      "lon": -87.712583,
+      "address": "5510 N Christiana Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Curtis",
+      "lat": 41.685418,
+      "lon": -87.621653,
+      "address": "32 E 115Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cather",
+      "lat": 41.88295,
+      "lon": -87.699187,
+      "address": "2908 W Washington Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lee",
+      "lat": 41.775305,
+      "lon": -87.728884,
+      "address": "6448 S Tripp Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Youth Development",
+      "lat": 41.751377,
+      "lon": -87.641731,
+      "address": "7836 S Union Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Joplin",
+      "lat": 41.749339,
+      "lon": -87.669366,
+      "address": "7931 S Honore St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Marsh",
+      "lat": 41.716588,
+      "lon": -87.552483,
+      "address": "9822 S Exchange Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Byrne",
+      "lat": 41.795031,
+      "lon": -87.791544,
+      "address": "5329 S Oak Park Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lawndale",
+      "lat": 41.86296,
+      "lon": -87.712957,
+      "address": "3500 W Douglas Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dulles",
+      "lat": 41.7799,
+      "lon": -87.617214,
+      "address": "6311 S Calumet Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Learn - 7",
+      "lat": 41.887317,
+      "lon": -87.701417,
+      "address": "3021 W Carroll Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hendricks",
+      "lat": 41.815788,
+      "lon": -87.633664,
+      "address": "4316 S Princeton Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Goudy",
+      "lat": 41.975817,
+      "lon": -87.657912,
+      "address": "5120 N Winthrop Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dewey",
+      "lat": 41.795646,
+      "lon": -87.642652,
+      "address": "5415 S Union Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Galileo",
+      "lat": 41.871255,
+      "lon": -87.653366,
+      "address": "820 S Carpenter St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Comer",
+      "lat": 41.765252,
+      "lon": -87.604164,
+      "address": "7131 South Chicago Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Perspectives - Tech Hs",
+      "lat": 41.737525,
+      "lon": -87.626495,
+      "address": "8522 S Lafayette Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Frazier Prospective",
+      "lat": 41.86698,
+      "lon": -87.727244,
+      "address": "4027 W Grenshaw St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Northside Learning Hs",
+      "lat": 41.982973,
+      "lon": -87.722386,
+      "address": "3730 W Bryn Mawr Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bowen Hs",
+      "lat": 41.734627,
+      "lon": -87.55755,
+      "address": "2710 E 89Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hanson Park",
+      "lat": 41.923955,
+      "lon": -87.761515,
+      "address": "5411 W Fullerton Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gillespie",
+      "lat": 41.725332,
+      "lon": -87.623719,
+      "address": "9301 S State St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Santiago",
+      "lat": 41.900344,
+      "lon": -87.689896,
+      "address": "2510 W Cortez St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Otoole",
+      "lat": 41.774571,
+      "lon": -87.674865,
+      "address": "6550 S Seeley Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Edison",
+      "lat": 41.971506,
+      "lon": -87.709304,
+      "address": "4929 N Sawyer Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Murray",
+      "lat": 41.798535,
+      "lon": -87.59334,
+      "address": "5335 S Kenwood Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Camelot - Safe Es",
+      "lat": 41.753117,
+      "lon": -87.550513,
+      "address": "7530 S South Shore Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Park Manor",
+      "lat": 41.766477,
+      "lon": -87.611546,
+      "address": "7037 S Rhodes Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ericson",
+      "lat": 41.875744,
+      "lon": -87.715804,
+      "address": "3600 W 5Th Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kipp - Ascend",
+      "lat": 41.85837,
+      "lon": -87.721071,
+      "address": "1616 S Avers Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kelly Hs",
+      "lat": 41.818729,
+      "lon": -87.694639,
+      "address": "4136 S California Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Simpson Hs",
+      "lat": 41.864365,
+      "lon": -87.668722,
+      "address": "1321 S Paulina St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Uic Hs",
+      "lat": 41.865817,
+      "lon": -87.676111,
+      "address": "1231 S Damen Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Sullivan",
+      "lat": 41.746287,
+      "lon": -87.578492,
+      "address": "8164 S South Chicago Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Seward",
+      "lat": 41.810333,
+      "lon": -87.668772,
+      "address": "4600 S Hermitage Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Carver G",
+      "lat": 41.653702,
+      "lon": -87.599516,
+      "address": "901 E 133Rd Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Academy Hs",
+      "lat": 41.943054,
+      "lon": -87.776847,
+      "address": "3400 N Austin Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Stowe",
+      "lat": 41.911938,
+      "lon": -87.713318,
+      "address": "3444 W Wabansia Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Crown",
+      "lat": 41.852663,
+      "lon": -87.71247,
+      "address": "2128 S Saint Louis Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bell",
+      "lat": 41.94953,
+      "lon": -87.686018,
+      "address": "3730 N Oakley Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kipling",
+      "lat": 41.723627,
+      "lon": -87.639521,
+      "address": "9351 S Lowe Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Johnson Hs",
+      "lat": 41.778369,
+      "lon": -87.635117,
+      "address": "6350 S Stewart Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pathways - Avondale Hs",
+      "lat": 41.939433,
+      "lon": -87.705206,
+      "address": "3100 W Belmont Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Penn",
+      "lat": 41.858372,
+      "lon": -87.722386,
+      "address": "1616 S Avers Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kipp - Academy",
+      "lat": 41.891816,
+      "lon": -87.746614,
+      "address": "4818 W Ohio St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Healy",
+      "lat": 41.839595,
+      "lon": -87.640341,
+      "address": "3010 S Parnell Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Williams Hs",
+      "lat": 41.806118,
+      "lon": -87.62503,
+      "address": "4934 S Wabash Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brennemann",
+      "lat": 41.959984,
+      "lon": -87.649749,
+      "address": "4251 N Clarendon Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sauganash",
+      "lat": 41.991169,
+      "lon": -87.745951,
+      "address": "6040 N Kilpatrick Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Thorp O",
+      "lat": 41.948571,
+      "lon": -87.777631,
+      "address": "6024 W Warwick Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Westcott",
+      "lat": 41.748868,
+      "lon": -87.634751,
+      "address": "409 W 80Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Revere",
+      "lat": 41.764196,
+      "lon": -87.600177,
+      "address": "1010 E 72Nd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hawthorne",
+      "lat": 41.942275,
+      "lon": -87.657709,
+      "address": "3319 N Clifton Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Belmont-Cragin",
+      "lat": 41.921604,
+      "lon": -87.757953,
+      "address": "5252 W Palmer St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Canty",
+      "lat": 41.948007,
+      "lon": -87.829296,
+      "address": "3740 N Panama Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Beethoven",
+      "lat": 41.809135,
+      "lon": -87.627137,
+      "address": "25 W 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dubois",
+      "lat": 41.653733,
+      "lon": -87.61432,
+      "address": "330 E 133Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hammond",
+      "lat": 41.852719,
+      "lon": -87.696243,
+      "address": "2819 W 21St Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lincoln Park Hs",
+      "lat": 41.918268,
+      "lon": -87.646009,
+      "address": "2001 N Orchard St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Azuela",
+      "lat": 41.771079,
+      "lon": -87.73992,
+      "address": "4707 W Marquette Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mount Vernon",
+      "lat": 41.701952,
+      "lon": -87.647652,
+      "address": "10540 S Morgan St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Loomis",
+      "lat": 41.720246,
+      "lon": -87.657561,
+      "address": "9535 S Loomis St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Barton",
+      "lat": 41.754194,
+      "lon": -87.670927,
+      "address": "7650 S Wolcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mccormick",
+      "lat": 41.842267,
+      "lon": -87.7063,
+      "address": "2712 S Sawyer Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Garcia Hs",
+      "lat": 41.809171,
+      "lon": -87.730467,
+      "address": "4248 W 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kershaw",
+      "lat": 41.776453,
+      "lon": -87.640892,
+      "address": "6450 S Lowe Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Young Hs",
+      "lat": 41.878603,
+      "lon": -87.664233,
+      "address": "211 S Laflin St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Uplift Hs",
+      "lat": 41.965547,
+      "lon": -87.652473,
+      "address": "900 W Wilson Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lane Tech Hs",
+      "lat": 41.946645,
+      "lon": -87.691013,
+      "address": "2501 W Addison St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Skinner North",
+      "lat": 41.905109,
+      "lon": -87.644841,
+      "address": "640 W Scott St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Onahan",
+      "lat": 41.99379,
+      "lon": -87.793108,
+      "address": "6634 W Raven St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Volta",
+      "lat": 41.971634,
+      "lon": -87.724605,
+      "address": "4950 N Avers Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kipp - Bloom",
+      "lat": 41.793556,
+      "lon": -87.639967,
+      "address": "5515 S Lowe Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Smith",
+      "lat": 41.707558,
+      "lon": -87.60466,
+      "address": "744 E 103Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sherwood",
+      "lat": 41.7908,
+      "lon": -87.632279,
+      "address": "245 W 57Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dawes",
+      "lat": 41.745078,
+      "lon": -87.717353,
+      "address": "3810 W 81St Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Swift",
+      "lat": 41.989139,
+      "lon": -87.658296,
+      "address": "5900 N Winthrop Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Simeon Hs",
+      "lat": 41.745781,
+      "lon": -87.63541,
+      "address": "8147 S Vincennes Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Carnegie",
+      "lat": 41.783368,
+      "lon": -87.590795,
+      "address": "1414 E 61St Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hibbard",
+      "lat": 41.970335,
+      "lon": -87.710362,
+      "address": "3244 W Ainslie St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - De La Cruz",
+      "lat": 42.016476,
+      "lon": -87.684406,
+      "address": "7416 N Ridge Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Rudolph",
+      "lat": 41.883907,
+      "lon": -87.668091,
+      "address": "1628 W Washington Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Clark Es",
+      "lat": 41.867813,
+      "lon": -87.770418,
+      "address": "1045 S Monitor Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jensen",
+      "lat": 41.873815,
+      "lon": -87.702241,
+      "address": "3030 W Harrison St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Schmid",
+      "lat": 41.716989,
+      "lon": -87.596932,
+      "address": "9755 S Greenwood Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Virtual Hs",
+      "lat": 41.876317,
+      "lon": -87.674138,
+      "address": "1900 W Van Buren St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Academy Es",
+      "lat": 41.943056,
+      "lon": -87.778187,
+      "address": "3400 N Austin Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Moving Everest",
+      "lat": 41.888263,
+      "lon": -87.755424,
+      "address": "416 N. Laramie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Talcott",
+      "lat": 41.892405,
+      "lon": -87.673723,
+      "address": "1840 W Ohio St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Rickover Military Hs",
+      "lat": 41.957599,
+      "lon": -87.769938,
+      "address": "5700 W Berteau Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Melody",
+      "lat": 41.878799,
+      "lon": -87.724661,
+      "address": "3937 W Wilcox St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Burbank",
+      "lat": 41.917598,
+      "lon": -87.7827,
+      "address": "2035 N Mobile Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Youth Connection",
+      "lat": 41.832072,
+      "lon": -87.626781,
+      "address": "3424 S State St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Back Of The Yards Hs",
+      "lat": 41.808413,
+      "lon": -87.677541,
+      "address": "2111 W 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mcpherson",
+      "lat": 41.967847,
+      "lon": -87.676288,
+      "address": "4728 N Wolcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Englewood Stem Hs",
+      "lat": 41.77025,
+      "lon": -87.636851,
+      "address": "6835 S Normal Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Wildwood",
+      "lat": 42.007491,
+      "lon": -87.778345,
+      "address": "6950 N Hiawatha Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Rogers",
+      "lat": 42.015265,
+      "lon": -87.697185,
+      "address": "7345 N Washtenaw Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Corliss Hs",
+      "lat": 41.70666,
+      "lon": -87.601216,
+      "address": "821 E 103Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - West Belden",
+      "lat": 41.921687,
+      "lon": -87.776749,
+      "address": "2245 N Mcvicker Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Farragut Hs",
+      "lat": 41.84856,
+      "lon": -87.708706,
+      "address": "2345 S Christiana Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Claremont",
+      "lat": 41.777511,
+      "lon": -87.681061,
+      "address": "2300 W 64Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Plato",
+      "lat": 41.87276,
+      "lon": -87.763337,
+      "address": "5545 W Harrison St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lloyd",
+      "lat": 41.918814,
+      "lon": -87.748515,
+      "address": "2103 N Lamon Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Walsh",
+      "lat": 41.854836,
+      "lon": -87.648086,
+      "address": "2015 S Peoria St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Alcott Hs",
+      "lat": 41.935795,
+      "lon": -87.680562,
+      "address": "2957 N Hoyne Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Harper Hs",
+      "lat": 41.775124,
+      "lon": -87.669089,
+      "address": "6520 S Wood St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Hansberry Hs",
+      "lat": 41.734442,
+      "lon": -87.650987,
+      "address": "8748 S Aberdeen St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bogan Hs",
+      "lat": 41.749376,
+      "lon": -87.721097,
+      "address": "3939 W 79Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Howe",
+      "lat": 41.893612,
+      "lon": -87.759398,
+      "address": "720 N Lorel Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Christopher",
+      "lat": 41.801659,
+      "lon": -87.685607,
+      "address": "5042 S Artesian Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Baker Hs",
+      "lat": 41.734622,
+      "lon": -87.556201,
+      "address": "2710 E 89Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cook",
+      "lat": 41.745237,
+      "lon": -87.659775,
+      "address": "8150 S Bishop St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Aspira - Early College Hs",
+      "lat": 41.937298,
+      "lon": -87.727096,
+      "address": "3986 W Barry Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Drummond",
+      "lat": 41.915914,
+      "lon": -87.674495,
+      "address": "1845 W Cortland St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ogden Es",
+      "lat": 41.899976,
+      "lon": -87.629297,
+      "address": "24 W Walton St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kinzie",
+      "lat": 41.789965,
+      "lon": -87.779483,
+      "address": "5625 S Mobile Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brentano",
+      "lat": 41.930966,
+      "lon": -87.696294,
+      "address": "2723 N Fairfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Webster",
+      "lat": 41.869916,
+      "lon": -87.727524,
+      "address": "4055 W Arthington St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gunsaulus",
+      "lat": 41.813007,
+      "lon": -87.699364,
+      "address": "4420 S Sacramento Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Powell",
+      "lat": 41.760332,
+      "lon": -87.556789,
+      "address": "7511 S South Shore Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Inter-American",
+      "lat": 41.949003,
+      "lon": -87.651573,
+      "address": "851 W Waveland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Earhart",
+      "lat": 41.726107,
+      "lon": -87.582182,
+      "address": "1710 E 93Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dett",
+      "lat": 41.87987,
+      "lon": -87.680315,
+      "address": "2131 W Monroe St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Infinity Hs",
+      "lat": 41.836169,
+      "lon": -87.735278,
+      "address": "3120 S Kostner Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Randolph",
+      "lat": 41.760614,
+      "lon": -87.675966,
+      "address": "7316 S Hoyne Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Newberry",
+      "lat": 41.913947,
+      "lon": -87.64599,
+      "address": "700 W Willow St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pathways - Ashburn Hs",
+      "lat": 41.735239,
+      "lon": -87.70406,
+      "address": "3284 W 87Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Owen",
+      "lat": 41.74285,
+      "lon": -87.705749,
+      "address": "8247 S Christiana Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Whittier",
+      "lat": 41.850481,
+      "lon": -87.673392,
+      "address": "1900 W 23Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Parkside",
+      "lat": 41.768555,
+      "lon": -87.582954,
+      "address": "6938 S East End Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "King Hs",
+      "lat": 41.813675,
+      "lon": -87.603874,
+      "address": "4445 S Drexel Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Rowe Clark Hs",
+      "lat": 41.895362,
+      "lon": -87.718047,
+      "address": "3645 W Chicago Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nlcp - Christiana Hs",
+      "lat": 41.858564,
+      "lon": -87.708987,
+      "address": "1615 S. Christiana Ave.",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Roosevelt Hs",
+      "lat": 41.964828,
+      "lon": -87.714819,
+      "address": "3436 W Wilson Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Drake",
+      "lat": 41.844043,
+      "lon": -87.628553,
+      "address": "2710 S Dearborn St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "U Of C - Nko",
+      "lat": 41.811183,
+      "lon": -87.598786,
+      "address": "1119 E 46Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Southside Hs",
+      "lat": 41.759852,
+      "lon": -87.675947,
+      "address": "7342 S Hoyne Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Farnsworth",
+      "lat": 41.97979,
+      "lon": -87.766072,
+      "address": "5414 N Linder Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Urban Prep - Bronzeville Hs",
+      "lat": 41.831118,
+      "lon": -87.613629,
+      "address": "521 E 35Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "North River",
+      "lat": 41.961721,
+      "lon": -87.707151,
+      "address": "4416 N Troy St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Armour",
+      "lat": 41.833854,
+      "lon": -87.650653,
+      "address": "950 W 33Rd Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gary",
+      "lat": 41.837065,
+      "lon": -87.718697,
+      "address": "3740 W 31St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Northtown Hs",
+      "lat": 41.990245,
+      "lon": -87.726504,
+      "address": "3900 W Peterson Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Poe",
+      "lat": 41.70263,
+      "lon": -87.606419,
+      "address": "10538 S Langley Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Schurz Hs",
+      "lat": 41.946365,
+      "lon": -87.735612,
+      "address": "3601 N Milwaukee Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lyon",
+      "lat": 41.934192,
+      "lon": -87.777174,
+      "address": "2941 N Mcvicker Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Austin Cca Hs",
+      "lat": 41.885993,
+      "lon": -87.761916,
+      "address": "231 N Pine Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bronzeville Hs",
+      "lat": 41.805204,
+      "lon": -87.625004,
+      "address": "4934 S Wabash Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Avondale-Logandale",
+      "lat": 41.93397,
+      "lon": -87.708041,
+      "address": "3212 W George St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Vaughn Hs",
+      "lat": 41.960364,
+      "lon": -87.764663,
+      "address": "4355 N Linder Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Otis",
+      "lat": 41.891806,
+      "lon": -87.665426,
+      "address": "525 N Armour St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nicholson",
+      "lat": 41.784942,
+      "lon": -87.647453,
+      "address": "6006 S Peoria St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Keller",
+      "lat": 41.69717,
+      "lon": -87.697278,
+      "address": "3020 W 108Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Learn - Butler",
+      "lat": 41.867273,
+      "lon": -87.710679,
+      "address": "1132 S Homan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "U Of C - Donoghue",
+      "lat": 41.827726,
+      "lon": -87.608501,
+      "address": "707 E 37Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Fort Dearborn",
+      "lat": 41.729673,
+      "lon": -87.655481,
+      "address": "9025 S Throop St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Disney",
+      "lat": 41.956816,
+      "lon": -87.646083,
+      "address": "4140 N Marine Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Wacker",
+      "lat": 41.716193,
+      "lon": -87.648044,
+      "address": "9746 S Morgan St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Fulton",
+      "lat": 41.79758,
+      "lon": -87.668436,
+      "address": "5300 S Hermitage Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Rowe",
+      "lat": 41.907797,
+      "lon": -87.664072,
+      "address": "1424 N Cleaver St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dunbar Hs",
+      "lat": 41.840226,
+      "lon": -87.617637,
+      "address": "3000 S King Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Field",
+      "lat": 42.009664,
+      "lon": -87.669985,
+      "address": "7019 N Ashland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Haley",
+      "lat": 41.68666,
+      "lon": -87.633632,
+      "address": "11411 S Eggleston Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mays",
+      "lat": 41.772728,
+      "lon": -87.637277,
+      "address": "6656 S Normal Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dever",
+      "lat": 41.942552,
+      "lon": -87.813132,
+      "address": "3436 N Osceola Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Noble Hs",
+      "lat": 41.900191,
+      "lon": -87.662628,
+      "address": "1010 N Noble St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nightingale",
+      "lat": 41.797714,
+      "lon": -87.689139,
+      "address": "5250 S Rockwell St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dyett Arts Hs",
+      "lat": 41.801204,
+      "lon": -87.612239,
+      "address": "555 E 51St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Catalyst - Maria",
+      "lat": 41.770992,
+      "lon": -87.693075,
+      "address": "6727 S California Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mckay",
+      "lat": 41.768143,
+      "lon": -87.691787,
+      "address": "6901 S Fairfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Washington Park",
+      "lat": 41.784126,
+      "lon": -87.621261,
+      "address": "110 E 61St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ward L",
+      "lat": 41.893236,
+      "lon": -87.718797,
+      "address": "646 N Lawndale Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Faraday",
+      "lat": 41.879714,
+      "lon": -87.708092,
+      "address": "3250 W Monroe St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Urban Prep - Englewood Hs",
+      "lat": 41.781498,
+      "lon": -87.634357,
+      "address": "6201 S Stewart Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Calmeca",
+      "lat": 41.824377,
+      "lon": -87.711654,
+      "address": "3456 W 38Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hale",
+      "lat": 41.780192,
+      "lon": -87.776579,
+      "address": "6140 S Melvina Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Camras",
+      "lat": 41.934931,
+      "lon": -87.770127,
+      "address": "3000 N Mango Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mather Hs",
+      "lat": 41.987589,
+      "lon": -87.702496,
+      "address": "5835 N Lincoln Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lavizzo",
+      "lat": 41.696262,
+      "lon": -87.627148,
+      "address": "138 W 109Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - De Las Casas",
+      "lat": 41.859504,
+      "lon": -87.667949,
+      "address": "1641 W 16Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Schubert",
+      "lat": 41.930403,
+      "lon": -87.76119,
+      "address": "2727 N Long Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Henry",
+      "lat": 41.958989,
+      "lon": -87.715632,
+      "address": "4250 N Saint Louis Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chopin",
+      "lat": 41.896713,
+      "lon": -87.688937,
+      "address": "2450 W Rice St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Armstrong G",
+      "lat": 42.01015,
+      "lon": -87.684442,
+      "address": "2110 W Greenleaf Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jahn",
+      "lat": 41.939248,
+      "lon": -87.67581,
+      "address": "3149 N Wolcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Tanner",
+      "lat": 41.760673,
+      "lon": -87.606791,
+      "address": "7350 S Evans Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Campos",
+      "lat": 41.90285,
+      "lon": -87.696006,
+      "address": "2739 W Division St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hubbard Hs",
+      "lat": 41.780526,
+      "lon": -87.718014,
+      "address": "6200 S Hamlin Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Edison Park",
+      "lat": 41.994238,
+      "lon": -87.813771,
+      "address": "6220 N Olcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Barry",
+      "lat": 41.932511,
+      "lon": -87.739388,
+      "address": "2828 N Kilbourn Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Murphy",
+      "lat": 41.950078,
+      "lon": -87.716832,
+      "address": "3539 W Grace St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Carver Military Hs",
+      "lat": 41.65629,
+      "lon": -87.59062,
+      "address": "13100 S Doty Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Academy Hs",
+      "lat": 41.906879,
+      "lon": -87.645577,
+      "address": "1443 N Ogden Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brunson",
+      "lat": 41.897663,
+      "lon": -87.765606,
+      "address": "932 N Central Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ellington",
+      "lat": 41.88553,
+      "lon": -87.766589,
+      "address": "243 N Parkside Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Okeeffe",
+      "lat": 41.768602,
+      "lon": -87.572806,
+      "address": "6940 S Merrill Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Association House",
+      "lat": 41.901572,
+      "lon": -87.70686,
+      "address": "1116 N Kedzie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Manierre",
+      "lat": 41.908247,
+      "lon": -87.639827,
+      "address": "1420 N Hudson Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Aldridge",
+      "lat": 41.657405,
+      "lon": -87.606474,
+      "address": "630 E 131St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lozano",
+      "lat": 41.908886,
+      "lon": -87.665093,
+      "address": "1501 N Greenview Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ravenswood",
+      "lat": 41.960746,
+      "lon": -87.670922,
+      "address": "4332 N Paulina St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Clemente",
+      "lat": 41.917952,
+      "lon": -87.78783,
+      "address": "2050 N Natchez Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sabin",
+      "lat": 41.906816,
+      "lon": -87.68305,
+      "address": "2216 W Hirsch St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Basil",
+      "lat": 41.794043,
+      "lon": -87.670243,
+      "address": "1816 W Garfield Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jordan",
+      "lat": 42.017088,
+      "lon": -87.677763,
+      "address": "7414 N Wolcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Finkl",
+      "lat": 41.849215,
+      "lon": -87.685668,
+      "address": "2332 S Western Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Wentworth",
+      "lat": 41.765076,
+      "lon": -87.658205,
+      "address": "1340 W 71St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Perspectives - Joslin Hs",
+      "lat": 41.855999,
+      "lon": -87.628531,
+      "address": "1930 S Archer Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pathways - Humboldt Park Hs",
+      "lat": 41.902841,
+      "lon": -87.687946,
+      "address": "2421 W Division St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Peirce",
+      "lat": 41.983456,
+      "lon": -87.66585,
+      "address": "1423 W Bryn Mawr Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Camelot - Excel Hs",
+      "lat": 41.691969,
+      "lon": -87.653727,
+      "address": "1257 W 111Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "South Shore Intl Hs",
+      "lat": 41.758792,
+      "lon": -87.576353,
+      "address": "1955 E 75Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Graham Es",
+      "lat": 41.813304,
+      "lon": -87.643344,
+      "address": "4436 S Union Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Edgebrook",
+      "lat": 41.999437,
+      "lon": -87.76184,
+      "address": "6525 N Hiawatha Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brown W",
+      "lat": 41.882997,
+      "lon": -87.670682,
+      "address": "54 N Hermitage Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Thomas",
+      "lat": 41.827775,
+      "lon": -87.677542,
+      "address": "3625 S Hoyne Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Smyser",
+      "lat": 41.958868,
+      "lon": -87.781975,
+      "address": "4310 N Melvina Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mcclellan",
+      "lat": 41.829993,
+      "lon": -87.641103,
+      "address": "3527 S Wallace St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Tilton",
+      "lat": 41.884102,
+      "lon": -87.730566,
+      "address": "223 N Keeler Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Alcott Es",
+      "lat": 41.92985,
+      "lon": -87.646413,
+      "address": "2625 N Orchard St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cuffe",
+      "lat": 41.742452,
+      "lon": -87.653633,
+      "address": "8324 S Racine Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lewis",
+      "lat": 41.906826,
+      "lon": -87.75455,
+      "address": "1431 N Leamington Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Phoenix Military Hs",
+      "lat": 41.879118,
+      "lon": -87.68696,
+      "address": "145 S Campbell Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ashe",
+      "lat": 41.740184,
+      "lon": -87.601174,
+      "address": "8505 S Ingleside Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Brighton Park",
+      "lat": 41.813109,
+      "lon": -87.693238,
+      "address": "4420 S Fairfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Prieto",
+      "lat": 41.921318,
+      "lon": -87.765781,
+      "address": "2231 N Central Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Zapata",
+      "lat": 41.841394,
+      "lon": -87.734313,
+      "address": "2728 S Kostner Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Tarkington",
+      "lat": 41.764407,
+      "lon": -87.706445,
+      "address": "3330 W 71St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lake View Hs",
+      "lat": 41.954764,
+      "lon": -87.668953,
+      "address": "4015 N Ashland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Burke",
+      "lat": 41.79676,
+      "lon": -87.616141,
+      "address": "5356 S King Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Crane Medical Hs",
+      "lat": 41.876947,
+      "lon": -87.683301,
+      "address": "2245 W Jackson Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Little Black Pearl Hs",
+      "lat": 41.809695,
+      "lon": -87.59934,
+      "address": "1060 E 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Stone",
+      "lat": 41.995359,
+      "lon": -87.684793,
+      "address": "6239 N Leavitt St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bond",
+      "lat": 41.765361,
+      "lon": -87.653018,
+      "address": "7050 S May St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Learn - South Chicago",
+      "lat": 41.733333,
+      "lon": -87.54558,
+      "address": "8914 S Buffalo Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Clinton",
+      "lat": 41.992541,
+      "lon": -87.69836,
+      "address": "6110 N Fairfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Perez",
+      "lat": 41.856029,
+      "lon": -87.65798,
+      "address": "1241 W 19Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ombudsman - Northwest Hs",
+      "lat": 42.017171,
+      "lon": -87.806682,
+      "address": "7500 N Harlem Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Von Steuben Hs",
+      "lat": 41.973185,
+      "lon": -87.713386,
+      "address": "5039 N Kimball Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bennett",
+      "lat": 41.710435,
+      "lon": -87.61739,
+      "address": "10115 S Prairie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Intrinsic Hs",
+      "lat": 41.938988,
+      "lon": -87.741129,
+      "address": "4540 W Belmont Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hearst",
+      "lat": 41.808175,
+      "lon": -87.745726,
+      "address": "4640 S Lamon Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sawyer",
+      "lat": 41.797498,
+      "lon": -87.705006,
+      "address": "5248 S Sawyer Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Daley",
+      "lat": 41.802343,
+      "lon": -87.672206,
+      "address": "5024 S Wolcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Fenger Hs",
+      "lat": 41.689951,
+      "lon": -87.637572,
+      "address": "11220 S Wallace St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sheridan",
+      "lat": 41.8444,
+      "lon": -87.64134,
+      "address": "533 W 27Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Aspira - Business & Finance Hs",
+      "lat": 41.935726,
+      "lon": -87.718204,
+      "address": "2989 N. Milwaukee Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Falconer",
+      "lat": 41.935785,
+      "lon": -87.749331,
+      "address": "3020 N Lamon Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Reinberg",
+      "lat": 41.943019,
+      "lon": -87.768983,
+      "address": "3425 N Major Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cameron",
+      "lat": 41.903792,
+      "lon": -87.717927,
+      "address": "1234 N Monticello Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hernandez",
+      "lat": 41.793479,
+      "lon": -87.71137,
+      "address": "3510 W 55Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mitchell",
+      "lat": 41.892082,
+      "lon": -87.683185,
+      "address": "2233 W Ohio St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ariel",
+      "lat": 41.811173,
+      "lon": -87.597503,
+      "address": "1119 E 46Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hirsch Hs",
+      "lat": 41.753748,
+      "lon": -87.601727,
+      "address": "7740 S Ingleside Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Orozco",
+      "lat": 41.857755,
+      "lon": -87.67521,
+      "address": "1940 W 18Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Goethe",
+      "lat": 41.922831,
+      "lon": -87.6929,
+      "address": "2236 N Rockwell St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Carroll",
+      "lat": 41.742517,
+      "lon": -87.696012,
+      "address": "2929 W 83Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Aspira - Haugan",
+      "lat": 41.966406,
+      "lon": -87.721825,
+      "address": "3729 W Leland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Earle",
+      "lat": 41.781225,
+      "lon": -87.675547,
+      "address": "2040 W 62Nd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Warren",
+      "lat": 41.726763,
+      "lon": -87.575353,
+      "address": "9239 S Jeffery Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pershing",
+      "lat": 41.836527,
+      "lon": -87.618338,
+      "address": "3200 S Calumet Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pasteur",
+      "lat": 41.786895,
+      "lon": -87.732666,
+      "address": "5825 S Kostner Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Clissold",
+      "lat": 41.693026,
+      "lon": -87.680897,
+      "address": "2350 W 110Th Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Aspira Pantoja",
+      "lat": 41.938187,
+      "lon": -87.727137,
+      "address": "3121 N Pulaski Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Agriculture Hs",
+      "lat": 41.691221,
+      "lon": -87.71777,
+      "address": "3857 W 111Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nlcp - Collins Hs",
+      "lat": 41.864146,
+      "lon": -87.700681,
+      "address": "1313 S Sacramento Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Shoesmith",
+      "lat": 41.804294,
+      "lon": -87.593905,
+      "address": "1330 E 50Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Taylor",
+      "lat": 41.71547,
+      "lon": -87.532971,
+      "address": "9912 S Avenue H",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Wells Es",
+      "lat": 41.827355,
+      "lon": -87.61978,
+      "address": "249 E 37Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Orr Hs",
+      "lat": 41.894547,
+      "lon": -87.72666,
+      "address": "730 N Pulaski Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kenwood Hs",
+      "lat": 41.803772,
+      "lon": -87.590421,
+      "address": "5015 S Blackstone Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dvorak",
+      "lat": 41.858883,
+      "lon": -87.715744,
+      "address": "3615 W 16Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Higgins",
+      "lat": 41.681031,
+      "lon": -87.646994,
+      "address": "11710 S Morgan St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lowell",
+      "lat": 41.90652,
+      "lon": -87.710217,
+      "address": "3320 W Hirsch St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Davis N",
+      "lat": 41.821852,
+      "lon": -87.700202,
+      "address": "3014 W 39Th Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ombudsman - Roseland Hs",
+      "lat": 41.695105,
+      "lon": -87.642816,
+      "address": "10928 S Halsted St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brownell",
+      "lat": 41.77162,
+      "lon": -87.621746,
+      "address": "6741 S Michigan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sutherland",
+      "lat": 41.711445,
+      "lon": -87.676821,
+      "address": "10015 S Leavitt St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Itw Speer Hs",
+      "lat": 41.917266,
+      "lon": -87.759675,
+      "address": "5321 W Grand Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Stem",
+      "lat": 41.868576,
+      "lon": -87.664969,
+      "address": "1522 W Fillmore St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "National Teachers",
+      "lat": 41.8528,
+      "lon": -87.629308,
+      "address": "55 W Cermak Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Holmes",
+      "lat": 41.793788,
+      "lon": -87.649795,
+      "address": "955 W Garfield Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "North-Grand Hs",
+      "lat": 41.911674,
+      "lon": -87.735238,
+      "address": "4338 W Wabansia Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Saucedo",
+      "lat": 41.847941,
+      "lon": -87.697316,
+      "address": "2850 W 24Th Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Leland",
+      "lat": 41.873587,
+      "lon": -87.749276,
+      "address": "512 S Lavergne Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chavez",
+      "lat": 41.807143,
+      "lon": -87.666037,
+      "address": "4747 S Marshfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Beaubien",
+      "lat": 41.972394,
+      "lon": -87.757565,
+      "address": "5025 N Laramie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Morgan Park Hs",
+      "lat": 41.692035,
+      "lon": -87.665658,
+      "address": "1744 W Pryor Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Torres",
+      "lat": 41.8082,
+      "lon": -87.73045,
+      "address": "4248 W 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Beasley",
+      "lat": 41.798465,
+      "lon": -87.625692,
+      "address": "5255 S State St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "White",
+      "lat": 41.672309,
+      "lon": -87.650539,
+      "address": "1136 W 122Nd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Depriest",
+      "lat": 41.877979,
+      "lon": -87.766298,
+      "address": "139 S Parkside Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Instituto - Health",
+      "lat": 41.845967,
+      "lon": -87.68724,
+      "address": "2520 S Western Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kipp - One",
+      "lat": 41.893805,
+      "lon": -87.726615,
+      "address": "730 N Pulaski Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Garvy",
+      "lat": 41.976352,
+      "lon": -87.796235,
+      "address": "5225 N Oak Park Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Math & Science Hs",
+      "lat": 42.013031,
+      "lon": -87.674818,
+      "address": "7212 N Clark St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Fiske",
+      "lat": 41.785183,
+      "lon": -87.608633,
+      "address": "6020 S Langley Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Senn Hs",
+      "lat": 41.989029,
+      "lon": -87.667136,
+      "address": "5900 N Glenwood Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nixon",
+      "lat": 41.919581,
+      "lon": -87.73142,
+      "address": "2121 N Keeler Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Westside Holistic",
+      "lat": 41.90224,
+      "lon": -87.74881,
+      "address": "4909 W Division St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Woodlawn",
+      "lat": 41.773366,
+      "lon": -87.594392,
+      "address": "6657 S Kimbark Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nash",
+      "lat": 41.89181,
+      "lon": -87.747936,
+      "address": "4837 W Erie St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dore",
+      "lat": 41.773899,
+      "lon": -87.799359,
+      "address": "7134 W 65Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Grimes",
+      "lat": 41.775464,
+      "lon": -87.758803,
+      "address": "5450 W 64Th Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Fuentes",
+      "lat": 41.937476,
+      "lon": -87.699594,
+      "address": "2845 W Barry Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Learn - Perkins",
+      "lat": 41.743122,
+      "lon": -87.665721,
+      "address": "1700 W 83Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Blaine",
+      "lat": 41.950781,
+      "lon": -87.664968,
+      "address": "1420 W Grace St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Graham Hs",
+      "lat": 41.849675,
+      "lon": -87.625315,
+      "address": "2347 S Wabash Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Marine Leadership At Ames Hs",
+      "lat": 41.916045,
+      "lon": -87.721742,
+      "address": "1920 N Hamlin Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hedges",
+      "lat": 41.807112,
+      "lon": -87.673327,
+      "address": "4747 S Winchester Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pickard",
+      "lat": 41.8529,
+      "lon": -87.683291,
+      "address": "2301 W 21St Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Longwood",
+      "lat": 41.721221,
+      "lon": -87.655768,
+      "address": "1309 W 95Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Social Justice Hs",
+      "lat": 41.833507,
+      "lon": -87.735299,
+      "address": "3120 S Kostner Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Von Linne",
+      "lat": 41.940009,
+      "lon": -87.702635,
+      "address": "3221 N Sacramento Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Madero",
+      "lat": 41.840957,
+      "lon": -87.705064,
+      "address": "3202 W 28Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sayre",
+      "lat": 41.914151,
+      "lon": -87.798721,
+      "address": "1850 N Newland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Amundsen Hs",
+      "lat": 41.975067,
+      "lon": -87.679484,
+      "address": "5110 N Damen Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lara",
+      "lat": 41.80977,
+      "lon": -87.672182,
+      "address": "4619 S Wolcott Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sherman",
+      "lat": 41.799766,
+      "lon": -87.650221,
+      "address": "1000 W 52Nd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Evers",
+      "lat": 41.715665,
+      "lon": -87.639305,
+      "address": "9811 S Lowe Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cardenas",
+      "lat": 41.848488,
+      "lon": -87.716017,
+      "address": "2345 S Millard Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Richardson",
+      "lat": 41.783826,
+      "lon": -87.725422,
+      "address": "6018 S Karlov Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ashburn",
+      "lat": 41.742351,
+      "lon": -87.70961,
+      "address": "8300 S St Louis Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Rauner Hs",
+      "lat": 41.892425,
+      "lon": -87.660859,
+      "address": "1337 W Ohio St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "South Loop",
+      "lat": 41.859741,
+      "lon": -87.628349,
+      "address": "1601 S Dearborn St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "West Ridge",
+      "lat": 42.002959,
+      "lon": -87.705917,
+      "address": "6700 N Whipple St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Tilden Hs",
+      "lat": 41.80751,
+      "lon": -87.642966,
+      "address": "4747 S Union Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Air Force Hs",
+      "lat": 41.828145,
+      "lon": -87.632757,
+      "address": "3630 S Wells St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Prairie",
+      "lat": 41.684433,
+      "lon": -87.616888,
+      "address": "11530 S Prairie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Montessori Englewood",
+      "lat": 41.76739,
+      "lon": -87.667639,
+      "address": "6936 S Hermitage Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Juarez Hs",
+      "lat": 41.85267,
+      "lon": -87.664339,
+      "address": "1450 W Cermak Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jackson A",
+      "lat": 41.8743,
+      "lon": -87.660985,
+      "address": "1340 W Harrison St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ninos Heroes",
+      "lat": 41.743753,
+      "lon": -87.551862,
+      "address": "8344 S Commercial Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Portage Park",
+      "lat": 41.956988,
+      "lon": -87.761007,
+      "address": "5330 W Berteau Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Durkin Park",
+      "lat": 41.738844,
+      "lon": -87.729955,
+      "address": "8445 S Kolin Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Devry Hs",
+      "lat": 41.969081,
+      "lon": -87.676908,
+      "address": "1900 W Lawrence Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lorca",
+      "lat": 41.940026,
+      "lon": -87.724783,
+      "address": "3231 N Springfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Marshall Hs",
+      "lat": 41.878444,
+      "lon": -87.70805,
+      "address": "3250 W Adams St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Vanderpoel",
+      "lat": 41.720817,
+      "lon": -87.665559,
+      "address": "9510 S Prospect Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Providence Englewood",
+      "lat": 41.775367,
+      "lon": -87.663996,
+      "address": "6515 S Ashland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Vick",
+      "lat": 41.688191,
+      "lon": -87.685677,
+      "address": "2554 W 113Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Stock",
+      "lat": 42.016892,
+      "lon": -87.814195,
+      "address": "7507 W Birchwood Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cassell",
+      "lat": 41.687347,
+      "lon": -87.703215,
+      "address": "11314 S Spaulding Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ombudsman - South Hs",
+      "lat": 41.783027,
+      "lon": -87.683635,
+      "address": "6057 S. Western Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pullman",
+      "lat": 41.688819,
+      "lon": -87.609431,
+      "address": "11311 S Forrestville Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Instituto - Lozano Hs",
+      "lat": 41.845446,
+      "lon": -87.684065,
+      "address": "2570 S Blue Island Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kozminski",
+      "lat": 41.798002,
+      "lon": -87.602481,
+      "address": "936 E 54Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "De Diego",
+      "lat": 41.905294,
+      "lon": -87.685756,
+      "address": "1313 N Claremont Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mollison",
+      "lat": 41.814358,
+      "lon": -87.616618,
+      "address": "4415 S Dr Martin L King Jr Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Innovations",
+      "lat": 41.883047,
+      "lon": -87.627734,
+      "address": "17 N. State St.",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Dunne",
+      "lat": 41.696496,
+      "lon": -87.639974,
+      "address": "10845 S Union Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hampton",
+      "lat": 41.753457,
+      "lon": -87.708731,
+      "address": "3434 W 77Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Douglass Hs",
+      "lat": 41.890369,
+      "lon": -87.767668,
+      "address": "543 N Waller Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hughes L",
+      "lat": 41.705342,
+      "lon": -87.629869,
+      "address": "240 W 104Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Tonti",
+      "lat": 41.787523,
+      "lon": -87.708179,
+      "address": "5815 S Homan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Burroughs",
+      "lat": 41.828868,
+      "lon": -87.692457,
+      "address": "3542 S Washtenaw Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Butler Hs",
+      "lat": 41.706667,
+      "lon": -87.602573,
+      "address": "821 E 103Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Libby",
+      "lat": 41.797685,
+      "lon": -87.659933,
+      "address": "5300 S Loomis Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Peace And Education Hs",
+      "lat": 41.803515,
+      "lon": -87.667378,
+      "address": "4946 S Paulina St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yates",
+      "lat": 41.915039,
+      "lon": -87.70028,
+      "address": "1839 N Richmond St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mcauliffe",
+      "lat": 41.914816,
+      "lon": -87.723931,
+      "address": "1841 N Springfield Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Perspectives - Math & Sci Hs",
+      "lat": 41.827784,
+      "lon": -87.624788,
+      "address": "3663 S Wabash Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gray",
+      "lat": 41.948764,
+      "lon": -87.757116,
+      "address": "3730 N Laramie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Namaste",
+      "lat": 41.8257,
+      "lon": -87.667724,
+      "address": "3737 S Paulina St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Deneen",
+      "lat": 41.76249,
+      "lon": -87.623345,
+      "address": "7240 S Wabash Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Wells Hs",
+      "lat": 41.898995,
+      "lon": -87.667483,
+      "address": "936 N Ashland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jamieson",
+      "lat": 41.984641,
+      "lon": -87.700529,
+      "address": "5650 N Mozart St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mcdade",
+      "lat": 41.73455,
+      "lon": -87.619214,
+      "address": "8801 S Indiana Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Barnard",
+      "lat": 41.705131,
+      "lon": -87.658074,
+      "address": "10354 S Charles St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Marquez",
+      "lat": 41.808309,
+      "lon": -87.697394,
+      "address": "2916 W 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pathways - Brighton Park Hs",
+      "lat": 41.808226,
+      "lon": -87.702645,
+      "address": "3124 W. 47Th Street",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Spry Es",
+      "lat": 41.847747,
+      "lon": -87.700184,
+      "address": "2400 S Marshall Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Beard",
+      "lat": 41.970125,
+      "lon": -87.78963,
+      "address": "6445 W Strong St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Clemente Hs",
+      "lat": 41.902626,
+      "lon": -87.686906,
+      "address": "1147 N Western Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kennedy Hs",
+      "lat": 41.789961,
+      "lon": -87.78084,
+      "address": "6325 W 56Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Oglesby",
+      "lat": 41.75467,
+      "lon": -87.64547,
+      "address": "7646 S Green St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Learn - Campbell",
+      "lat": 41.877861,
+      "lon": -87.698739,
+      "address": "212 S Francisco Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Bucktown",
+      "lat": 41.922415,
+      "lon": -87.681358,
+      "address": "2235 N Hamilton Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Legal Prep Hs",
+      "lat": 41.881733,
+      "lon": -87.733778,
+      "address": "4319 W Washington Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Woodson",
+      "lat": 41.814499,
+      "lon": -87.608419,
+      "address": "4414 S Evans Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Fuller",
+      "lat": 41.818003,
+      "lon": -87.611784,
+      "address": "4214 S St Lawrence Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Jones Hs",
+      "lat": 41.873066,
+      "lon": -87.627675,
+      "address": "700 S State St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Epic Hs",
+      "lat": 41.744849,
+      "lon": -87.550222,
+      "address": "8255 S Houston Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Northwest",
+      "lat": 41.920611,
+      "lon": -87.757921,
+      "address": "5252 W Palmer St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chase",
+      "lat": 41.917993,
+      "lon": -87.694562,
+      "address": "2021 N Point St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Coonley",
+      "lat": 41.955553,
+      "lon": -87.683765,
+      "address": "4046 N Leavitt St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Irving",
+      "lat": 41.871595,
+      "lon": -87.683616,
+      "address": "749 S Oakley Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Whistler",
+      "lat": 41.683907,
+      "lon": -87.655384,
+      "address": "11533 S Ada St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bright",
+      "lat": 41.699726,
+      "lon": -87.562084,
+      "address": "10740 S Calhoun Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Smyth",
+      "lat": 41.865351,
+      "lon": -87.653445,
+      "address": "1059 W 13Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Metcalfe",
+      "lat": 41.669444,
+      "lon": -87.634306,
+      "address": "12339 S Normal Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mason",
+      "lat": 41.856864,
+      "lon": -87.731672,
+      "address": "4217 W 18Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cullen",
+      "lat": 41.700335,
+      "lon": -87.611244,
+      "address": "10650 S Eberhart Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lenart",
+      "lat": 41.747186,
+      "lon": -87.62804,
+      "address": "8101 S Lasalle St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mccutcheon",
+      "lat": 41.970949,
+      "lon": -87.654758,
+      "address": "4865 N Sheridan Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Austin Career",
+      "lat": 41.894976,
+      "lon": -87.760221,
+      "address": "5352 W Chicago Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Burley",
+      "lat": 41.937937,
+      "lon": -87.669853,
+      "address": "1630 W Barry Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kellman",
+      "lat": 41.870168,
+      "lon": -87.702163,
+      "address": "3030 W Arthington St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Steinmetz Hs",
+      "lat": 41.935634,
+      "lon": -87.783515,
+      "address": "3030 N Mobile Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Owens",
+      "lat": 41.670618,
+      "lon": -87.622546,
+      "address": "12302 S State St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Shields Middle",
+      "lat": 41.806491,
+      "lon": -87.68978,
+      "address": "2611 W 48Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Prescott",
+      "lat": 41.928841,
+      "lon": -87.669528,
+      "address": "1632 W Wrightwood Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hamilton",
+      "lat": 41.94522,
+      "lon": -87.670865,
+      "address": "1650 W Cornelia Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Peck",
+      "lat": 41.787899,
+      "lon": -87.719216,
+      "address": "3826 W 58Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Neil",
+      "lat": 41.738407,
+      "lon": -87.620933,
+      "address": "8555 S Michigan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ahs - Passages",
+      "lat": 41.983371,
+      "lon": -87.67116,
+      "address": "1643 W Bryn Mawr Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Military Hs",
+      "lat": 41.830555,
+      "lon": -87.619216,
+      "address": "3519 S Giles Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Doolittle",
+      "lat": 41.831121,
+      "lon": -87.612275,
+      "address": "535 E 35Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Brooks Hs",
+      "lat": 41.692763,
+      "lon": -87.616353,
+      "address": "250 E 111Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Pritzker Hs",
+      "lat": 41.915214,
+      "lon": -87.730127,
+      "address": "4131 W Cortland Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Paz",
+      "lat": 41.850035,
+      "lon": -87.692551,
+      "address": "2651 W 23Rd St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mozart",
+      "lat": 41.92091,
+      "lon": -87.721888,
+      "address": "2200 N Hamlin Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bateman",
+      "lat": 41.95822,
+      "lon": -87.702151,
+      "address": "4220 N Richmond St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Audubon",
+      "lat": 41.945062,
+      "lon": -87.681041,
+      "address": "3500 N Hoyne Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Erie",
+      "lat": 41.906771,
+      "lon": -87.694364,
+      "address": "1405 N Washtenaw Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Piccolo",
+      "lat": 41.90014,
+      "lon": -87.731261,
+      "address": "1040 N Keeler Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Edwards",
+      "lat": 41.805542,
+      "lon": -87.725856,
+      "address": "4815 S Karlov Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lovett",
+      "lat": 41.912718,
+      "lon": -87.783919,
+      "address": "6333 W Bloomingdale Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Davis M",
+      "lat": 41.771221,
+      "lon": -87.66653,
+      "address": "6740 S Paulina St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Raby Hs",
+      "lat": 41.88621,
+      "lon": -87.715423,
+      "address": "3545 W Fulton Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ortiz De Dominguez",
+      "lat": 41.838791,
+      "lon": -87.71719,
+      "address": "3000 S Lawndale Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Bouchet",
+      "lat": 41.760847,
+      "lon": -87.576075,
+      "address": "7355 S Jeffery Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hayt",
+      "lat": 41.994541,
+      "lon": -87.668504,
+      "address": "1518 W Granville Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Chicago Collegiate",
+      "lat": 41.679318,
+      "lon": -87.617968,
+      "address": "11816 S Indiana Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cleveland",
+      "lat": 41.952042,
+      "lon": -87.706443,
+      "address": "3121 W Byron St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Coles",
+      "lat": 41.741413,
+      "lon": -87.56597,
+      "address": "8441 S Yates Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Catalyst - Circle Rock",
+      "lat": 41.882322,
+      "lon": -87.765322,
+      "address": "5608 W Washington Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gallistel",
+      "lat": 41.706801,
+      "lon": -87.535175,
+      "address": "10347 S Ewing Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hancock Hs",
+      "lat": 41.791464,
+      "lon": -87.72447,
+      "address": "4034 W 56Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hyde Park Hs",
+      "lat": 41.782257,
+      "lon": -87.586615,
+      "address": "6220 S Stony Island Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Holden",
+      "lat": 41.838027,
+      "lon": -87.653792,
+      "address": "1104 W 31St St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Washington G Es",
+      "lat": 41.688131,
+      "lon": -87.536015,
+      "address": "3611 E 114Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Eberhart",
+      "lat": 41.77442,
+      "lon": -87.707953,
+      "address": "3400 W 65Th Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kilmer",
+      "lat": 42.00364,
+      "lon": -87.668222,
+      "address": "6700 N Greenview Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Mckinley",
+      "lat": 41.841331,
+      "lon": -87.625331,
+      "address": "2920 S Wabash Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Beidler",
+      "lat": 41.885321,
+      "lon": -87.705855,
+      "address": "3151 W Walnut St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ruiz",
+      "lat": 41.848101,
+      "lon": -87.680745,
+      "address": "2410 S Leavitt St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Shoop",
+      "lat": 41.690919,
+      "lon": -87.658669,
+      "address": "11140 S Bishop St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mount Greenwood",
+      "lat": 41.695734,
+      "lon": -87.70581,
+      "address": "10841 S Homan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Camelot - Safe Hs",
+      "lat": 41.753115,
+      "lon": -87.551804,
+      "address": "7530 S South Shore Dr",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Robinson",
+      "lat": 41.817349,
+      "lon": -87.599067,
+      "address": "4225 S Lake Park Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - West Town",
+      "lat": 41.890803,
+      "lon": -87.702053,
+      "address": "500 N Sacramento Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kanoon",
+      "lat": 41.850771,
+      "lon": -87.705112,
+      "address": "2233 S Kedzie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Nobel",
+      "lat": 41.906155,
+      "lon": -87.729955,
+      "address": "4127 W Hirsch St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Monroe",
+      "lat": 41.929989,
+      "lon": -87.719224,
+      "address": "3651 W Schubert Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Camelot - Excel Englewood Hs",
+      "lat": 41.763896,
+      "lon": -87.649124,
+      "address": "7141 S Morgan St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Scammon",
+      "lat": 41.941678,
+      "lon": -87.732179,
+      "address": "4201 W Henderson St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Hefferan",
+      "lat": 41.878665,
+      "lon": -87.735802,
+      "address": "4409 W Wilcox St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Spry Hs",
+      "lat": 41.847762,
+      "lon": -87.698946,
+      "address": "2400 S Marshall Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Palmer",
+      "lat": 41.973289,
+      "lon": -87.739213,
+      "address": "5051 N Kenneth Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Suder",
+      "lat": 41.883215,
+      "lon": -87.677636,
+      "address": "2022 W Washington Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Salazar",
+      "lat": 41.901417,
+      "lon": -87.633632,
+      "address": "160 W Wendell St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sor Juana",
+      "lat": 41.789597,
+      "lon": -87.72638,
+      "address": "4120 W 57Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Ruggles",
+      "lat": 41.751946,
+      "lon": -87.618066,
+      "address": "7831 S Prairie Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Foreman Hs",
+      "lat": 41.939797,
+      "lon": -87.754167,
+      "address": "3235 N Leclaire Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Zizumbo",
+      "lat": 41.810135,
+      "lon": -87.730495,
+      "address": "4248 W 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Cics - Ellison Hs",
+      "lat": 41.748382,
+      "lon": -87.66898,
+      "address": "1817 W 80Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "York Hs",
+      "lat": 41.842533,
+      "lon": -87.695261,
+      "address": "2700 S California Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Boone",
+      "lat": 42.003412,
+      "lon": -87.697463,
+      "address": "6710 N Washtenaw Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Idar",
+      "lat": 41.801042,
+      "lon": -87.708797,
+      "address": "5050 S Homan Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Cisneros",
+      "lat": 41.822884,
+      "lon": -87.693996,
+      "address": "2744 W Pershing Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Addams",
+      "lat": 41.698739,
+      "lon": -87.532976,
+      "address": "10810 S Avenue H",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Everett",
+      "lat": 41.831555,
+      "lon": -87.68131,
+      "address": "3419 S Bell Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Pirie",
+      "lat": 41.74034,
+      "lon": -87.607891,
+      "address": "650 E 85Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Wadsworth",
+      "lat": 41.773478,
+      "lon": -87.601018,
+      "address": "6650 S Ellis Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Lincoln",
+      "lat": 41.924525,
+      "lon": -87.644497,
+      "address": "615 W Kemper Pl",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "South Shore Es",
+      "lat": 41.767755,
+      "lon": -87.590396,
+      "address": "1415 E 70Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Olive Harvey",
+      "lat": 41.712922,
+      "lon": -87.592333,
+      "address": "10001 S Woodlawn Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Horizon - Southwest",
+      "lat": 41.795201,
+      "lon": -87.683963,
+      "address": "5401 S. Western",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Darwin",
+      "lat": 41.923323,
+      "lon": -87.705413,
+      "address": "3116 W Belden Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Carson",
+      "lat": 41.793272,
+      "lon": -87.6878,
+      "address": "5516 S Maplewood Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Haugan",
+      "lat": 41.964029,
+      "lon": -87.723128,
+      "address": "4540 N Hamlin Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Sumner",
+      "lat": 41.870828,
+      "lon": -87.733524,
+      "address": "4320 W 5Th Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Herzl",
+      "lat": 41.862081,
+      "lon": -87.718994,
+      "address": "3711 W Douglas Blvd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Richards Hs",
+      "lat": 41.802881,
+      "lon": -87.662278,
+      "address": "5009 S Laflin St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Mireles",
+      "lat": 41.731717,
+      "lon": -87.552788,
+      "address": "9000 S Exchange Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Kellogg",
+      "lat": 41.725263,
+      "lon": -87.677233,
+      "address": "9241 S Leavitt St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Yccs - Cca Academy",
+      "lat": 41.864943,
+      "lon": -87.723662,
+      "address": "1231 S Pulaski Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Gresham",
+      "lat": 41.73892,
+      "lon": -87.645025,
+      "address": "8524 S Green St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "New Field",
+      "lat": 42.007703,
+      "lon": -87.673168,
+      "address": "1707 W Morse Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Burnham",
+      "lat": 41.714402,
+      "lon": -87.567131,
+      "address": "9928 S Crandon Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Evergreen",
+      "lat": 41.829356,
+      "lon": -87.667817,
+      "address": "3537 S Paulina St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Noble - Mansueto Hs",
+      "lat": 41.807987,
+      "lon": -87.697057,
+      "address": "2911 W 47Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Colemon",
+      "lat": 41.677505,
+      "lon": -87.658111,
+      "address": "1441 W 119Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Little Village",
+      "lat": 41.843698,
+      "lon": -87.717319,
+      "address": "2620 S Lawndale Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "World Language Hs",
+      "lat": 41.834397,
+      "lon": -87.735292,
+      "address": "3120 S Kostner Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Twain",
+      "lat": 41.799046,
+      "lon": -87.758928,
+      "address": "5134 S Lotus Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Reilly",
+      "lat": 41.941094,
+      "lon": -87.719541,
+      "address": "3650 W School St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Green",
+      "lat": 41.719292,
+      "lon": -87.6525,
+      "address": "1150 W 96Th St",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Greeley",
+      "lat": 41.95281,
+      "lon": -87.65098,
+      "address": "832 W Sheridan Rd",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "schools",
+      "subcategory": null,
+      "name": "Acero - Soto Hs",
+      "lat": 41.801762,
+      "lon": -87.711025,
+      "address": "5025 S Saint Louis Ave",
+      "_source": "cps_schools"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "Headquarters",
+      "lat": 41.830702,
+      "lon": -87.623395,
+      "address": "3510 S Michigan Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 18 — Near North",
+      "lat": 41.903242,
+      "lon": -87.643352,
+      "address": "1160 N Larrabee St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 19 — Town Hall",
+      "lat": 41.9474,
+      "lon": -87.651512,
+      "address": "850 W Addison St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 20 — Lincoln",
+      "lat": 41.97955,
+      "lon": -87.692845,
+      "address": "5400 N Lincoln Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 22 — Morgan Park",
+      "lat": 41.691435,
+      "lon": -87.66852,
+      "address": "1900 W Monterey Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 24 — Rogers Park",
+      "lat": 41.999763,
+      "lon": -87.671324,
+      "address": "6464 N Clark St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 25 — Grand Central",
+      "lat": 41.918609,
+      "lon": -87.765574,
+      "address": "5555 W Grand Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 1 — Central",
+      "lat": 41.858373,
+      "lon": -87.627356,
+      "address": "1718 S State St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 2 — Wentworth",
+      "lat": 41.801811,
+      "lon": -87.63056,
+      "address": "5101 S Wentworth Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 3 — Grand Crossing",
+      "lat": 41.766431,
+      "lon": -87.605748,
+      "address": "7040 S Cottage Grove Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 4 — South Chicago",
+      "lat": 41.707933,
+      "lon": -87.568349,
+      "address": "2255 E 103Rd St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 5 — Calumet",
+      "lat": 41.692723,
+      "lon": -87.604506,
+      "address": "727 E 111Th St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 6 — Gresham",
+      "lat": 41.752137,
+      "lon": -87.644229,
+      "address": "7808 S Halsted St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 7 — Englewood",
+      "lat": 41.779632,
+      "lon": -87.660887,
+      "address": "1438 W 63Rd St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 8 — Chicago Lawn",
+      "lat": 41.778987,
+      "lon": -87.708864,
+      "address": "3420 W 63Rd St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 9 — Deering",
+      "lat": 41.837394,
+      "lon": -87.646408,
+      "address": "3120 S Halsted St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 10 — Ogden",
+      "lat": 41.856685,
+      "lon": -87.708382,
+      "address": "3315 W Ogden Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 11 — Harrison",
+      "lat": 41.873582,
+      "lon": -87.705488,
+      "address": "3151 W Harrison St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 12 — Near West",
+      "lat": 41.862977,
+      "lon": -87.656973,
+      "address": "1412 S Blue Island Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 14 — Shakespeare",
+      "lat": 41.921103,
+      "lon": -87.697452,
+      "address": "2150 N California Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 15 — Austin",
+      "lat": 41.880083,
+      "lon": -87.7682,
+      "address": "5701 W Madison St",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 16 — Jefferson Park",
+      "lat": 41.974094,
+      "lon": -87.766149,
+      "address": "5151 N Milwaukee Ave",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "police_stations",
+      "subcategory": null,
+      "name": "District 17 — Albany Park",
+      "lat": 41.966053,
+      "lon": -87.728115,
+      "address": "4650 N Pulaski Rd",
+      "_source": "cpd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 5",
+      "lat": 41.877028,
+      "lon": -87.644309,
+      "address": "324 S Desplaines St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 11",
+      "lat": 41.976856,
+      "lon": -87.836496,
+      "address": "5343 N Cumberland Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 81",
+      "lat": 41.705334,
+      "lon": -87.560885,
+      "address": "10458 S Hoxie Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 22",
+      "lat": 41.91792,
+      "lon": -87.643967,
+      "address": "605 W Armitage Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 50",
+      "lat": 41.803448,
+      "lon": -87.642994,
+      "address": "5000 S Union Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 68",
+      "lat": 41.917251,
+      "lon": -87.757473,
+      "address": "5258 W Grand Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 7",
+      "lat": 41.938785,
+      "lon": -87.749638,
+      "address": "4911 W Belmont Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 91",
+      "lat": 41.932237,
+      "lon": -87.726957,
+      "address": "2827 N Pulaski Rd",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 92",
+      "lat": 41.691611,
+      "lon": -87.698919,
+      "address": "3112 W 111Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 89",
+      "lat": 41.990057,
+      "lon": -87.72568,
+      "address": "3945 W Peterson Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 47",
+      "lat": 41.773,
+      "lon": -87.614176,
+      "address": "432 E Marquette Rd",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 70/E59",
+      "lat": 41.991857,
+      "lon": -87.670234,
+      "address": "6030 N Clark St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 28",
+      "lat": 41.845579,
+      "lon": -87.656333,
+      "address": "2534 S Throop St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 44",
+      "lat": 41.888791,
+      "lon": -87.706578,
+      "address": "412 N Kedzie Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 109",
+      "lat": 41.84834,
+      "lon": -87.701811,
+      "address": "2358 S Whipple St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 119",
+      "lat": 41.991207,
+      "lon": -87.798795,
+      "address": "6030 N Avondale Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 56",
+      "lat": 41.937696,
+      "lon": -87.685766,
+      "address": "2214 W Barry Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 129",
+      "lat": 41.746305,
+      "lon": -87.663462,
+      "address": "8120 S Ashland Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 83",
+      "lat": 41.965639,
+      "lon": -87.659975,
+      "address": "1200 W Wilson Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 8",
+      "lat": 41.853133,
+      "lon": -87.632357,
+      "address": "212 W Cermak Rd",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 73",
+      "lat": 41.736936,
+      "lon": -87.642455,
+      "address": "8630 S Emerald Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 14",
+      "lat": 41.895977,
+      "lon": -87.656225,
+      "address": "1129 W Chicago Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 71",
+      "lat": 41.995147,
+      "lon": -87.69953,
+      "address": "6239 N California Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 108",
+      "lat": 41.96465,
+      "lon": -87.757858,
+      "address": "4625 N Milwaukee Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 23",
+      "lat": 41.855619,
+      "lon": -87.675921,
+      "address": "1915 S Damen Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 18",
+      "lat": 41.864504,
+      "lon": -87.655568,
+      "address": "1360 N Blue Island Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 106",
+      "lat": 41.943066,
+      "lon": -87.703214,
+      "address": "3401 N Elston Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 16",
+      "lat": 41.821901,
+      "lon": -87.627498,
+      "address": "4005 S Dearborn St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 1",
+      "lat": 41.876048,
+      "lon": -87.633337,
+      "address": "419 S Wells St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 116",
+      "lat": 41.785691,
+      "lon": -87.664262,
+      "address": "5955 S Ashland Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 117",
+      "lat": 41.895037,
+      "lon": -87.748277,
+      "address": "4900 W Chicago Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 112",
+      "lat": 41.950755,
+      "lon": -87.678303,
+      "address": "3801 N Damen Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 102",
+      "lat": 42.01464,
+      "lon": -87.675024,
+      "address": "7340 N Clark St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 101",
+      "lat": 41.768394,
+      "lon": -87.679852,
+      "address": "2240 W 69Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 65",
+      "lat": 41.817297,
+      "lon": -87.699504,
+      "address": "3002 W 42Nd St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 95",
+      "lat": 41.883344,
+      "lon": -87.725764,
+      "address": "4003 W West End Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 123",
+      "lat": 41.80117,
+      "lon": -87.679862,
+      "address": "2215 W 51St St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 110",
+      "lat": 41.975939,
+      "lon": -87.687584,
+      "address": "2322 W Foster Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 60",
+      "lat": 41.795152,
+      "lon": -87.597519,
+      "address": "1150 E 55Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 4",
+      "lat": 41.90399,
+      "lon": -87.642915,
+      "address": "548 W Division St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 98",
+      "lat": 41.897065,
+      "lon": -87.622599,
+      "address": "202 E Chicago Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 124",
+      "lat": 41.961691,
+      "lon": -87.708293,
+      "address": "4426 N Kedzie Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 104",
+      "lat": 41.683848,
+      "lon": -87.540021,
+      "address": "11641 S Avenue O",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 122",
+      "lat": 41.750983,
+      "lon": -87.621352,
+      "address": "101 E 79Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 86",
+      "lat": 41.951143,
+      "lon": -87.807219,
+      "address": "3918 N Harlem Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 97",
+      "lat": 41.652591,
+      "lon": -87.544704,
+      "address": "13359 S Burley Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 74",
+      "lat": 41.702188,
+      "lon": -87.535229,
+      "address": "10615 S Ewing Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 38",
+      "lat": 41.858502,
+      "lon": -87.724276,
+      "address": "3949 W 16Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 15",
+      "lat": 41.747475,
+      "lon": -87.70238,
+      "address": "8026 S Kedzie Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 126",
+      "lat": 41.762397,
+      "lon": -87.563936,
+      "address": "7313 S Kingston Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 103",
+      "lat": 41.880716,
+      "lon": -87.664121,
+      "address": "25 S Laflin St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 32",
+      "lat": 41.791236,
+      "lon": -87.781693,
+      "address": "5559 S Narragansett Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 57",
+      "lat": 41.903828,
+      "lon": -87.687132,
+      "address": "1244 N Western Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 78",
+      "lat": 41.949208,
+      "lon": -87.656405,
+      "address": "1052 W Waveland Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 88",
+      "lat": 41.785702,
+      "lon": -87.71469,
+      "address": "3637 W 59Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 107",
+      "lat": 41.868107,
+      "lon": -87.695624,
+      "address": "1101 S California Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 64",
+      "lat": 41.753006,
+      "lon": -87.721922,
+      "address": "7659 S Pulaski Rd",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 84",
+      "lat": 41.786898,
+      "lon": -87.626421,
+      "address": "21 W 59Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 120",
+      "lat": 41.693206,
+      "lon": -87.668825,
+      "address": "11035 S Homewood Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 49",
+      "lat": 41.814042,
+      "lon": -87.664972,
+      "address": "4401 S Ashland Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 94",
+      "lat": 41.949448,
+      "lon": -87.770694,
+      "address": "5758 W Grace St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 35",
+      "lat": 41.91623,
+      "lon": -87.677206,
+      "address": "1901 N Damen Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 75",
+      "lat": 41.67673,
+      "lon": -87.622659,
+      "address": "11958 S State St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 115",
+      "lat": 41.676768,
+      "lon": -87.644364,
+      "address": "11940 S Peoria St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 42",
+      "lat": 41.890802,
+      "lon": -87.630093,
+      "address": "55 W Illinois St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 55",
+      "lat": 41.931797,
+      "lon": -87.648994,
+      "address": "2718 N Halsted St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 63",
+      "lat": 41.773307,
+      "lon": -87.590202,
+      "address": "1440 E 67Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 113",
+      "lat": 41.872983,
+      "lon": -87.755069,
+      "address": "5212 W Harrison St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 30",
+      "lat": 41.902209,
+      "lon": -87.667079,
+      "address": "1125 N Ashland Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 121",
+      "lat": 41.721247,
+      "lon": -87.665763,
+      "address": "1724 W 95Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 93",
+      "lat": 41.705244,
+      "lon": -87.632433,
+      "address": "330 W 104Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 80",
+      "lat": 41.6626,
+      "lon": -87.590597,
+      "address": "12701 S Doty Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 76",
+      "lat": 41.912618,
+      "lon": -87.726381,
+      "address": "1747 N Pulaski Rd",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 69",
+      "lat": 41.953786,
+      "lon": -87.733929,
+      "address": "4017 N Tripp Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 13",
+      "lat": 41.886464,
+      "lon": -87.620614,
+      "address": "259 N Columbus Dr",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 39",
+      "lat": 41.833465,
+      "lon": -87.666351,
+      "address": "1618 W 33Rd Pl",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 29",
+      "lat": 41.830785,
+      "lon": -87.642132,
+      "address": "3509 S Lowe Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 43",
+      "lat": 41.920933,
+      "lon": -87.696442,
+      "address": "2179 N Stave St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 96",
+      "lat": 41.888324,
+      "lon": -87.767616,
+      "address": "439 N Waller Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 62",
+      "lat": 41.687406,
+      "lon": -87.624137,
+      "address": "34 E 114Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 72",
+      "lat": 41.749828,
+      "lon": -87.583412,
+      "address": "7974 S South Chicago Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 54",
+      "lat": 41.76526,
+      "lon": -87.638305,
+      "address": "7101 S Parnell Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 46",
+      "lat": 41.726412,
+      "lon": -87.550078,
+      "address": "3027 E 93Rd St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 127",
+      "lat": 41.777509,
+      "lon": -87.751975,
+      "address": "5200 W 63Rd St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 45",
+      "lat": 41.811343,
+      "lon": -87.606626,
+      "address": "4600 S Cottage Grove Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 125",
+      "lat": 41.922085,
+      "lon": -87.787754,
+      "address": "2323 N Natchez Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 99",
+      "lat": 41.837386,
+      "lon": -87.728061,
+      "address": "3042 S Kedvale Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 19",
+      "lat": 41.832278,
+      "lon": -87.617797,
+      "address": "3421 S Calumet Ave",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 26",
+      "lat": 41.881516,
+      "lon": -87.681855,
+      "address": "10 N Leavitt St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 82",
+      "lat": 41.729333,
+      "lon": -87.604257,
+      "address": "817 E 91St St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 34",
+      "lat": 41.8079,
+      "lon": -87.724851,
+      "address": "4034 W 47Th St",
+      "_source": "cfd_stations"
+    },
+    {
+      "category": "fire_stations",
+      "subcategory": null,
+      "name": "Engine 79",
+      "lat": 41.997975,
+      "lon": -87.766162,
+      "address": "6424 N Lehigh Ave",
+      "_source": "cfd_stations"
     }
   ]
 }

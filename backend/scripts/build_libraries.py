@@ -4,12 +4,17 @@ backend/data/places_curated.json.
 
 Source:
     City of Chicago — Libraries: Locations, Hours and Contact Information.
-    SODA: https://data.cityofchicago.org/resource/x8fc-8rcq.json
+    Classic SODA: https://data.cityofchicago.org/resource/x8fc-8rcq.json
     Each row's `location` field carries a SODA Point with `latitude` and
     `longitude` strings (numeric in the response despite the type tag).
 
 Usage:
     python backend/scripts/build_libraries.py
+
+Auth: pulls credentials + the dataset URL from `backend/.env` via the
+shared `_cdp_client` helper (HTTP Basic with the user's CDP key-id/secret).
+The env var `CDP_API_ENDPOINT_LIBRARIES` must point at the classic SODA
+URL above.
 
 Refresh cadence: annually. CPL branch openings/closings are uncommon and
 the dataset is kept current by the City — quarterly is overkill, but a
@@ -24,12 +29,11 @@ import logging
 import sys
 from pathlib import Path
 
-import requests
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _curated_common import merge_and_write  # noqa: E402
+from _cdp_client import fetch_rows, get_endpoint  # noqa: E402
 
-DATASET_URL = "https://data.cityofchicago.org/resource/x8fc-8rcq.json"
+ENDPOINT_ENV = "CDP_API_ENDPOINT_LIBRARIES"
 SOURCE_KEY = "cpl_locations"
 
 logger = logging.getLogger("build_libraries")
@@ -48,14 +52,8 @@ def _format_address(row: dict) -> str | None:
     return addr or None
 
 
-def fetch_rows() -> list[dict]:
-    resp = requests.get(DATASET_URL, params={"$limit": 500}, timeout=60)
-    resp.raise_for_status()
-    return resp.json()
-
-
 def main() -> int:
-    rows = fetch_rows()
+    rows = fetch_rows(ENDPOINT_ENV, limit=500)
     logger.info("Fetched %d CPL rows", len(rows))
 
     fresh: list[dict] = []
@@ -79,7 +77,7 @@ def main() -> int:
             "address":     _format_address(row),
         })
 
-    total = merge_and_write(SOURCE_KEY, DATASET_URL, fresh)
+    total = merge_and_write(SOURCE_KEY, get_endpoint(ENDPOINT_ENV), fresh)
     logger.info("Wrote %d libraries (curated total now %d)", len(fresh), total)
     return 0
 

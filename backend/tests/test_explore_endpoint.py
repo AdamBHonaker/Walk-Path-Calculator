@@ -18,15 +18,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(autouse=True)
-def _reset_rate_limiter():
-    try:
-        app.state.limiter.reset()
-    except Exception:
-        pass
-    yield
-
-
 class TestExploreValidation:
     def test_missing_origin_rejected(self):
         resp = client.post("/explore", json={"max_minutes": 20})
@@ -99,6 +90,43 @@ class TestExploreSuccess:
         # polygons fall inside the isochrone — most Chicago neighborhoods
         # have at least one, but the response shape always includes the key.
         assert "residential_heatmap" in body
+        # `tree_canopy_heatmap` is null when no canopy cells overlap the
+        # isochrone (or when the KDE artifact isn't present in this
+        # environment); the shape always includes the key.
+        assert "tree_canopy_heatmap" in body
+        canopy = body["tree_canopy_heatmap"]
+        if canopy is not None:
+            assert canopy["type"] == "FeatureCollection"
+            for feat in canopy["features"]:
+                assert feat["properties"]["density_band"] in ("low", "mid", "high")
+                assert feat["geometry"]["type"] in ("MultiPolygon", "Polygon")
+        # `parks_heatmap` is null when no CPD park polygons fall inside
+        # the isochrone; the shape always includes the key. When present,
+        # each feature carries `name` + `acres` for popups and Feature 4.
+        assert "parks_heatmap" in body
+        parks_hm = body["parks_heatmap"]
+        if parks_hm is not None:
+            assert parks_hm["type"] == "FeatureCollection"
+            for feat in parks_hm["features"]:
+                assert isinstance(feat["properties"]["name"], str)
+                assert feat["properties"]["name"]
+                assert "acres" in feat["properties"]
+                assert feat["geometry"]["type"] in ("MultiPolygon", "Polygon")
+        # `green_space_heatmap` is null when no non-CPD green space overlaps;
+        # when present, each feature is unioned per `kind` (cemetery /
+        # golf_course / nature_reserve / recreation_ground).
+        assert "green_space_heatmap" in body
+        green = body["green_space_heatmap"]
+        if green is not None:
+            assert green["type"] == "FeatureCollection"
+            kinds_seen = set()
+            for feat in green["features"]:
+                kind = feat["properties"]["kind"]
+                assert kind in {"cemetery", "golf_course", "nature_reserve", "recreation_ground"}
+                kinds_seen.add(kind)
+                assert feat["geometry"]["type"] in ("MultiPolygon", "Polygon")
+            # One feature per kind — no duplicate kinds.
+            assert len(kinds_seen) == len(green["features"])
 
     def test_lat_lon_origin(self):
         # Wicker Park-ish — central, dense graph coverage.

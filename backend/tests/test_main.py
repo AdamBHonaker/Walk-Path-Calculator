@@ -9,16 +9,6 @@ from main import app
 client = TestClient(app)
 
 
-@pytest.fixture(autouse=True)
-def _reset_rate_limiter():
-    """Reset slowapi storage between tests so the 10/min limit doesn't bleed across cases."""
-    try:
-        app.state.limiter.reset()
-    except Exception:
-        pass
-    yield
-
-
 class TestHealth:
     def test_health_returns_ok(self):
         resp = client.get("/health")
@@ -509,52 +499,58 @@ class TestFuzzyMatchRegression:
 
 
 class TestGeocoderCircuitBreaker:
-    """Coverage for Bolt-On C: when Google returns 429 / OVER_QUERY_LIMIT,
-    the breaker opens for a cool-off period. Subsequent street-address
-    queries skip Google entirely and raise a structured 503; neighborhood
-    queries continue to succeed because they short-circuit before Google."""
+    """Coverage for the LocationIQ circuit breaker: when LocationIQ returns
+    HTTP 429, the breaker opens for a cool-off period. Subsequent queries
+    that need the hosted fallback skip the network and raise a structured
+    503; neighborhood / local-tier queries continue to succeed because they
+    short-circuit before LocationIQ."""
+
+    _SYNTHETIC_QUERIES = (
+        "__breaker_test_query__",
+        "__breaker_test_query_other__",
+        "__breaker_test_query__, chicago, il",
+    )
 
     @pytest.fixture(autouse=True)
     def _isolate_breaker_state(self, monkeypatch):
-        # Reset breaker before & after each test; clear cache for the synthetic
-        # query so we exercise the network path. Force an API key so the
-        # cached `not _GOOGLE_API_KEY` early-return doesn't short-circuit.
+        # Reset breaker before & after each test; clear the SQLite cache row
+        # for every synthetic query so the network path is always exercised.
+        # Force an API key so the early-return on missing-key doesn't fire.
         import geocoding
         geocoding._circuit_reset_for_test()
-        monkeypatch.setattr(geocoding, "_GOOGLE_API_KEY", "test-key")
-        # Ensure the synthetic query is never pre-cached.
-        for q in ("__breaker_test_query__", "__breaker_test_query__, chicago, il"):
-            geocoding._geocode_cache.pop(q, None)
+        monkeypatch.setattr(geocoding, "_LOCATIONIQ_API_KEY", "test-key")
+        for q in self._SYNTHETIC_QUERIES:
+            geocoding._cache_clear_forward_for_test(q)
         yield
         geocoding._circuit_reset_for_test()
-        for q in ("__breaker_test_query__", "__breaker_test_query__, chicago, il"):
-            geocoding._geocode_cache.pop(q, None)
+        for q in self._SYNTHETIC_QUERIES:
+            geocoding._cache_clear_forward_for_test(q)
 
     @staticmethod
     def _mock_429_response():
-        """Build a Mock that quacks like a `requests.Response` returning 429."""
+        """Build a Mock that quacks like a LocationIQ 429 response."""
         from unittest.mock import Mock
         resp = Mock()
         resp.status_code = 429
-        resp.content = b'{"status":"OVER_QUERY_LIMIT","results":[]}'
-        resp.json = lambda: {"status": "OVER_QUERY_LIMIT", "results": []}
+        resp.content = b'{"error":"Rate Limited Second"}'
+        resp.json = lambda: {"error": "Rate Limited Second"}
         return resp
 
     def test_429_trips_breaker_and_raises_degraded(self, monkeypatch):
         import geocoding
-        from geocoding import geocode_google, GeocoderDegradedError
+        from geocoding import geocode_external, GeocoderDegradedError
         mock = self._mock_429_response()
         monkeypatch.setattr(geocoding._http_session, "get", lambda *a, **kw: mock)
 
         with pytest.raises(GeocoderDegradedError):
-            geocode_google("__breaker_test_query__")
+            geocode_external("__breaker_test_query__")
         assert geocoding._circuit_is_open() is True
 
     def test_subsequent_calls_during_cooloff_skip_network(self, monkeypatch):
-        """Verify that once the breaker is open, geocode_google never reaches the
+        """Once the breaker is open, geocode_external must not reach the
         mocked HTTP get on follow-up calls — it short-circuits."""
         import geocoding
-        from geocoding import geocode_google, GeocoderDegradedError
+        from geocoding import geocode_external, GeocoderDegradedError
 
         call_count = {"n": 0}
         def counting_get(*a, **kw):
@@ -562,44 +558,39 @@ class TestGeocoderCircuitBreaker:
             return self._mock_429_response()
         monkeypatch.setattr(geocoding._http_session, "get", counting_get)
 
-        # First call trips the breaker (1 network call).
         with pytest.raises(GeocoderDegradedError):
-            geocode_google("__breaker_test_query__")
+            geocode_external("__breaker_test_query__")
         assert call_count["n"] == 1
 
-        # Subsequent uncached query — must NOT hit the network.
         with pytest.raises(GeocoderDegradedError):
-            geocode_google("__breaker_test_query_other__")
+            geocode_external("__breaker_test_query_other__")
         assert call_count["n"] == 1, "breaker should have skipped the network call"
 
     def test_neighborhood_queries_succeed_during_cooloff(self, monkeypatch):
-        """Names in NEIGHBORHOOD_COORDS resolve before the Google fallback,
-        so they continue to work even while the breaker is open."""
+        """NEIGHBORHOOD_COORDS resolves before LocationIQ, so it still works
+        with the breaker open."""
         import geocoding
         from geocoding import resolve_location, _circuit_trip_429
 
-        # Force the breaker open without making a real call.
         _circuit_trip_429()
         assert geocoding._circuit_is_open() is True
 
-        # If anything reaches the network, fail loudly.
         def boom(*a, **kw):
-            raise AssertionError("Should not reach Google for a neighborhood query")
+            raise AssertionError("Should not reach LocationIQ for a neighborhood query")
         monkeypatch.setattr(geocoding._http_session, "get", boom)
 
         coords = resolve_location("Wrigleyville")
         assert coords == (41.9476, -87.6553)
 
     def test_probe_after_cooloff_succeeds(self, monkeypatch):
-        """When time advances past the cool-off, the next call probes Google.
-        On success, the breaker closes and consecutive_trips resets."""
+        """When the cool-off elapses, the next call probes LocationIQ. On
+        success the breaker closes and consecutive_trips resets."""
         import geocoding
-        from geocoding import geocode_google, _circuit_trip_429
+        from geocoding import geocode_external, _circuit_trip_429
 
         _circuit_trip_429()
         assert geocoding._circuit_is_open() is True
 
-        # Simulate the cool-off having elapsed.
         original_time = geocoding.time.time
         monkeypatch.setattr(geocoding.time, "time",
                             lambda: original_time() + _circuit_inflated_cooloff())
@@ -607,27 +598,24 @@ class TestGeocoderCircuitBreaker:
         from unittest.mock import Mock
         ok_resp = Mock()
         ok_resp.status_code = 200
-        ok_resp.content = b'{"status":"OK"}'
-        ok_resp.json = lambda: {
-            "status": "OK",
-            "results": [{"geometry": {"location": {"lat": 41.9, "lng": -87.65}}}],
-        }
+        ok_resp.content = b'[{"lat":"41.9","lon":"-87.65","display_name":"Test"}]'
+        ok_resp.json = lambda: [{"lat": "41.9", "lon": "-87.65", "display_name": "Test"}]
         monkeypatch.setattr(geocoding._http_session, "get", lambda *a, **kw: ok_resp)
 
-        coords = geocode_google("__breaker_test_query__")
+        coords = geocode_external("__breaker_test_query__")
         assert coords == (41.9, -87.65)
         assert geocoding._circuit_consecutive_trips == 0
         assert geocoding._circuit_is_open() is False
 
     def test_main_returns_503_on_breaker_open(self, monkeypatch):
-        """End-to-end: when the breaker is open and a stop forces Google,
+        """End-to-end: when the breaker is open and a stop forces LocationIQ,
         /route returns HTTP 503 with the friendly message."""
         import geocoding
         from geocoding import _circuit_trip_429
 
         _circuit_trip_429()
-        # Use a query that's neither a coord pair nor a known neighborhood —
-        # a synthetic string forces the Google fallback path.
+        # Use a query that's neither a coord pair nor a known neighborhood,
+        # and won't match any local SQLite row — forces the LocationIQ path.
         resp = client.post("/route", json={
             "origin": "1234 W Synthetic Test Street",
             "destination": "Logan Square",

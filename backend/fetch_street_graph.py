@@ -15,6 +15,24 @@ utils.STREET_GRAPH_BBOX_OSMNX — edit there to adjust coverage.
 
 The igraph artifact (street_graph_igraph.pkl) is also built automatically.
 The server loads from the .pkl on startup (fast); the .graphml is the source of truth.
+
+Bake step (FEAT-4 "Greenest Routing — Tree + Park Edge Weights", shipped
+2026-05-14): two per-edge attributes are computed during artifact
+construction and baked into the pickle:
+
+  - tree_canopy_score    (float32 in [0,1]): sparse KDE density sampled at
+                          each edge's arc-length midpoint, from
+                          `data/tree_canopy_kde.json`.
+  - park_proximity_score (float32 in [0,1]): inverse distance from the edge
+                          midpoint to the nearest CPD park polygon (from
+                          `data/parks_polygons.json`), capped at 200 m,
+                          scaled by a log-acreage multiplier (1.0–1.5×).
+
+`walking.py`'s greenest weight function consumes both columns. Whenever
+`tree_canopy_kde.json` or `parks_polygons.json` is refreshed (yearly per
+the tree-canopy / parks ingest scripts), the street graph must be rebuilt
+so the baked edge attributes stay in sync with the source artifacts. See
+the "Greenest-routing graph release runbook" section in CLAUDE.md.
 """
 
 import os
@@ -145,7 +163,7 @@ def _rebuild_pickle_from_graphml() -> None:
     except ImportError:
         print("osmnx is not installed. Run: pip install osmnx")
         sys.exit(1)
-    _set_step_total(2)
+    _set_step_total(4)
     _step_begin(f"Loading cached graphml from {GRAPH_PATH.name}")
     G = ox.load_graphml(GRAPH_PATH)
     _step_end(f"{G.number_of_nodes():,} nodes, {G.number_of_edges():,} edges")
@@ -161,7 +179,7 @@ def download_and_save(verbose: bool = False) -> None:
 
     ox.settings.log_console = bool(verbose)
 
-    _set_step_total(7)
+    _set_step_total(9)
 
     _step_begin("Querying OpenStreetMap for the full Chicago walk network")
     print(f"  Bounding box: west={BBOX[0]}, south={BBOX[1]}, east={BBOX[2]}, north={BBOX[3]}")
@@ -207,6 +225,213 @@ def download_and_save(verbose: bool = False) -> None:
     _step_end(f"{size_mb:.1f} MB written")
 
     _save_igraph_artifact(G)
+
+
+# ---------------------------------------------------------------------------
+# Greenest-routing bake step (FEAT-4, shipped 2026-05-14)
+#
+# For each post-dedup edge we compute two floats in [0, 1]:
+#   - tree_canopy_score    — sparse KDE density at the edge's arc-length
+#                            midpoint, looked up in tree_canopy_kde.json
+#   - park_proximity_score — inverse distance from midpoint to nearest CPD
+#                            park polygon (capped at 200 m → 0), multiplied
+#                            by a log-acreage factor (capped at 1.5×)
+# The arrays are baked into the pickle alongside the existing edge columns
+# and consumed at runtime by `walking._build_flavor_weights` for the
+# greenest flavor. See the FEAT-4 entry in docs/FEATURE_HISTORY.md.
+# ---------------------------------------------------------------------------
+
+# Chicago-centered equirectangular projection. The bake step works entirely
+# in meters so park distance + canopy cell containment can be checked with
+# axis-aligned thresholds.
+_LAT_REF_DEG     = 41.85
+_M_PER_DEG_LAT   = 111_320.0
+
+# Park proximity tuning constants (FEATURE_PLANS.md "Resolved design decisions").
+_PARK_CUTOFF_M       = 200.0   # linear cap, edge midpoint → nearest park boundary
+_PARK_ACRES_LOG_SAT  = 2.0     # log10(100) — parks ≥ ~100 acres saturate the multiplier
+_PARK_MULT_MIN       = 1.0
+_PARK_MULT_MAX       = 1.5
+
+
+def _bake_green_signals(
+    edges: list[tuple[int, int]],
+    attr_geometry: list,
+    vx_lons: list[float],
+    vx_lats: list[float],
+):
+    """Compute per-edge tree_canopy_score + park_proximity_score arrays.
+
+    Returns (canopy_f32, park_f32) — both shape (len(edges),). Edges with no
+    canopy cell containing the midpoint score 0; edges further than
+    _PARK_CUTOFF_M from any park score 0.
+
+    The function is tolerant of missing artifacts: if either JSON is absent or
+    malformed the corresponding array stays all-zeros and the bake continues.
+    """
+    import json
+    import math as _math
+
+    import numpy as _np
+    from scipy.spatial import cKDTree as _cKDTree
+    from shapely.geometry import Point as _Point, Polygon as _Polygon
+    from shapely.strtree import STRtree as _STRtree
+
+    data_dir   = Path(__file__).resolve().parent / "data"
+    tree_path  = data_dir / "tree_canopy_kde.json"
+    parks_path = data_dir / "parks_polygons.json"
+
+    m_per_deg_lon = _M_PER_DEG_LAT * _math.cos(_math.radians(_LAT_REF_DEG))
+
+    def _proj(lon: float, lat: float) -> tuple[float, float]:
+        return (lon * m_per_deg_lon, lat * _M_PER_DEG_LAT)
+
+    n = len(edges)
+    canopy_scores = _np.zeros(n, dtype=_np.float32)
+    park_scores   = _np.zeros(n, dtype=_np.float32)
+
+    if n == 0:
+        return canopy_scores, park_scores
+
+    # ---- 1. Edge midpoints (arc-length) in projected metres ---------------
+    mid_xy = _np.zeros((n, 2), dtype=_np.float64)
+    for i, ((u, v), geom) in enumerate(zip(edges, attr_geometry)):
+        if geom and len(geom) >= 2:
+            pts = list(geom)
+            segs: list[float] = []
+            total = 0.0
+            for (lon0, lat0), (lon1, lat1) in zip(pts, pts[1:]):
+                dx = (lon1 - lon0) * m_per_deg_lon
+                dy = (lat1 - lat0) * _M_PER_DEG_LAT
+                seg = _math.hypot(dx, dy)
+                segs.append(seg)
+                total += seg
+            target = total / 2.0
+            acc = 0.0
+            mid_lon, mid_lat = pts[-1]
+            for j in range(len(segs)):
+                if acc + segs[j] >= target:
+                    f = (target - acc) / segs[j] if segs[j] > 0 else 0.0
+                    lon0, lat0 = pts[j]
+                    lon1, lat1 = pts[j + 1]
+                    mid_lon = lon0 + f * (lon1 - lon0)
+                    mid_lat = lat0 + f * (lat1 - lat0)
+                    break
+                acc += segs[j]
+            mid_xy[i] = _proj(mid_lon, mid_lat)
+        else:
+            u_lon, u_lat = vx_lons[u], vx_lats[u]
+            v_lon, v_lat = vx_lons[v], vx_lats[v]
+            mid_xy[i] = _proj((u_lon + v_lon) / 2.0, (u_lat + v_lat) / 2.0)
+
+    # ---- 2. Tree canopy: per-edge KDE density lookup ----------------------
+    if tree_path.exists():
+        try:
+            tree_data = json.loads(tree_path.read_text(encoding="utf-8"))
+            cell_size_m = float((tree_data.get("metadata") or {}).get("cell_size_m") or 50.0)
+            cells = tree_data.get("cells") or []
+            valid_cells = [
+                (float(c["lon"]), float(c["lat"]), float(c["density"]))
+                for c in cells
+                if isinstance(c.get("lon"), (int, float))
+                and isinstance(c.get("lat"), (int, float))
+                and isinstance(c.get("density"), (int, float))
+            ]
+            if valid_cells:
+                cell_xy        = _np.array(
+                    [_proj(lon, lat) for lon, lat, _ in valid_cells], dtype=_np.float64
+                )
+                cell_densities = _np.array([d for _, _, d in valid_cells], dtype=_np.float64)
+                half_cell = cell_size_m / 2.0
+                kdt = _cKDTree(cell_xy)
+                _, idxs = kdt.query(mid_xy, k=1)
+                dx = _np.abs(mid_xy[:, 0] - cell_xy[idxs, 0])
+                dy = _np.abs(mid_xy[:, 1] - cell_xy[idxs, 1])
+                inside = (dx <= half_cell) & (dy <= half_cell)
+                raw = _np.where(inside, cell_densities[idxs], 0.0)
+                canopy_scores = _np.clip(raw, 0.0, 1.0).astype(_np.float32)
+            else:
+                print(f"  [warn] {tree_path.name} contained no usable cells — tree_canopy_score=0 for every edge")
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            print(f"  [warn] tree-canopy bake skipped ({type(e).__name__}: {e})")
+    else:
+        print(f"  [warn] {tree_path.name} not found — tree_canopy_score=0 for every edge")
+
+    # ---- 3. Park proximity: per-edge nearest-park distance ---------------
+    if parks_path.exists():
+        try:
+            parks_data = json.loads(parks_path.read_text(encoding="utf-8"))
+            entries = parks_data.get("parks") or []
+            projected_polys: list[_Polygon] = []
+            park_acres:      list[float]    = []
+            for entry in entries:
+                ring = entry.get("ring")
+                if not ring or len(ring) < 4:
+                    continue
+                try:
+                    poly = _Polygon([_proj(float(lon), float(lat)) for lon, lat in ring])
+                except (ValueError, TypeError):
+                    continue
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                if poly.is_empty or not hasattr(poly, "geom_type"):
+                    continue
+                projected_polys.append(poly)
+                try:
+                    park_acres.append(float(entry.get("acres") or 0.0))
+                except (TypeError, ValueError):
+                    park_acres.append(0.0)
+
+            if projected_polys:
+                strtree = _STRtree(projected_polys)
+                for i in range(n):
+                    pt = _Point(float(mid_xy[i, 0]), float(mid_xy[i, 1]))
+                    nearest_idx = int(strtree.nearest(pt))
+                    nearest_poly = projected_polys[nearest_idx]
+                    dist = float(pt.distance(nearest_poly))
+                    if dist >= _PARK_CUTOFF_M:
+                        continue
+                    base = 1.0 - dist / _PARK_CUTOFF_M
+                    acres = park_acres[nearest_idx]
+                    log_acres = _math.log10(max(1.0, acres)) if acres > 0 else 0.0
+                    factor = log_acres / _PARK_ACRES_LOG_SAT  # 0 at 1 acre, 1 at 100 acres
+                    multiplier = min(
+                        _PARK_MULT_MAX,
+                        _PARK_MULT_MIN + (_PARK_MULT_MAX - _PARK_MULT_MIN) * factor,
+                    )
+                    park_scores[i] = _np.float32(min(1.0, max(0.0, base * multiplier)))
+            else:
+                print(f"  [warn] {parks_path.name} contained no usable polygons — park_proximity_score=0 for every edge")
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            print(f"  [warn] parks bake skipped ({type(e).__name__}: {e})")
+    else:
+        print(f"  [warn] {parks_path.name} not found — park_proximity_score=0 for every edge")
+
+    return canopy_scores, park_scores
+
+
+def _print_score_histogram(label: str, scores) -> None:
+    """One-line summary + a coarse histogram of a [0,1] score array."""
+    import numpy as _np
+    bins = [0.0, 0.001, 0.05, 0.10, 0.20, 0.40, 0.60, 0.80, 1.0001]
+    counts, _ = _np.histogram(scores, bins=bins)
+    nz = int((scores > 0).sum())
+    n  = len(scores)
+    pct = (nz / n * 100.0) if n else 0.0
+    print(f"  {label}: non-zero {nz:,}/{n:,} ({pct:.1f}%)  min={float(scores.min()):.3f}  max={float(scores.max()):.3f}  mean={float(scores.mean()):.3f}")
+    rows = [
+        ("[0.000, 0.001)", counts[0]),
+        ("[0.001, 0.050)", counts[1]),
+        ("[0.050, 0.100)", counts[2]),
+        ("[0.100, 0.200)", counts[3]),
+        ("[0.200, 0.400)", counts[4]),
+        ("[0.400, 0.600)", counts[5]),
+        ("[0.600, 0.800)", counts[6]),
+        ("[0.800, 1.000]", counts[7]),
+    ]
+    for name, c in rows:
+        bar = "#" * min(40, int(c * 40 / max(counts.max(), 1)))
+        print(f"    {name} {int(c):8,d} {bar}")
 
 
 def _save_igraph_artifact(G_nx) -> None:
@@ -291,7 +516,25 @@ def _save_igraph_artifact(G_nx) -> None:
         edges, attr_length, attr_name = dedup_edges, dedup_length, dedup_name
         attr_highway, attr_footway, attr_geometry = dedup_highway, dedup_footway, dedup_geometry
 
-        # --- compact arrays (format_version 2) ---
+        # Vertex lon/lat lists keyed by node index — used by the green-signals
+        # bake for None-geometry edges, and again below for ig.Graph vertex attrs.
+        vx_lons = [float(G_nx.nodes[n].get("x", 0.0)) for n in nodes]
+        vx_lats = [float(G_nx.nodes[n].get("y", 0.0)) for n in nodes]
+
+        _step_end(f"{len(edges):,} undirected edges ready")
+
+        # --- bake greenest-routing edge attributes (FEAT-4) ---
+        _step_begin("Baking tree_canopy_score + park_proximity_score per edge")
+        edge_tree_canopy_f32, edge_park_proximity_f32 = _bake_green_signals(
+            edges, attr_geometry, vx_lons, vx_lats
+        )
+        _print_score_histogram("tree_canopy_score   ", edge_tree_canopy_f32)
+        _print_score_histogram("park_proximity_score", edge_park_proximity_f32)
+        _step_end()
+
+        _step_begin("Packing compact arrays + writing pickle")
+
+        # --- compact arrays (format_version 3) ---
 
         # highway / footway vocab encoding (int8 codes + vocab list)
         highway_vocab = sorted(set(attr_highway))
@@ -326,16 +569,13 @@ def _save_igraph_artifact(G_nx) -> None:
             n=len(nodes),
             edges=edges,
             directed=False,
-            vertex_attrs={
-                "x": [float(G_nx.nodes[n].get("x", 0.0)) for n in nodes],
-                "y": [float(G_nx.nodes[n].get("y", 0.0)) for n in nodes],
-            },
+            vertex_attrs={"x": vx_lons, "y": vx_lats},
         )
 
         with open(IGRAPH_PATH, "wb") as f:
             pickle.dump(
                 {
-                    "format_version":    2,
+                    "format_version":    3,
                     "prefiltered":       True,
                     "graph":             ig_graph,
                     "edge_names":        attr_name,
@@ -347,6 +587,10 @@ def _save_igraph_artifact(G_nx) -> None:
                     "highway_vocab":     highway_vocab,
                     "footway_vocab":     footway_vocab,
                     "edge_geoms":        edge_geoms,
+                    # FEAT-4 greenest-routing edge attributes — consumed by
+                    # `walking._build_flavor_weights("greenest")`.
+                    "edge_tree_canopy_f32":    edge_tree_canopy_f32,
+                    "edge_park_proximity_f32": edge_park_proximity_f32,
                 },
                 f,
                 protocol=pickle.HIGHEST_PROTOCOL,

@@ -9,6 +9,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 load_dotenv()
 
@@ -23,7 +26,15 @@ from walking import (
     FLAVORS,
     DEFAULT_FLAVOR,
 )
-from geocoding import resolve_location, reverse_geocode_point, LocationOutsideChicagoError, GeocoderDegradedError
+from geocoding import (
+    GeocoderDegradedError,
+    LocationOutsideChicagoError,
+    _normalize_street_abbr,
+    geocode_external,
+    resolve_location,
+    reverse_geocode_point,
+)
+import local_search
 from utils import (
     CHICAGO_SOUTH, CHICAGO_NORTH, CHICAGO_WEST, CHICAGO_EAST,
     haversine_miles, METERS_PER_MILE, quantize_coord,
@@ -40,6 +51,9 @@ from steps import (
 from explore import explore as compute_explore
 from community_areas import lookup_centroid
 from places import places_in_polygon, residential_heatmap
+from parks import parks_in_polygon
+from green_space import green_space_in_polygon
+from tree_canopy import tree_canopy_in_polygon
 from shapely.geometry import shape as _shape
 
 # Two points within this many miles of each other are treated as the same
@@ -69,7 +83,39 @@ ALLOWED_ORIGINS = [
 # trycloudflare.com hostnames so the dynamic per-session frontend tunnel
 # origin is accepted without manual .env edits. This MUST stay dev-only —
 # production deploys never set this var. See docs/MOBILE_TESTING.md.
-_DEV_TUNNEL_ORIGIN_REGEX = os.getenv("DEV_TUNNEL_ORIGIN_REGEX", "").strip() or None
+#
+# Two safety nets enforce dev-only use:
+#   1. APP_ENV must be one of {"dev","development","local"} or the regex is
+#      ignored (documentation alone is fragile — a stray prod .env that
+#      happens to contain DEV_TUNNEL_ORIGIN_REGEX would otherwise widen
+#      CORS silently).
+#   2. The regex must be anchored with ^...$ — an unanchored pattern like
+#      "https://my-app\.com" matches "https://my-app.com.evil.tld" too.
+_APP_ENV = os.getenv("APP_ENV", "").strip().lower()
+_IS_DEV_ENV = _APP_ENV in ("dev", "development", "local")
+_raw_dev_regex = os.getenv("DEV_TUNNEL_ORIGIN_REGEX", "").strip()
+if not _raw_dev_regex:
+    _DEV_TUNNEL_ORIGIN_REGEX: "str | None" = None
+elif not _IS_DEV_ENV:
+    logger.error(
+        "Refusing DEV_TUNNEL_ORIGIN_REGEX outside dev (APP_ENV=%r). "
+        "Unset the var or set APP_ENV=development to enable.",
+        _APP_ENV,
+    )
+    _DEV_TUNNEL_ORIGIN_REGEX = None
+elif not (_raw_dev_regex.startswith("^") and _raw_dev_regex.endswith("$")):
+    logger.error(
+        "DEV_TUNNEL_ORIGIN_REGEX must be anchored with ^...$ — refusing %r",
+        _raw_dev_regex,
+    )
+    _DEV_TUNNEL_ORIGIN_REGEX = None
+else:
+    _DEV_TUNNEL_ORIGIN_REGEX = _raw_dev_regex
+    logger.warning(
+        "Dev CORS regex active: %s (APP_ENV=%s). "
+        "This widens CORS to a third-party-owned domain — never use in production.",
+        _DEV_TUNNEL_ORIGIN_REGEX, _APP_ENV,
+    )
 
 def _preload_graph() -> None:
     """Load graph in a background thread so startup doesn't block."""
@@ -85,7 +131,22 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# Per-IP rate limiter. The handler keys on `request.client.host`; behind a
+# trusted reverse proxy that strips/normalizes X-Forwarded-For (Railway,
+# Cloudflare), `get_remote_address` returns the proxy's connection peer —
+# operators who care about per-client granularity should keep an L7 rate-limit
+# at the edge as defense-in-depth. Limits are tuned per endpoint cost; see
+# each route handler for its specific @limiter.limit decorator.
+#
+# RATE_LIMIT_ENABLED=false disables the limiter (used by the pytest suite,
+# which would otherwise blow past the 10/min /explore limit inside a single
+# test module since the TestClient host is a single key).
+_RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() not in ("false", "0", "no")
+limiter = Limiter(key_func=get_remote_address, default_limits=[], enabled=_RATE_LIMIT_ENABLED)
+
 app = FastAPI(lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 
@@ -206,9 +267,19 @@ class ExploreOrigin(BaseModel):
 
 class ExploreRequest(BaseModel):
     origin: ExploreOrigin
-    max_minutes: float = Field(ge=5, le=45)
+    max_minutes: int = Field(ge=5, le=45)
     categories: list[str] | None = None
     height_inches: float | None = None
+
+    @field_validator("max_minutes", mode="before")
+    @classmethod
+    def round_max_minutes(cls, v):
+        # Routing quantizes max_minutes to an integer (see explore.py), so
+        # round here at the schema boundary to keep the echoed value in
+        # the response consistent with the polygon that was computed.
+        if isinstance(v, float):
+            return round(v)
+        return v
 
     @field_validator("height_inches")
     @classmethod
@@ -234,18 +305,22 @@ async def health(request: Request):
 
 
 @app.post("/explore")
+@limiter.limit("10/minute")
 async def explore_endpoint(request: Request, payload: ExploreRequest):
     """Return the walkable isochrone polygon for an origin + time budget.
 
     Response shape:
         {
           "origin_coords": [lat, lon],
-          "max_minutes": float,
+          "max_minutes": int,
           "polygon": GeoJSON Polygon,
           "reachable_neighborhoods": [str, ...],
           "stats": { "node_count": int, "area_sq_mi": float },
           "places": [ {category, subcategory, name, lat, lon, address, source}, ... ],
           "residential_heatmap": GeoJSON MultiPolygon | null,
+          "tree_canopy_heatmap": GeoJSON FeatureCollection | null,
+          "parks_heatmap": GeoJSON FeatureCollection | null,
+          "green_space_heatmap": GeoJSON FeatureCollection | null,
         }
 
     `categories` filters `places` to the named top-level category keys (omit
@@ -285,9 +360,12 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
     # event loop should not block on shapely's intersection calls for
     # large isochrones.
     polygon_geom = _shape(result["polygon"])
-    places, heatmap = await asyncio.gather(
+    places, heatmap, canopy, parks, green = await asyncio.gather(
         loop.run_in_executor(None, places_in_polygon, polygon_geom, payload.categories),
         loop.run_in_executor(None, residential_heatmap, polygon_geom),
+        loop.run_in_executor(None, tree_canopy_in_polygon, polygon_geom),
+        loop.run_in_executor(None, parks_in_polygon, polygon_geom),
+        loop.run_in_executor(None, green_space_in_polygon, polygon_geom),
     )
 
     return {
@@ -300,16 +378,98 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         # GeoJSON MultiPolygon (or null if no residential land falls inside
         # the isochrone — happens for tight Loop-area budgets).
         "residential_heatmap": heatmap,
+        # GeoJSON FeatureCollection of up to three density bands (low/mid/
+        # high), or null when no canopy cells overlap the isochrone.
+        "tree_canopy_heatmap": canopy,
+        # GeoJSON FeatureCollection of CPD park footprints clipped to the
+        # isochrone (one Feature per park with name + acres properties),
+        # or null when no park polygons overlap.
+        "parks_heatmap": parks,
+        # GeoJSON FeatureCollection of non-CPD green space (cemeteries,
+        # golf courses, nature reserves / Forest Preserves, recreation
+        # grounds) clipped to the isochrone. One Feature per `kind`
+        # (kind ∈ {cemetery, golf_course, nature_reserve, recreation_ground}),
+        # or null when none overlap.
+        "green_space_heatmap": green,
     }
 
 
 @app.get("/reverse-geocode")
+@limiter.limit("60/minute")
 async def reverse_geocode(request: Request, lat: float, lon: float):
     if not (CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST):
         raise HTTPException(status_code=422, detail="Location is outside the Chicago coverage area.")
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, reverse_geocode_point, lat, lon)
     return result
+
+
+_AUTOCOMPLETE_MAX_LIMIT = 20
+_AUTOCOMPLETE_SUPPLEMENT_THRESHOLD = 3
+
+
+def _looks_like_free_text_address(q: str) -> bool:
+    """True when the query starts with a digit token — heuristic for an address
+    typed by hand. Used to gate the LocationIQ supplement so that partial
+    neighborhood / POI lookups never burn quota.
+    """
+    head = q.lstrip().split(None, 1)[0] if q.strip() else ""
+    return bool(head) and head[0].isdigit()
+
+
+@app.get("/autocomplete")
+@limiter.limit("60/minute")
+async def autocomplete_endpoint(request: Request, q: str, limit: int = 8):
+    """Typeahead suggestions for the route / explore forms.
+
+    Local-first: returns up to `limit` ranked suggestions from
+    `local_search.autocomplete` (neighborhoods, intersections, addresses,
+    POIs — all from the bundled SQLite + curated tables). If the query
+    smells like a free-text address (first token is digit-prefixed) and the
+    local layer returned fewer than 3 results, supplement with a single
+    LocationIQ forward lookup so user-typed addresses outside the OSM
+    address-point set still resolve. Otherwise no network call is made.
+    """
+    q = (q or "").strip()
+    if not q:
+        return {"suggestions": []}
+    if len(q) > 200:
+        raise HTTPException(status_code=422, detail="query too long")
+    if not (1 <= limit <= _AUTOCOMPLETE_MAX_LIMIT):
+        raise HTTPException(
+            status_code=422,
+            detail=f"limit must be between 1 and {_AUTOCOMPLETE_MAX_LIMIT}",
+        )
+
+    loop = asyncio.get_running_loop()
+    suggestions = await loop.run_in_executor(None, local_search.autocomplete, q, limit)
+
+    out = [
+        {"label": s.label, "lat": s.lat, "lon": s.lon, "source": s.source}
+        for s in suggestions
+    ]
+
+    if (
+        len(out) < _AUTOCOMPLETE_SUPPLEMENT_THRESHOLD
+        and _looks_like_free_text_address(q)
+    ):
+        # Match resolve_location's normalization so the cached_forward key
+        # written here is the same one /route will look up later — otherwise
+        # the same address pays for two LocationIQ calls (BUG-003).
+        supplement_q = _normalize_street_abbr(q.lower())
+        try:
+            coords = await loop.run_in_executor(None, geocode_external, supplement_q)
+        except GeocoderDegradedError:
+            coords = None  # silently degrade — the local list is still useful
+        if coords is not None:
+            out.append({
+                "label": q,
+                "lat": coords[0],
+                "lon": coords[1],
+                "source": "locationiq",
+            })
+
+    return {"suggestions": out[:limit]}
 
 
 def _dist2(a, b) -> float:
@@ -361,6 +521,7 @@ def _stitch_legs(legs_raw: list[dict]) -> tuple[list, list[tuple[int, int]]]:
 
 
 @app.post("/route")
+@limiter.limit("30/minute")
 async def route(request: Request, payload: RouteRequest):
     loop = asyncio.get_running_loop()
 

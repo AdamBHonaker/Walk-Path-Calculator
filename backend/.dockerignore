@@ -1,8 +1,17 @@
 # Environment / secrets
 .env
 
-# Geocode cache (auto-generated)
+# Legacy JSON geocode cache (retired -- runtime now uses
+# data/chicago_geocode.db). Kept .deprecated locally as a paper trail.
 geocode_cache.json
+geocode_cache.json.deprecated
+
+# Prebuilt street-graph artifacts. The Dockerfile fetches the .graphml
+# from the GitHub release and rebuilds the .pkl inside the image, so
+# copying the local 28 MB pickle (or any .preFEAT4-style backup) only
+# bloats the build context.
+street_graph.graphml
+street_graph_igraph.pkl*
 
 # OSMnx / routing cache (large files)
 cache/

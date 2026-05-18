@@ -63,3 +63,23 @@ class TestExplore:
         explore.explore(ORIGIN_LAT, ORIGIN_LON, 15)
         second = explore._explore_quantized.cache_info()
         assert second.hits == first.hits + 1
+
+    @pytest.mark.skipif(
+        not explore.BOUNDARY_PATH.exists(),
+        reason="Chicago boundary data file missing — run build_chicago_boundary.py",
+    )
+    def test_lakefront_polygon_is_clipped_to_boundary(self):
+        # Streeterville — sits a few blocks from Navy Pier, so a generous
+        # walking budget naturally extends the unclipped hull east into the
+        # lake. The clip step should pull that overshoot back to the shoreline.
+        explore._explore_quantized.cache_clear()
+        result = explore.explore(41.8920, -87.6196, 35)
+        assert result is not None
+        poly = shape(result["polygon"])
+        boundary = explore._get_chicago_boundary()
+        assert boundary is not None
+        # Allow a tiny floating-point slack (≤ 0.1% of the polygon area) for
+        # rounding in the boundary geometry — anything larger means real
+        # overshoot into the lake.
+        overshoot = poly.difference(boundary).area / max(poly.area, 1e-12)
+        assert overshoot < 0.001, f"polygon overshoots boundary by {overshoot:.4%}"

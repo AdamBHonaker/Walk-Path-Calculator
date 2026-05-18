@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 from geocoding import resolve_location, NEIGHBORHOOD_COORDS
 
 
@@ -48,18 +48,61 @@ class TestFuzzyNeighborhoodMatch:
             assert 41.6 < lat < 42.1
 
 
-class TestGoogleFallback:
+class TestLocationIQFallback:
+    """Coverage for the Tier-3 hosted fallback (LocationIQ).
+
+    The legacy name `TestGoogleFallback` referred to the Google geocoder
+    that was retired in favor of LocationIQ + a local SQLite tier; the
+    behavioral contract (no key + nonexistent query -> None) is unchanged.
+    """
+
     def test_no_api_key_returns_none_for_unknown(self):
-        # Patch the module-level _GOOGLE_API_KEY directly — it is read at import time,
-        # so patching os.environ at test runtime has no effect on it.
+        # Patch the module-level _LOCATIONIQ_API_KEY directly — it is read
+        # at import time, so patching os.environ at test runtime has no
+        # effect on it. Also negative-cache for any prior run.
         import geocoding
-        with patch.object(geocoding, "_GOOGLE_API_KEY", ""):
-            result = resolve_location("zzz_nonexistent_place_xyzzy")
+        geocoding._cache_clear_forward_for_test("zzz_nonexistent_place_xyzzy_local")
+        with patch.object(geocoding, "_LOCATIONIQ_API_KEY", ""):
+            result = resolve_location("zzz_nonexistent_place_xyzzy_local")
             assert result is None
 
     def test_neighborhood_works_without_api_key(self):
-        # Neighborhood lookup never reaches geocode_google, so no API key is needed.
+        # Neighborhood lookup never reaches LocationIQ, so no API key is needed.
         import geocoding
-        with patch.object(geocoding, "_GOOGLE_API_KEY", ""):
+        with patch.object(geocoding, "_LOCATIONIQ_API_KEY", ""):
             result = resolve_location("wrigleyville")
             assert result is not None
+
+
+class TestReverseDisplayNameTrim:
+    """The ZIP-trim regex must not truncate 5-digit house numbers
+    (Chicago's south-side grid runs out to ~13800)."""
+
+    def _call(self, display_name):
+        import geocoding
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"{}"
+        resp.json = lambda: {"display_name": display_name}
+        with patch.object(geocoding, "_LOCATIONIQ_API_KEY", "k"), \
+             patch.object(geocoding, "_circuit_is_open", return_value=False), \
+             patch.object(geocoding._http_session, "get", return_value=resp):
+            return geocoding._reverse_geocode_external(41.7, -87.68)
+
+    def test_five_digit_house_number_preserved(self):
+        # The bug: a 5-digit house number anchored the regex and dropped
+        # everything after the house number, leaving the label as "13700".
+        label = self._call(
+            "13700, South Western Avenue, Chicago, IL, 60643, United States"
+        )
+        assert label is not None
+        assert label.startswith("13700, South Western Avenue")
+        assert "60643" in label
+
+    def test_zip_trim_still_drops_country(self):
+        label = self._call(
+            "123 North Clark Street, Chicago, IL, 60601, United States"
+        )
+        assert label is not None
+        assert label.endswith("60601")
+        assert "United States" not in label

@@ -15,14 +15,17 @@ rescale the budget if needed.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import threading
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import numpy as np
-from shapely.geometry import MultiPoint, Point, mapping
+from shapely import concave_hull
+from shapely.geometry import MultiPoint, MultiPolygon, Point, Polygon, mapping, shape
 from shapely.prepared import prep
 
 import walking
@@ -30,6 +33,8 @@ from geocoding import NEIGHBORHOOD_COORDS
 from utils import WALKING_SPEED_MPH, METERS_PER_MILE, quantize_coord
 
 logger = logging.getLogger(__name__)
+
+BOUNDARY_PATH = Path(__file__).resolve().parent / "data" / "chicago_boundary.json"
 
 # Concave-hull tightness ratio passed to shapely.concave_hull. 0.0 → convex
 # hull; 1.0 → tightest (most concave) hull. 0.4 keeps the shape recognizably
@@ -85,7 +90,6 @@ def _hull_polygon(lats: np.ndarray, lons: np.ndarray):
 
     pts = MultiPoint([(lon, lat) for lat, lon in zip(lats, lons)])
     try:
-        from shapely import concave_hull  # shapely ≥ 2.0
         hull = concave_hull(pts, ratio=_CONCAVE_HULL_RATIO)
         if hull.is_empty or hull.geom_type not in ("Polygon", "MultiPolygon"):
             raise ValueError("concave_hull returned non-polygon")
@@ -142,6 +146,68 @@ def _get_neighborhood_points() -> "list[tuple[str, Point]]":
     return _neighborhood_points
 
 
+# City of Chicago administrative boundary. Used to clip isochrone hulls
+# against the Lake Michigan shoreline (the city limits ARE the shoreline
+# along the lakefront). Loaded lazily so absence of the file degrades
+# gracefully — the hull is returned unclipped if the boundary is missing.
+_boundary_lock = threading.Lock()
+_boundary: "Polygon | MultiPolygon | None" = None
+_boundary_loaded = False
+
+
+def _get_chicago_boundary() -> "Polygon | MultiPolygon | None":
+    global _boundary, _boundary_loaded
+    if _boundary_loaded:
+        return _boundary
+    with _boundary_lock:
+        if _boundary_loaded:
+            return _boundary
+        if not BOUNDARY_PATH.exists():
+            logger.warning(
+                "Chicago boundary missing at %s — isochrones will not be "
+                "clipped against the lakefront; run "
+                "`python backend/scripts/build_chicago_boundary.py` to generate it",
+                BOUNDARY_PATH,
+            )
+            _boundary_loaded = True
+            return None
+        try:
+            data = json.loads(BOUNDARY_PATH.read_text(encoding="utf-8"))
+            geom = shape(data["polygon"])
+            if not geom.is_valid:
+                geom = geom.buffer(0)
+            if not isinstance(geom, (Polygon, MultiPolygon)) or geom.is_empty:
+                raise ValueError(f"unexpected geom: {geom.geom_type}")
+            _boundary = geom
+            logger.info("Loaded Chicago boundary (%s)", geom.geom_type)
+        except (OSError, ValueError, KeyError) as e:
+            logger.error("Failed to read %s (%s: %s)", BOUNDARY_PATH, type(e).__name__, e)
+            _boundary = None
+        _boundary_loaded = True
+        return _boundary
+
+
+def _clip_to_boundary(polygon):
+    """Intersect `polygon` with the Chicago city boundary if available.
+
+    Returns the original polygon unchanged when the boundary is missing or
+    the intersection would be empty / degenerate — both safer than emitting
+    a hull that vanishes because the user picked a lakefront origin where
+    the concave hull mostly sat over water.
+    """
+    boundary = _get_chicago_boundary()
+    if boundary is None:
+        return polygon
+    try:
+        clipped = polygon.intersection(boundary)
+    except Exception as e:  # noqa: BLE001 — shapely can throw various GEOS errors
+        logger.warning("boundary intersection failed (%s: %s); keeping unclipped hull", type(e).__name__, e)
+        return polygon
+    if clipped.is_empty or clipped.geom_type not in ("Polygon", "MultiPolygon"):
+        return polygon
+    return clipped
+
+
 def _reachable_neighborhoods(polygon) -> list[str]:
     """Return NEIGHBORHOOD_COORDS keys whose centroids fall inside `polygon`.
 
@@ -192,6 +258,7 @@ def _explore_quantized(
     lats = walking._vertex_lats[reachable]
     lons = walking._vertex_lons[reachable]
     polygon = _hull_polygon(lats, lons)
+    polygon = _clip_to_boundary(polygon)
     area_sq_mi = round(_polygon_area_sq_mi(polygon), 4)
     neighborhoods = _reachable_neighborhoods(polygon)
 
@@ -205,7 +272,7 @@ def _explore_quantized(
     }
 
 
-def explore(lat: float, lon: float, max_minutes: float) -> dict[str, Any] | None:
+def explore(lat: float, lon: float, max_minutes: int) -> dict[str, Any] | None:
     """Public entry point — see module docstring.
 
     Returns None if the origin can't be snapped to the pedestrian graph
@@ -214,4 +281,7 @@ def explore(lat: float, lon: float, max_minutes: float) -> dict[str, Any] | None
     if max_minutes <= 0:
         return None
     lat_q, lon_q = quantize_coord(lat, lon)
+    # Accept floats from legacy callers but normalize to the int the cache
+    # key + Dijkstra cutoff expect. The /explore endpoint already rounds at
+    # the pydantic boundary so the response echoes the same value.
     return _explore_quantized(lat_q, lon_q, round(max_minutes))
