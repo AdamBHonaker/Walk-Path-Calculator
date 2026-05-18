@@ -1,7 +1,10 @@
-import { WFColophon } from "../wayfarer/primitives.jsx";
+import { WFAttribution, WFColophon } from "../wayfarer/primitives.jsx";
 
 export function Footer() {
   return (
-    <WFColophon as="footer" className="page-footer-colophon" />
+    <footer className="page-footer">
+      <WFColophon className="page-footer-colophon" />
+      <WFAttribution className="page-footer-attribution" />
+    </footer>
   );
 }

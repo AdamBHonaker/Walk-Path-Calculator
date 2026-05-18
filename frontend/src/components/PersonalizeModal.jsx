@@ -2,14 +2,22 @@ import { useEffect, useState } from "react";
 import { lbToKg, kgToLb } from "../lib/units.js";
 import { loadWeightUnit, saveWeightUnit } from "../lib/personaPrefs.js";
 import { loadTheme, applyTheme } from "../lib/theme.js";
+import { WFCheck } from "../wayfarer/forms.jsx";
 
-const FT_OPTIONS = [4, 5, 6, 7];
+// Range matches loadStoredHeightFt + the backend's 36–108 in validator.
+// Capped at 8 — 9 ft is the backend upper bound but isn't a realistic value.
+const FT_OPTIONS = [3, 4, 5, 6, 7, 8];
 const IN_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 const GOAL_PRESETS = [5_000, 7_500, 10_000, 15_000, 20_000];
 
 const THEME_OPTIONS = [
   { value: "cream", label: "Cream", detail: "Bone-white paper" },
   { value: "dusk",  label: "Dusk",  detail: "Lamplit deep ink" },
+];
+
+const MOBILITY_OPTIONS = [
+  { value: "walking", label: "Walking", detail: "Default profile" },
+  { value: "wheeled", label: "Wheeled", detail: "Wheelchair, scooter, etc." },
 ];
 
 export function PersonalizeModal({
@@ -19,9 +27,15 @@ export function PersonalizeModal({
   heightIn,
   weightKg,
   dailyGoal,
+  mobilityProfile,
+  avoidStairs,
+  preferPedestrian,
   onChangeHeight,
   onChangeWeight,
   onChangeGoal,
+  onChangeMobilityProfile,
+  onChangeAvoidStairs,
+  onChangePreferPedestrian,
 }) {
   const [unit, setUnit] = useState(loadWeightUnit);
   const [theme, setTheme] = useState(() => loadTheme());
@@ -45,10 +59,13 @@ export function PersonalizeModal({
   // so the user isn't left wondering why their number didn't stick.
   const [goalNote, setGoalNote] = useState("");
 
-  // Reseed the local input mirrors when the modal opens or when the parent
-  // values change. Without this, parent-driven updates (deep-link import,
-  // external reset) would be hidden behind stale local state because the
-  // component only returns null while closed — it doesn't unmount.
+  // Reseed the local input mirrors when the modal opens or when the unit
+  // toggle changes. Parent values (`weightKg`, `dailyGoal`) are intentionally
+  // NOT in deps: each keystroke commits a clamped/converted value upward, and
+  // re-echoing it here would overwrite the user's in-progress typing (e.g.
+  // typing "1" → parent clamps to 1000 → input flips to "1000" mid-type).
+  // External resets are handled via `handleReset` which writes the local
+  // mirrors directly.
   useEffect(() => {
     if (!open) return;
     setWeightInput(
@@ -58,7 +75,8 @@ export function PersonalizeModal({
     );
     setGoalInput(dailyGoal != null ? String(dailyGoal) : "");
     setGoalNote("");
-  }, [open, weightKg, dailyGoal, unit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, unit]);
 
   useEffect(() => {
     if (!open) return;
@@ -262,6 +280,45 @@ export function PersonalizeModal({
           )}
           <p className="personalize-section-hint">
             Controls the % progress bar shown after each route.
+          </p>
+        </section>
+
+        {/* Mobility */}
+        <section className="personalize-section-final">
+          <div className="personalize-section-label">Mobility profile</div>
+          <div role="radiogroup" aria-label="Mobility profile" className="personalize-theme-row">
+            {MOBILITY_OPTIONS.map(({ value, label, detail }) => {
+              const checked = (mobilityProfile ?? "walking") === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  onClick={() => onChangeMobilityProfile?.(value)}
+                  className={`personalize-theme-btn${checked ? " personalize-theme-btn--active" : ""}`}
+                >
+                  <span>{label}</span>
+                  <span className="personalize-theme-btn-detail">{detail}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="personalize-mobility-prefs">
+            <WFCheck
+              checked={mobilityProfile === "wheeled" ? true : !!avoidStairs}
+              onChange={e => onChangeAvoidStairs?.(e.target.checked)}
+              disabled={mobilityProfile === "wheeled"}
+              label="Avoid stairs and steep ascents"
+            />
+            <WFCheck
+              checked={!!preferPedestrian}
+              onChange={e => onChangePreferPedestrian?.(e.target.checked)}
+              label="Prefer pedestrian ways and footpaths"
+            />
+          </div>
+          <p className="personalize-section-hint">
+            Wheeled keeps stairs avoided and pedestrian ways preferred. Your saved walking prefs return when you switch back.
           </p>
         </section>
 

@@ -41,12 +41,6 @@ export const EXPLORE_GROUPS = [
         ],
       },
       {
-        key: "libraries",
-        label: "Chicago Public Libraries",
-        color: "var(--harbor)",
-        glyph: "L",
-      },
-      {
         key: "train_stations",
         label: "Train stations",
         color: "var(--ink)",
@@ -100,6 +94,40 @@ export const EXPLORE_GROUPS = [
           { key: "playground", label: "Playgrounds" },
         ],
       },
+      // CPD park footprints — a heatmap fill alongside the parks pins.
+      // Pins answer "there is a park here"; the footprint heatmap shows
+      // how much of the walkshed is parkland.
+      {
+        key: "parks_heatmap",
+        label: "Park footprints (heatmap)",
+        color: "var(--field)",
+        glyph: null,
+        heatmapOnly: true,
+        heatmapKey: "parks_heatmap",
+      },
+      // OSM-derived non-CPD green space — cemeteries, golf courses,
+      // Forest Preserves / nature reserves, and recreation grounds.
+      // Complements the CPD layer so the explorer reflects the full
+      // green footprint of the walkshed.
+      {
+        key: "green_space_heatmap",
+        label: "Other green space (heatmap)",
+        color: "var(--moss-500)",
+        glyph: null,
+        heatmapOnly: true,
+        heatmapKey: "green_space",
+      },
+      // Tree-canopy density from OSM natural=tree nodes, baked into a
+      // 50 m KDE grid and rendered as three opacity bands (low/mid/high).
+      // Answers "where is it pleasant to walk on a hot day?"
+      {
+        key: "tree_canopy_heatmap",
+        label: "Tree canopy (heatmap)",
+        color: "var(--moss)",
+        glyph: null,
+        heatmapOnly: true,
+        heatmapKey: "tree_canopy",
+      },
     ],
   },
   {
@@ -142,6 +170,7 @@ export const EXPLORE_GROUPS = [
         color: "var(--moss)",
         glyph: null,
         heatmapOnly: true,
+        heatmapKey: "residential",
       },
       {
         key: "schools",
@@ -162,6 +191,30 @@ export const EXPLORE_GROUPS = [
           { key: "islam",        label: "Islam" },
           { key: "judaism",      label: "Judaism" },
         ],
+      },
+    ],
+  },
+  {
+    key: "public_services",
+    label: "Public services",
+    categories: [
+      {
+        key: "libraries",
+        label: "Chicago Public Libraries",
+        color: "var(--harbor)",
+        glyph: "L",
+      },
+      {
+        key: "police_stations",
+        label: "Police stations",
+        color: "var(--harbor)",
+        glyph: "P",
+      },
+      {
+        key: "fire_stations",
+        label: "Fire stations",
+        color: "var(--ember)",
+        glyph: "F",
       },
     ],
   },

@@ -19,7 +19,7 @@ export function CompareDispatch({ miles, walkMinutes, calories }) {
 
   return (
     <section className="compare-dispatch" aria-label="Comparison vs other transportation">
-      <div className="compare-dispatch-eyebrow">Worth Walking?</div>
+      <div className="compare-dispatch-eyebrow">Worth the trip?</div>
 
       <ul className="compare-dispatch-list">
         <li className="compare-dispatch-label">vs. <em>driving</em></li>

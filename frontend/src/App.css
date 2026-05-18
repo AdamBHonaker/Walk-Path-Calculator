@@ -1504,6 +1504,42 @@
   opacity: 0.85;
 }
 
+.personalize-mobility-prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.mobility-override-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: var(--paper-bright);
+  border-left: 3px solid var(--ember);
+  font-family: var(--wf-serif);
+  font-size: 13px;
+  color: var(--ink);
+}
+.mobility-override-notice em {
+  font-style: italic;
+  color: var(--ember);
+}
+.mobility-override-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--mute);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  min-width: 24px;
+  min-height: 24px;
+}
+
 .personalize-footer {
   display: flex;
   justify-content: space-between;
@@ -1690,6 +1726,10 @@
 
 /* ── Page footer colophon ────────────────────────────────────────────────── */
 
+.page-footer {
+  display: block;
+}
+
 .page-footer-colophon {
   display: block;
   text-align: center;
@@ -1699,6 +1739,16 @@
   color: var(--mute);
   padding-top: 16px;
   border-top: 1px solid var(--mute-fog);
+}
+
+.page-footer-attribution {
+  display: block;
+  text-align: center;
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.02em;
+  padding-top: 4px;
 }
 
 /* ── Toast ────────────────────────────────────────────────────────────────── */
@@ -1953,6 +2003,23 @@
   color: var(--mute);
 }
 
+.explore-section-tooltip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 14px;
+  min-height: 14px;
+  margin-left: 4px;
+  font-size: 11px;
+  letter-spacing: 0;
+  cursor: help;
+  color: var(--mute);
+}
+.explore-section-tooltip:focus-visible {
+  outline: 2px solid var(--ember);
+  outline-offset: 2px;
+}
+
 /* Origin mode buttons — two big tappable cards. Stack on mobile, side-by-side
  * on desktop where there's room. */
 .explore-origin-modes {
@@ -2017,38 +2084,13 @@
 
 .explore-area-select {
   position: relative;
+  padding: 0;
+}
+.explore-area-select .address-autocomplete-input {
   border-bottom: 1px solid var(--ink);
-  padding: 4px 0;
-}
-.explore-area-select::after {
-  content: "▾";
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-family: var(--wf-serif);
-  font-style: italic;
-  color: var(--mute);
-  pointer-events: none;
-}
-.explore-area-select select {
-  width: 100%;
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  border: none;
-  outline: none;
-  background: transparent;
-  font-family: var(--wf-serif);
   font-size: 16px;
-  color: var(--ink);
-  padding: 8px 24px 8px 0;
-  cursor: pointer;
+  padding: 8px 0;
   min-height: 44px;
-}
-.explore-area-select select:focus-visible {
-  outline: 2px solid var(--ember);
-  outline-offset: 2px;
 }
 
 /* Time-budget slider. Native range input restyled to match the editorial
@@ -2244,6 +2286,23 @@
   font-family: var(--wf-serif);
   font-style: italic;
   font-size: 13px;
+  color: var(--ember);
+}
+
+.explore-no-area {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: rgba(156, 42, 26, 0.04);
+  border: 1px solid var(--ember);
+  font-family: var(--wf-serif);
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.45;
+}
+.explore-no-area strong {
+  font-style: italic;
   color: var(--ember);
 }
 
@@ -2795,4 +2854,138 @@
   color: var(--mute);
   text-align: center;
   line-height: 1.45;
+}
+
+/* ── AddressAutocomplete ──────────────────────────────────────────────
+ * Typeahead combobox shared by the route stop inputs and the Neighborhood
+ * Explorer's community-area picker. The inner <input> inherits the
+ * editorial baseline from `.form input[type="search"]` because it still
+ * sits inside `<form class="form">`; this block adds the dropdown chrome.
+ */
+.address-autocomplete {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.address-autocomplete-input {
+  /* When the input isn't a direct child of `.form` (e.g. inside the
+     Explorer panel), apply the baseline editorial input styling here so
+     the typeahead always looks the same. */
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  font-family: var(--wf-serif);
+  font-size: 17px;
+  font-weight: 500;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.address-autocomplete-input:focus {
+  border-bottom-color: var(--ember);
+}
+.address-autocomplete-input::placeholder {
+  color: var(--mute-fog);
+  font-style: italic;
+}
+
+.address-autocomplete-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  /* Sits above the form fields, below the modal layer. */
+  z-index: 50;
+  max-height: 320px;
+  overflow-y: auto;
+  /* Keep the suggestion text legible against the cream/dusk backgrounds; the
+     editorial voice prefers a tight outline to a heavy drop shadow. */
+  box-shadow: 0 6px 14px -8px rgba(0, 0, 0, 0.25);
+}
+
+/* Portaled variant — rendered into document.body via React portal so the
+   listbox escapes `overflow: hidden` ancestors AND the WFSheet's
+   `transform: translateY(...)` clipping context. JS sets `top`/`left`/`width`/
+   `max-height` inline from the input's getBoundingClientRect(); CSS keeps
+   the colors / borders / scroll behavior in one place. The z-index sits
+   well above the WFSheet's `zIndex: 20` and the masthead, so the dropdown
+   always paints over the sheet's top edge when the input is near the
+   sheet's handle. Overscroll-contain so a touch-scroll inside the listbox
+   doesn't drag the WFSheet underneath. */
+.address-autocomplete-list--portaled {
+  position: fixed;
+  top: auto;
+  left: auto;
+  right: auto;
+  z-index: 1000;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.address-autocomplete-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  min-height: 44px;
+  cursor: pointer;
+  font-family: var(--wf-serif);
+  font-size: 15px;
+  color: var(--ink);
+  border-bottom: 1px solid var(--mute-fog);
+}
+.address-autocomplete-item:last-child {
+  border-bottom: none;
+}
+.address-autocomplete-item:hover,
+.address-autocomplete-item--active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.address-autocomplete-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.address-autocomplete-item-source {
+  flex-shrink: 0;
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.address-autocomplete-item:hover .address-autocomplete-item-source,
+.address-autocomplete-item--active .address-autocomplete-item-source {
+  color: var(--paper);
+  opacity: 0.7;
+}
+
+/* Visually hidden, still announced by screen readers. Used for the
+   live-region result-count announcement inside AddressAutocomplete. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

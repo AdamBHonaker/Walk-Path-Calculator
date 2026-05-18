@@ -6,6 +6,7 @@ import {
   loadStoredWeightKg, saveStoredWeightKg,
   loadStoredPace, saveStoredPace,
   loadAccessPrefs, saveAccessPrefs,
+  loadMobilityProfile, saveMobilityProfile,
 } from "../lib/personaPrefs.js";
 
 export function usePersonalization(initialUrlParams) {
@@ -26,10 +27,17 @@ export function usePersonalization(initialUrlParams) {
 
   const [avoidStairs, setAvoidStairs] = useState(initialAccess.avoidStairs);
   const [preferPedestrian, setPreferPedestrian] = useState(initialAccess.preferPedestrian);
+  const [mobilityProfile, setMobilityProfileState] = useState(loadMobilityProfile);
 
   useEffect(() => {
     saveAccessPrefs({ avoidStairs, preferPedestrian });
   }, [avoidStairs, preferPedestrian]);
+
+  const setMobilityProfile = useCallback((next) => {
+    const value = next === "wheeled" ? "wheeled" : "walking";
+    setMobilityProfileState(value);
+    saveMobilityProfile(value);
+  }, []);
 
   useEffect(() => { saveStoredPace(walkPace); }, [walkPace]);
   useEffect(() => { saveStoredHeightFt(heightFt); }, [heightFt]);
@@ -53,8 +61,8 @@ export function usePersonalization(initialUrlParams) {
 
   return {
     heightFt, heightIn, weightKg, dailyGoal, walkPace,
-    avoidStairs, preferPedestrian,
-    setWalkPace, setAvoidStairs, setPreferPedestrian,
+    avoidStairs, preferPedestrian, mobilityProfile,
+    setWalkPace, setAvoidStairs, setPreferPedestrian, setMobilityProfile,
     handleHeightChange, handleWeightChange, handleGoalChange,
   };
 }

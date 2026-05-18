@@ -39,6 +39,14 @@
   --mist:  #cedde2;   /* pale blue — water, sky, distance */
   --moss:  #cbd4c5;   /* pale green — parks, terrain, foliage */
 
+  /* Tree-canopy density bands. Three opacity steps derived from `--moss`
+     (Cream value). Themes can override individual stops without losing
+     the perceptual gradient. Used by the Neighborhood Explorer's canopy
+     overlay; safe to use elsewhere when a graduated green is wanted. */
+  --moss-100: #e6ece1; /* lightest band — barely-there canopy hint */
+  --moss-300: #b6c4ab; /* mid band — comfortable shade */
+  --moss-500: #6f8a6a; /* heaviest band — full leafy parkway */
+
   /* ── Type stack ──────────────────────────────────────────
      Three families. Serif leads, sans labels, mono for figures.
      Fraunces is the voice; Inter is the wayfinding; JetBrains

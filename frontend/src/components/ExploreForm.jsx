@@ -21,10 +21,44 @@
 //   geoError             — short string shown beside the radio when the
 //                          geolocation attempt failed
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { COMMUNITY_AREA_NAMES } from "../lib/communityAreas.js";
 import { EXPLORE_BUDGET_MIN, EXPLORE_BUDGET_MAX } from "../lib/explorePrefs.js";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
+import { AddressAutocomplete } from "./AddressAutocomplete.jsx";
+
+// Local filter over the 77 community-area names. We deliberately keep this
+// constrained to the 77 — the Explorer routes through `lookup_centroid`
+// server-side, which only accepts names from this list. The full address
+// autocomplete (used in App.jsx route stops) goes through the API endpoint.
+function filterCommunityAreas(query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) {
+    // Empty query falls back to the alphabetical head — gives the user
+    // something to scroll through when they first focus the input.
+    return COMMUNITY_AREA_NAMES.slice(0, 8).map(name => ({
+      label: name,
+      source: "community_area",
+    }));
+  }
+  const matches = [];
+  for (const name of COMMUNITY_AREA_NAMES) {
+    const lower = name.toLowerCase();
+    if (lower.startsWith(q)) {
+      matches.push({ name, prefix: true });
+    } else if (lower.includes(q)) {
+      matches.push({ name, prefix: false });
+    }
+    if (matches.length >= 32) break;
+  }
+  // Prefix matches outrank substring matches; preserve alphabetical inside
+  // each bucket so the dropdown order matches user expectation.
+  matches.sort((a, b) => {
+    if (a.prefix !== b.prefix) return a.prefix ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return matches.slice(0, 8).map(m => ({ label: m.name, source: "community_area" }));
+}
 
 const SLIDER_TICKS = [5, 10, 15, 20, 25, 30, 35, 40, 45];
 
@@ -45,10 +79,18 @@ export function ExploreForm({
   // every tiny step. We commit (call onSubmit) only on pointer/key release.
   const submitRef = useRef(onSubmit);
   useEffect(() => { submitRef.current = onSubmit; }, [onSubmit]);
+  // Keyboard arrow taps fire keyup on every press, including ones that
+  // didn't actually change the value (Tab cycles, focus changes, modifier
+  // keys). Track whether the slider's value has changed since the last
+  // commit so we only fetch when there's something new to ask about.
+  const sliderDirtyRef = useRef(false);
 
   function handleOriginKindChange(kind) {
     if (kind === "current") {
-      onOriginChange({ kind: "current", communityArea: null });
+      // Retain the prior community-area pick in memory so a geolocation
+      // denial can restore it as the fallback. Persistence still nulls this
+      // (see sanitize() in explorePrefs.js) — preservation is session-only.
+      onOriginChange({ kind: "current", communityArea: origin?.communityArea || null });
       onLocateMe?.();
     } else {
       // Default to the previous community-area pick if we had one in memory,
@@ -60,17 +102,42 @@ export function ExploreForm({
     }
   }
 
-  function handleAreaChange(e) {
-    const name = e.target.value;
-    onOriginChange({ kind: "community_area", communityArea: name });
-  }
+  // The combobox is permissive on text — the user can type any string — but
+  // only commit to a real origin change when they pick a known area (the
+  // backend's `lookup_centroid` only accepts the 77 names). The displayed
+  // value is therefore a local `areaQuery` state, not the parent's
+  // `origin.communityArea`: free-typed substrings show in the input as the
+  // user types and only "win" the origin when a suggestion is selected.
+  const [areaQuery, setAreaQuery] = useState(origin?.communityArea || "");
+  // Re-sync from the parent when origin changes from outside (e.g. the user
+  // toggled to "My location" and back, or the persisted origin loaded after
+  // mount). Only sync when the source-of-truth name actually changes —
+  // mid-type keystrokes are protected because they don't touch the parent.
+  useEffect(() => {
+    if (origin?.kind === "community_area" && origin.communityArea) {
+      setAreaQuery(origin.communityArea);
+    }
+  }, [origin?.kind, origin?.communityArea]);
+
+  const handleAreaSelect = useCallback((suggestion) => {
+    if (!suggestion?.label) return;
+    setAreaQuery(suggestion.label);
+    onOriginChange({ kind: "community_area", communityArea: suggestion.label });
+  }, [onOriginChange]);
+
+  const fetchAreaSuggestions = useCallback(async (q) => filterCommunityAreas(q), []);
 
   function handleSliderChange(e) {
     const next = Math.round(Number(e.target.value));
-    if (Number.isFinite(next)) onMaxMinutesChange(next);
+    if (Number.isFinite(next)) {
+      sliderDirtyRef.current = true;
+      onMaxMinutesChange(next);
+    }
   }
 
   function handleSliderRelease() {
+    if (!sliderDirtyRef.current) return;
+    sliderDirtyRef.current = false;
     submitRef.current?.();
   }
 
@@ -130,15 +197,15 @@ export function ExploreForm({
 
         {origin?.kind === "community_area" && (
           <div className="explore-area-select">
-            <select
-              value={origin.communityArea || ""}
-              onChange={handleAreaChange}
-              aria-label="Community area"
-            >
-              {COMMUNITY_AREA_NAMES.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
+            <AddressAutocomplete
+              value={areaQuery}
+              onChange={setAreaQuery}
+              onSelect={handleAreaSelect}
+              getSuggestions={fetchAreaSuggestions}
+              placeholder="Search community area"
+              ariaLabel="Community area"
+              className="explore-area-autocomplete"
+            />
           </div>
         )}
       </div>
@@ -147,6 +214,14 @@ export function ExploreForm({
         <div className="explore-section-label">
           <WPIcon name="hourglass" size={12} />
           <span>How long can you walk?</span>
+          <span
+            className="explore-section-tooltip"
+            title="Survey time assumes a steady 3 mph pace."
+            aria-label="Survey time assumes a steady 3 mph pace"
+            tabIndex={0}
+          >
+            ⓘ
+          </span>
         </div>
 
         <div className="explore-budget">
@@ -181,10 +256,14 @@ export function ExploreForm({
           type="button"
           className="explore-submit-btn"
           onClick={onSubmit}
-          disabled={loading || (origin?.kind === "current" && !origin?.lat)}
+          disabled={loading || locating || (origin?.kind === "current" && !origin?.lat)}
         >
           <WPIcon name="stride" size={16} />
-          {loading ? "Plotting your range…" : "Survey the surroundings"}
+          {locating
+            ? "Reading the compass…"
+            : loading
+              ? "Plotting your range…"
+              : "Survey the surroundings"}
         </button>
       </div>
 

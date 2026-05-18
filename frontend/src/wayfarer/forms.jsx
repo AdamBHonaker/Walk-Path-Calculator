@@ -15,10 +15,12 @@
 
 import { WF } from "./primitives.jsx";
 
-export function WFCheck({ checked = false, onChange, label, style = {} }) {
+export function WFCheck({ checked = false, onChange, label, style = {}, disabled = false }) {
   return (
     <label style={{
-      display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer",
+      display: "inline-flex", alignItems: "center", gap: 10,
+      cursor: disabled ? "not-allowed" : "pointer",
+      opacity: disabled ? 0.55 : 1,
       minHeight: 44, padding: "4px 0",
       ...style,
     }}>
@@ -37,7 +39,7 @@ export function WFCheck({ checked = false, onChange, label, style = {} }) {
       {label && (
         <span style={{ fontFamily: WF.serif, fontSize: 14, color: WF.ink }}>{label}</span>
       )}
-      <input type="checkbox" checked={checked} onChange={onChange}
+      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled}
         style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
     </label>
   );

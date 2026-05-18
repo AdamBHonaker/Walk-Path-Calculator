@@ -1,6 +1,98 @@
+import { createHash } from "node:crypto";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+
+// Inject a Content-Security-Policy meta tag whose contents differ between dev
+// and production builds. Production hashes every inline <script> (only the
+// theme-boot script lives in index.html today, but Vite may also inline a
+// modulepreload polyfill — both get covered) so `'unsafe-inline'` can be
+// dropped from script-src. Dev keeps `'unsafe-inline' 'unsafe-eval'` because
+// the Vite dev server + HMR runtime need them, and allow-lists the LAN
+// uvicorn + paired Cloudflare-tunnel hostnames used by `npm run dev:tunnel`
+// — those values do NOT ship in the production HTML.
+//
+// `frame-ancestors` is intentionally omitted; per the CSP spec it is ignored
+// when delivered via <meta>, so it belongs on an HTTP response header at the
+// hosting layer (Railway).
+function cspPlugin() {
+  let isDev = false;
+  return {
+    name: "passage-csp",
+    config(_userConfig, env) {
+      isDev = env.command === "serve";
+    },
+    transformIndexHtml: {
+      order: "post",
+      handler(html) {
+        const hashes = [];
+        if (!isDev) {
+          const inlineScriptRe =
+            /<script\b(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+          let match;
+          while ((match = inlineScriptRe.exec(html)) !== null) {
+            const digest = createHash("sha256")
+              .update(match[1], "utf8")
+              .digest("base64");
+            hashes.push(`'sha256-${digest}'`);
+          }
+        }
+
+        const scriptSrc = isDev
+          ? "'self' 'unsafe-inline' 'unsafe-eval'"
+          : ["'self'", ...hashes].join(" ");
+
+        // Dev origins are intentionally NOT included in the production policy.
+        // The 192.168.1.191 LAN address is one developer's home network and
+        // would otherwise leak into shipped HTML and slightly widen attack
+        // surface on hostile LANs.
+        const connectSrc = isDev
+          ? [
+              "'self'",
+              "http://localhost:8000",
+              "http://192.168.1.191:8000",
+              "https://*.trycloudflare.com",
+              "ws://localhost:5173",
+              "ws://192.168.1.191:5173",
+              "https://*.openfreemap.org",
+              "https://tiles.openfreemap.org",
+            ].join(" ")
+          : [
+              "'self'",
+              "https://*.up.railway.app",
+              "https://*.openfreemap.org",
+              "https://tiles.openfreemap.org",
+            ].join(" ");
+
+        const directives = [
+          "default-src 'self'",
+          `script-src ${scriptSrc}`,
+          // Inline styles remain allowed: the editorial design system uses
+          // `style={{ ... }}` throughout (ShareDispatch, ErrorDispatch, the
+          // Wayfarer primitives). See TD entry "Inline-style → CSS-class
+          // migration" in docs/Technical_Debt.md.
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: blob: https:",
+          "font-src 'self' data:",
+          `connect-src ${connectSrc}`,
+          "worker-src 'self' blob:",
+          "base-uri 'self'",
+          "object-src 'none'",
+          "form-action 'self'",
+        ];
+        if (!isDev) directives.push("upgrade-insecure-requests");
+
+        const csp = directives.join("; ");
+        const meta = `<meta http-equiv="Content-Security-Policy" content="${csp}">`;
+
+        return html.replace(
+          /(<meta\s+name="viewport"[^>]*>)/i,
+          `$1\n    ${meta}`,
+        );
+      },
+    },
+  };
+}
 
 export default defineConfig({
   test: {
@@ -10,12 +102,20 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    cspPlugin(),
     VitePWA({
       // "prompt" (not "autoUpdate") so a new SW doesn't silently skipWaiting +
       // reload the page mid-session — that wiped in-progress form state. The
       // app surfaces a toast instead and the user reloads on their own terms.
       registerType: "prompt",
-      includeAssets: ["favicon.svg"],
+      includeAssets: [
+        "passage-icon.svg",
+        "passage-icon-16.png",
+        "passage-icon-32.png",
+        "passage-icon-180.png",
+        "passage-icon-192.png",
+        "passage-icon-512.png",
+      ],
       manifest: {
         name: "Passage",
         short_name: "Passage",
@@ -27,8 +127,11 @@ export default defineConfig({
         scope: "/",
         start_url: "/",
         icons: [
-          { src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-          { src: "favicon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+          { src: "passage-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
+          { src: "passage-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+          { src: "passage-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "passage-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "passage-icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
       workbox: {

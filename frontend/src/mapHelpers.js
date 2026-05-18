@@ -31,7 +31,13 @@ export function haversineMeters([lat1, lon1], [lat2, lon2]) {
 const _DEDUP_METERS_SQ = 25;
 const _METERS_PER_DEG_LAT = 111320;
 
-export function buildTurnsGeoJson(turnCoords, activeTurnIndex) {
+// Build the GeoJSON FeatureCollection for the turn-point source. The active
+// flag is no longer baked into properties — the paint expression reads
+// `feature-state.active` so the active-turn flip is a property bump on the
+// existing tile data via `setFeatureState`, not a full source re-upload.
+// Each feature carries `id = i` (the original turnCoords index) so callers
+// can address them with setFeatureState({source, id}, {active: true}).
+export function buildTurnsGeoJson(turnCoords) {
   const features = [];
   let prevCoord = null;
   for (let i = 0; i < turnCoords.length; i++) {
@@ -47,7 +53,7 @@ export function buildTurnsGeoJson(turnCoords, activeTurnIndex) {
     features.push({
       type: "Feature",
       id: i,
-      properties: { active: i === activeTurnIndex, index: i },
+      properties: { index: i },
       geometry: { type: "Point", coordinates: toGeo(coord) },
     });
   }
@@ -112,7 +118,10 @@ function dropTracked(map, ids, sourceIds, layerIds) {
   }
 }
 
-export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerIds, sourceIds, fitPadding = 60, routeColor = WALK_PATH_COLOR, drawEndpointDots = true) {
+// `activeTurnIndex` is no longer consumed by the source build — it's applied
+// via setFeatureState in `applyActiveTurnFeatureState` below. The parameter
+// remains in the signature for backward compatibility with test fixtures.
+export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layerIds, sourceIds, fitPadding = 60, routeColor = WALK_PATH_COLOR, drawEndpointDots = true) {
   if (!result?.path?.length) return;
 
   const { path, origin_coords, dest_coords } = result;
@@ -143,19 +152,27 @@ export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerI
   }, layerIds);
 
   if (turnCoords?.length) {
+    const hadSource = !!map.getSource?.("walk-turns");
     upsertGeoSource(
       map, "walk-turns",
-      buildTurnsGeoJson(turnCoords, activeTurnIndex),
+      buildTurnsGeoJson(turnCoords),
       sourceIds,
     );
+    // Clear stale feature state from the previous route — setData retains
+    // states keyed by feature id, and a stale active=true would silently
+    // leak across route swaps if the same id existed in the new data.
+    if (hadSource) {
+      try { map.removeFeatureState?.({ source: "walk-turns" }); }
+      catch { /* source torn down between checks */ }
+    }
     ensureLayer(map, {
       id: "walk-turns-circle", type: "circle", source: "walk-turns",
       paint: {
-        "circle-radius":       ["case", ["get", "active"], 8, 5],
-        "circle-color":        ["case", ["get", "active"], TURN_COLOR_ACTIVE, routeColor],
+        "circle-radius":       ["case", ["coalesce", ["feature-state", "active"], false], 8, 5],
+        "circle-color":        ["case", ["coalesce", ["feature-state", "active"], false], TURN_COLOR_ACTIVE, routeColor],
         "circle-stroke-width": 2,
         "circle-stroke-color": "#ffffff",
-        "circle-opacity":      ["case", ["get", "active"], 1, 0.75],
+        "circle-opacity":      ["case", ["coalesce", ["feature-state", "active"], false], 1, 0.75],
       },
     }, layerIds);
   } else {
@@ -190,10 +207,10 @@ export function renderWalkRoute(map, result, turnCoords, activeTurnIndex, layerI
         "text-field": ["get", "label"],
         "text-size": 12,
         "text-allow-overlap": true,
-        // Must be a single font name — see the explore-places-glyph layer
-        // below for the full story (OpenFreeMap 404s on comma-joined font
-        // fallbacks, which errors the entire tile bucket and would hide
-        // the numbered markers on multi-stop routes).
+        // Single-font only: OpenFreeMap 404s on comma-joined font fallbacks,
+        // which errors the entire glyph bucket and would hide the numbered
+        // markers on multi-stop routes. Applies to every symbol layer here
+        // (see explore-places-cluster-count + explore-places-glyph below).
         "text-font": ["Noto Sans Bold"],
       },
       paint: {
@@ -269,6 +286,32 @@ export const EXPLORE_STROKE_COLOR      = "#171310"; // var(--ink)
 export const EXPLORE_STROKE_WIDTH      = 2;
 export const RESIDENTIAL_FILL_COLOR    = "#9c2a1a"; // var(--ember)
 export const RESIDENTIAL_FILL_OPACITY  = 0.18;
+// CPD parks footprint heatmap. `--field` solid (vs. the residential wash
+// at low opacity) so a park reads as a sharper, "this whole block is
+// parkland" overlay — visually distinct from the moss-toned tree-canopy
+// layer that Feature 2 will add.
+export const PARKS_FILL_COLOR          = "#1f6d3b"; // var(--field)
+export const PARKS_FILL_OPACITY        = 0.55;
+export const PARKS_STROKE_COLOR        = "#13522b";
+export const PARKS_STROKE_WIDTH        = 1;
+// Tree-canopy density bands — three moss tones from the Wayfarer palette.
+// Hex values are the Cream-theme resolution of --moss-100/300/500;
+// runtime resolves the live CSS-var values via the resolver in
+// MapExploreLayer so Cream ↔ Dusk recolors live.
+export const CANOPY_BAND_COLORS = {
+  low:  "var(--moss-100)",
+  mid:  "var(--moss-300)",
+  high: "var(--moss-500)",
+};
+export const CANOPY_FILL_OPACITY = 0.55;
+// Non-CPD green space (OSM-derived cemeteries, golf courses, nature
+// reserves, recreation grounds). Painted in `--moss-500` at a softer
+// opacity than the CPD parks layer so the two read as adjacent-but-
+// distinct shades of green when both are enabled.
+export const GREEN_SPACE_FILL_COLOR   = "#6f8a6a"; // var(--moss-500)
+export const GREEN_SPACE_FILL_OPACITY = 0.40;
+export const GREEN_SPACE_STROKE_COLOR = "#4f6b4d";
+export const GREEN_SPACE_STROKE_WIDTH = 0.5;
 export const PLACE_CLUSTER_COLOR       = "#b8862a"; // var(--gilt) — Cream value; chosen so cluster bubbles don't blend with the ink-colored polygon stroke
 
 export const PLACE_PIN_STROKE_COLOR    = "#fffbef"; // var(--paper-bright)
@@ -280,10 +323,15 @@ const EXPLORE_LAYER_IDS = [
   "explore-places-cluster-count",
   "explore-places-cluster",
   "explore-poly-stroke",
+  "explore-parks-stroke",
+  "explore-parks-fill",
+  "explore-greenspace-stroke",
+  "explore-greenspace-fill",
+  "explore-canopy-fill",
   "explore-residential-fill",
   "explore-poly-fill",
 ];
-const EXPLORE_SOURCE_IDS = ["explore-places", "explore-residential", "explore-poly"];
+const EXPLORE_SOURCE_IDS = ["explore-places", "explore-parks", "explore-greenspace", "explore-canopy", "explore-residential", "explore-poly"];
 
 export function clearExploreLayers(map, layerIds, sourceIds) {
   for (const id of EXPLORE_LAYER_IDS) {
@@ -340,6 +388,10 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
   }
   const {
     showResidential = true,
+    showParks = false,
+    showTreeCanopy = false,
+    showGreenSpace = false,
+    canopyBandColors = CANOPY_BAND_COLORS,
     placeFeatures = [],
     placeExpressions,
     fitPadding = 60,
@@ -387,6 +439,104 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
     }
   } else {
     dropTracked(map, ["explore-residential-fill", "explore-residential"], sourceIds, layerIds);
+  }
+
+  // ── Tree canopy heatmap (three opacity bands) ────────────────────
+  // Single fill layer driven by the `density_band` feature property.
+  // Sits above the residential wash and below the CPD parks layer so
+  // a park footprint visually "wins" when both are enabled.
+  if (showTreeCanopy && result.tree_canopy_heatmap?.features?.length) {
+    ensureExploreSource(
+      map, "explore-canopy",
+      result.tree_canopy_heatmap,
+      null, sourceIds,
+    );
+    if (!map.getLayer("explore-canopy-fill")) {
+      map.addLayer({
+        id: "explore-canopy-fill", type: "fill", source: "explore-canopy",
+        paint: {
+          "fill-color": [
+            "match", ["get", "density_band"],
+            "low",  canopyBandColors.low,
+            "mid",  canopyBandColors.mid,
+            "high", canopyBandColors.high,
+            canopyBandColors.mid,
+          ],
+          "fill-opacity": CANOPY_FILL_OPACITY,
+        },
+      }, "explore-poly-stroke");
+      layerIds.push("explore-canopy-fill");
+    }
+  } else {
+    dropTracked(map, ["explore-canopy-fill", "explore-canopy"], sourceIds, layerIds);
+  }
+
+  // ── Parks heatmap fill (CPD park footprints) ─────────────────────
+  // Sits above residential, below the polygon stroke + place pins.
+  // Each Feature in `parks_heatmap` carries name + acres; we keep them
+  // as Features so a future popup can read the properties off the
+  // hover/click event.
+  if (showParks && result.parks_heatmap?.features?.length) {
+    ensureExploreSource(
+      map, "explore-parks",
+      result.parks_heatmap,
+      null, sourceIds,
+    );
+    if (!map.getLayer("explore-parks-fill")) {
+      map.addLayer({
+        id: "explore-parks-fill", type: "fill", source: "explore-parks",
+        paint: {
+          "fill-color":   PARKS_FILL_COLOR,
+          "fill-opacity": PARKS_FILL_OPACITY,
+        },
+      }, "explore-poly-stroke");
+      layerIds.push("explore-parks-fill");
+    }
+    if (!map.getLayer("explore-parks-stroke")) {
+      map.addLayer({
+        id: "explore-parks-stroke", type: "line", source: "explore-parks",
+        paint: {
+          "line-color": PARKS_STROKE_COLOR,
+          "line-width": PARKS_STROKE_WIDTH,
+        },
+      }, "explore-poly-stroke");
+      layerIds.push("explore-parks-stroke");
+    }
+  } else {
+    dropTracked(map, ["explore-parks-stroke", "explore-parks-fill", "explore-parks"], sourceIds, layerIds);
+  }
+
+  // ── Non-CPD green space fill (cemeteries / golf / nature / rec) ─
+  // Sits below the CPD parks layer so where the two overlap, the
+  // authoritative park footprint wins visually.
+  if (showGreenSpace && result.green_space_heatmap?.features?.length) {
+    ensureExploreSource(
+      map, "explore-greenspace",
+      result.green_space_heatmap,
+      null, sourceIds,
+    );
+    if (!map.getLayer("explore-greenspace-fill")) {
+      map.addLayer({
+        id: "explore-greenspace-fill", type: "fill", source: "explore-greenspace",
+        paint: {
+          "fill-color":   GREEN_SPACE_FILL_COLOR,
+          "fill-opacity": GREEN_SPACE_FILL_OPACITY,
+        },
+      }, "explore-parks-fill");
+      layerIds.push("explore-greenspace-fill");
+    }
+    if (!map.getLayer("explore-greenspace-stroke")) {
+      map.addLayer({
+        id: "explore-greenspace-stroke", type: "line", source: "explore-greenspace",
+        paint: {
+          "line-color": GREEN_SPACE_STROKE_COLOR,
+          "line-width": GREEN_SPACE_STROKE_WIDTH,
+        },
+      }, "explore-parks-fill");
+      layerIds.push("explore-greenspace-stroke");
+    }
+  } else {
+    dropTracked(map, ["explore-greenspace-stroke", "explore-greenspace-fill", "explore-greenspace"], sourceIds, layerIds);
   }
 
   // ── Places source (clustered) ────────────────────────────────────
@@ -437,7 +587,7 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
       "text-field":  ["get", "point_count_abbreviated"],
       "text-size":   12,
       "text-allow-overlap": true,
-      "text-font": ["Noto Sans Bold", "Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-font": ["Noto Sans Bold"],
     },
     paint: { "text-color": PLACE_PIN_TEXT_COLOR },
   }, layerIds);
@@ -468,7 +618,7 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
       "text-field": glyphExpr,
       "text-size":  12,
       "text-allow-overlap": true,
-      "text-font": ["Noto Sans Bold", "Open Sans Bold", "Arial Unicode MS Bold"],
+      "text-font": ["Noto Sans Bold"],
     },
     paint: {
       "text-color":      PLACE_PIN_TEXT_COLOR,

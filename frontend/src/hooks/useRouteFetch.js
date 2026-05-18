@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { BACKEND_URL } from "../lib/backendUrl.js";
 import { fetchWithTimeout } from "../lib/fetchWithTimeout.js";
+import { parseApiErrorMessage } from "../lib/apiErrorMessage.js";
 import { loadRecentSearches, saveRecentSearch } from "../lib/recentSearches.js";
 
 const MIN_LOADING_MS = 450;
@@ -12,6 +13,7 @@ function ensureMinLoadingDuration(start) {
 
 export function useRouteFetch({
   heightFt, heightIn, weightKg, dailyGoal, walkPace, avoidStairs, preferPedestrian,
+  mobilityProfile,
   initialUrlParams,
 }) {
   const [result, setResult] = useState(null);
@@ -48,6 +50,16 @@ export function useRouteFetch({
       ? { stops: cleanStops }
       : { origin: cleanStops[0], destination: cleanStops[1] };
 
+    // Mobility profile is the source of truth for accessibility routing prefs.
+    // Wheeled forces stairs avoided and pins pace to `normal`, but the
+    // persisted `walkpath:accessPrefs` / `walkpath:walkPace` values are left
+    // untouched so a flip back to Walking restores the user's saved choices.
+    // `prefer_pedestrian` is user-toggleable in both modes; the modal seeds it
+    // to true on first switch to wheeled.
+    const isWheeled = mobilityProfile === "wheeled";
+    const effectiveAvoidStairs = isWheeled ? true : avoidStairs;
+    const effectivePace        = isWheeled ? "normal" : walkPace;
+
     try {
       const res = await fetchWithTimeout(`${BACKEND_URL}/route`, {
         method: "POST",
@@ -57,8 +69,8 @@ export function useRouteFetch({
           height_inches,
           weight_kg:         weightKg,
           daily_goal:        dailyGoal,
-          pace:              walkPace,
-          avoid_stairs:      avoidStairs,
+          pace:              effectivePace,
+          avoid_stairs:      effectiveAvoidStairs,
           prefer_pedestrian: preferPedestrian,
         }),
         signal,
@@ -66,32 +78,19 @@ export function useRouteFetch({
 
       if (!res.ok) {
         // 429 (rate limiter) and 503 (circuit breaker) both signal geocoding degraded.
-        // Prefer the backend's structured detail.message when present.
-        let msg = `Service error (${res.status})`;
-        try {
-          const d = await res.json();
-          if (d.detail && typeof d.detail === "object" && d.detail.message) {
-            msg = d.detail.message;
-          } else if (typeof d.detail === "string") {
-            msg = d.detail;
-          } else if (res.status === 429) {
-            msg = "The geocoding service is rate-limited — try again in a minute.";
-          }
-        } catch {
-          if (res.status === 429) {
-            msg = "The geocoding service is rate-limited — try again in a minute.";
-          }
-        }
-        throw new Error(msg);
+        // Prefer the backend's structured detail.message when present; fall
+        // through to the shared 429 copy otherwise.
+        throw new Error(await parseApiErrorMessage(res));
       }
 
       const data = await res.json();
 
-      // URL + recents reflect the submitted request — write before the min-loading
-      // delay so deep-link state is correct even if the user navigates away mid-skeleton.
+      // URL reflects the submitted request — write before the min-loading
+      // delay so deep-link state is correct even if the user navigates away
+      // mid-skeleton.
       const urlP = new URLSearchParams();
       if (multi) {
-        urlP.set("stops", cleanStops.map(encodeURIComponent).join("|"));
+        urlP.set("stops", cleanStops.join("|"));
       } else {
         urlP.set("from", cleanStops[0]);
         urlP.set("to",   cleanStops[1]);
@@ -99,17 +98,24 @@ export function useRouteFetch({
       if (heightFt !== null) urlP.set("hft", String(heightFt));
       if (heightIn !== null) urlP.set("hin", String(heightIn));
       history.replaceState(null, "", `?${urlP.toString()}`);
-      const updatedRecents = saveRecentSearch(cleanStops);
-      if (updatedRecents) setRecentSearches(updatedRecents);
 
       await ensureMinLoadingDuration(loadStart);
       if (signal.aborted) return;
+      // Persist to recents AFTER the abort/min-loading guard so a route that
+      // gets superseded mid-skeleton (user submits a second search before the
+      // 450 ms window closes) doesn't pollute the "Recent routes" chip strip
+      // with a search the user never actually saw.
+      const updatedRecents = saveRecentSearch(cleanStops);
+      if (updatedRecents) setRecentSearches(updatedRecents);
       setResult(data);
     } catch (err) {
       if (err.name === "AbortError" || signal.aborted) return;
       await ensureMinLoadingDuration(loadStart);
       if (signal.aborted) return;
-      setError(err.message || "Something went wrong. Please try again.");
+      const message = err.name === "TimeoutError"
+        ? "The routing service didn't respond in time. Please try again."
+        : err.message || "Something went wrong. Please try again.";
+      setError(message);
     } finally {
       // Only flip loading off if this fetch hasn't been superseded.
       if (!signal.aborted) setLoading(false);

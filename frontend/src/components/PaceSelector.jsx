@@ -1,5 +1,5 @@
 import { memo, useRef } from "react";
-import { useMediaQuery } from "../lib/useMediaQuery.js";
+import { useMediaQuery, MQ_MOBILE } from "../lib/useMediaQuery.js";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
 import { WFRadio } from "../wayfarer/forms.jsx";
 
@@ -67,7 +67,7 @@ function PaceSegmented({ pace, onChange }) {
 }
 
 export const PaceSelector = memo(function PaceSelector({ pace, onChange }) {
-  const isCompact = useMediaQuery("(max-width: 480px)");
+  const isCompact = useMediaQuery(MQ_MOBILE);
   return (
     <div className="pace-selector">
       <div className="pace-selector-label">

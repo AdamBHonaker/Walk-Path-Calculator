@@ -6,6 +6,7 @@ import {
   renderExplore,
   clearExploreLayers,
   EXPLORE_STROKE_COLOR,
+  CANOPY_BAND_COLORS,
 } from "../mapHelpers.js";
 
 // Resolve a Wayfarer color token like "var(--field)" to its current hex
@@ -32,12 +33,15 @@ export function MapExploreLayer({
   mode,
   exploreResult,
   showResidential,
+  showParks,
+  showTreeCanopy,
+  showGreenSpace,
   activeSubs,
   categoryStyles,
   mapPadding,
   pickMode,
   onPlaceTap,
-  onPlaceWalkHere,
+  onPlaceGoHere,
 }) {
   const layerIds  = useRef([]);
   const sourceIds = useRef([]);
@@ -91,7 +95,12 @@ export function MapExploreLayer({
           source:      p.source ?? "",
         },
       }));
-  }, [exploreResult, activeSubs]);
+    // Narrowed to `exploreResult?.places` — the top-level exploreResult
+    // identity churns on every fetch (and on display-only re-renders that
+    // pass a fresh wrapper) even when the underlying places array is
+    // unchanged. Tying the memo to the array reference keeps an unchanged
+    // pin set from rebuilding features + re-indexing supercluster.
+  }, [exploreResult?.places, activeSubs]);
 
   // Build MapLibre `match` expressions that paint each pin by its
   // `category` property. CSS-var colors from `categoryStyles` are
@@ -123,6 +132,33 @@ export function MapExploreLayer({
   // signal that the resolved hex strings have changed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryStyles, themeVersion]);
+
+  // Resolve the canopy band CSS vars to literal hex strings; MapLibre
+  // paint props don't parse `var(--…)`. Recomputed on theme flips for
+  // the same reason `placeExpressions` is.
+  const canopyBandColors = useMemo(() => ({
+    low:  resolveCssColor(CANOPY_BAND_COLORS.low)  || CANOPY_BAND_COLORS.low,
+    mid:  resolveCssColor(CANOPY_BAND_COLORS.mid)  || CANOPY_BAND_COLORS.mid,
+    high: resolveCssColor(CANOPY_BAND_COLORS.high) || CANOPY_BAND_COLORS.high,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [themeVersion]);
+
+  // Re-apply canopy band colors on theme flip without forcing the layer
+  // to be torn down + rebuilt. Mirrors the placeExpressions effect below.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.getLayer?.("explore-canopy-fill")) return;
+    try {
+      map.setPaintProperty("explore-canopy-fill", "fill-color", [
+        "match", ["get", "density_band"],
+        "low",  canopyBandColors.low,
+        "mid",  canopyBandColors.mid,
+        "high", canopyBandColors.high,
+        canopyBandColors.mid,
+      ]);
+    } catch { /* layer torn down between checks */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canopyBandColors]);
 
   // Re-apply pin color + glyph expressions to the live layers when
   // `placeExpressions` changes. `ensureLayer` short-circuits on
@@ -162,6 +198,10 @@ export function MapExploreLayer({
         map, exploreResult,
         {
           showResidential,
+          showParks,
+          showTreeCanopy,
+          showGreenSpace,
+          canopyBandColors,
           placeFeatures,
           placeExpressions,
           fitPadding: mapPaddingRef.current ?? 60,
@@ -182,7 +222,7 @@ export function MapExploreLayer({
     };
   // ref-stored map handle is stable
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, exploreResult, showResidential, placeFeatures, placeExpressions]);
+  }, [mode, exploreResult, showResidential, showParks, showTreeCanopy, showGreenSpace, canopyBandColors, placeFeatures, placeExpressions]);
 
   // ── Pin/cluster click + popup lifecycle ─────────────────────────────
   // Cluster click zooms in; pin click pops a MapLibre Popup that contains a
@@ -192,8 +232,8 @@ export function MapExploreLayer({
   const popupRef     = useRef(null);
   const popupRootRef = useRef(null);
   const popupElRef   = useRef(null);
-  const onPlaceWalkHereRef = useRef(onPlaceWalkHere);
-  useEffect(() => { onPlaceWalkHereRef.current = onPlaceWalkHere; }, [onPlaceWalkHere]);
+  const onPlaceGoHereRef = useRef(onPlaceGoHere);
+  useEffect(() => { onPlaceGoHereRef.current = onPlaceGoHere; }, [onPlaceGoHere]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -241,7 +281,7 @@ export function MapExploreLayer({
             type="button"
             className="explore-popup-card-walk"
             onClick={() => {
-              const cb = onPlaceWalkHereRef.current;
+              const cb = onPlaceGoHereRef.current;
               teardownPopup();
               if (cb) cb({
                 lat: props.lat,
@@ -252,7 +292,7 @@ export function MapExploreLayer({
             }}
           >
             <WPIcon name="stride" size={14} />
-            <span>Walk here</span>
+            <span>Go here</span>
           </button>
         </div>
       );
@@ -274,10 +314,18 @@ export function MapExploreLayer({
       }
       renderPopupContent(props);
 
+      // Drop the ref BEFORE removing the old popup so the prior popup's
+      // close handler (which fires synchronously inside .remove()) sees a
+      // mismatch and skips teardownPopup(). Otherwise it would null out
+      // popupElRef.current / unmount popupRootRef.current right before the
+      // new popup tries to mount into them, leaving the second click's
+      // popup empty.
       if (popupRef.current) {
-        try { popupRef.current.remove(); } catch { /* gone */ }
+        const stale = popupRef.current;
+        popupRef.current = null;
+        try { stale.remove(); } catch { /* gone */ }
       }
-      popupRef.current = new maplibregl.Popup({
+      const me = new maplibregl.Popup({
         closeButton: true,
         closeOnClick: false,
         offset: 18,
@@ -287,10 +335,13 @@ export function MapExploreLayer({
         .setLngLat([lon, lat])
         .setDOMContent(popupElRef.current)
         .addTo(map);
+      popupRef.current = me;
 
-      popupRef.current.on("close", () => {
-        // Only tear down if this is still the live popup.
-        if (popupRef.current && popupRef.current.isOpen?.() === false) {
+      me.on("close", () => {
+        // Only tear down if `me` is still the live popup — guards against
+        // a pin→pin click sequence where a later popup has already replaced
+        // popupRef.current by the time this handler fires.
+        if (popupRef.current === me) {
           teardownPopup();
         }
       });

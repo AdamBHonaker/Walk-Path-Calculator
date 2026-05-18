@@ -16,16 +16,18 @@ export function safePaceLabel(pace) {
     : null;
 }
 
-export function motivationMessage(steps) {
-  if (steps < 1500) return "A short walk. The day is improved by it.";
-  if (steps < 4000) return "A neighborhood walk. The everyday measure of a useful day.";
-  if (steps < 7000) return "A serious walk. You will arrive earned.";
+export function motivationMessage(steps, mobilityProfile = "walking") {
+  const wheeled = mobilityProfile === "wheeled";
+  if (steps < 1500)  return wheeled ? "A short roll. The day is improved by it." : "A short walk. The day is improved by it.";
+  if (steps < 4000)  return wheeled ? "A neighborhood roll. The everyday measure of a useful day." : "A neighborhood walk. The everyday measure of a useful day.";
+  if (steps < 7000)  return wheeled ? "A serious roll. You will arrive earned." : "A serious walk. You will arrive earned.";
   if (steps < 10000) return "Nearly a full day's measure in a single passage.";
-  return "Over ten thousand. A walk to remember walking.";
+  return wheeled ? "Over ten thousand. A roll to remember rolling." : "Over ten thousand. A walk to remember walking.";
 }
 
-export function formatDirectionsText(directions, result) {
-  const header = `Passage · Walking directions\n${result.total_miles} mi · ${result.total_minutes} min · ${result.total_steps.toLocaleString()} steps`;
+export function formatDirectionsText(directions, result, mobilityProfile = "walking") {
+  const headerLabel = mobilityProfile === "wheeled" ? "Rolling directions" : "Walking directions";
+  const header = `Passage · ${headerLabel}\n${result.total_miles} mi · ${result.total_minutes} min · ${result.total_steps.toLocaleString()} steps`;
   const steps = directions.map((step, i) => {
     let streetLine = formatStepLabel(step, i);
     if (step.street && step.direction_full) streetLine += ` heading ${step.direction_full}`;

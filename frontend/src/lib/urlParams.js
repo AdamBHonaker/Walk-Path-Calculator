@@ -1,17 +1,20 @@
 // Shareable-link URL parsing. The route page accepts both the legacy
-// `?from=…&to=…` shape and the multi-stop `?stops=A|B|C` shape (each segment
-// individually URL-encoded so a literal "|" in a label can't be misread as a
-// separator). `hft` / `hin` carry the personalize-modal height so a recipient
-// computes the same step counts the sender saw.
+// `?from=…&to=…` shape and the multi-stop `?stops=A|B|C` shape. The writer
+// lets `URLSearchParams.set` handle percent-encoding, so segments arrive
+// here already decoded by `URLSearchParams.get`. `hft` / `hin` carry the
+// personalize-modal height so a recipient computes the same step counts the
+// sender saw.
 
 export const MAX_STOPS = 8;
 
 export function parseStopsParam(raw) {
   if (!raw) return null;
   const parts = raw.split("|").map(s => {
-    // Per-stop encodeURIComponent in the writer keeps "|" inside a label
-    // from being misread as a separator. Tolerate legacy/un-encoded URLs
-    // by falling back to the raw segment when decode fails.
+    // Legacy URLs written before BUG-009 double-encoded each segment, so a
+    // single decodeURIComponent recovers the original label. Modern URLs are
+    // already decoded by URLSearchParams.get, so this is a no-op for them
+    // (an unencoded label has no "%" to decode). Fall back to the raw
+    // segment if decoding throws on malformed input.
     let decoded;
     try { decoded = decodeURIComponent(s); }
     catch { decoded = s; }
@@ -34,7 +37,10 @@ export function readUrlParams() {
       from: cap(p.get("from")),
       to:   cap(p.get("to")),
       stops,
-      hft:  hft != null && !isNaN(hft) && hft >= 4 && hft <= 7 ? hft : null,
+      // Height range mirrors loadStoredHeightFt + backend's 36–108 in
+      // validator (3–9 ft); shareable URL caps at 8 to match the FT_OPTIONS
+      // dropdown.
+      hft:  hft != null && !isNaN(hft) && hft >= 3 && hft <= 8 ? hft : null,
       hin:  hin != null && !isNaN(hin) && hin >= 0 && hin <= 11 ? hin : null,
     };
   } catch {

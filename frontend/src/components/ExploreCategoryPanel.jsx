@@ -24,7 +24,7 @@ export function ExploreCategoryPanel({
   selectedCategories,
   selectedSubs,
   expandedGroups,
-  showResidentialHeatmap,
+  heatmapStates,
   onToggleGroup,
   onToggleCategory,
   onToggleSub,
@@ -32,10 +32,51 @@ export function ExploreCategoryPanel({
   onSelectAll,
   onClearAll,
 }) {
-  const selectionCount = selectedCategories.length + selectedSubs.length + (showResidentialHeatmap ? 1 : 0);
+  const heatmaps = heatmapStates || {};
+  // Parent passes `heatmapStates` as an inline object literal, so its
+  // reference changes every render. Memoize on the primitive booleans
+  // instead so the groupSelectionCounts memo below actually caches.
+  const heatmapResidential = !!heatmaps.residential;
+  const heatmapParks       = !!heatmaps.parks_heatmap;
+  const heatmapTreeCanopy  = !!heatmaps.tree_canopy;
+  const heatmapGreenSpace  = !!heatmaps.green_space;
+  const heatmapCount =
+    (heatmapResidential ? 1 : 0) +
+    (heatmapParks ? 1 : 0) +
+    (heatmapTreeCanopy ? 1 : 0) +
+    (heatmapGreenSpace ? 1 : 0);
+  const selectionCount = selectedCategories.length + selectedSubs.length + heatmapCount;
   const expandedSet = useMemo(() => new Set(expandedGroups), [expandedGroups]);
   const selectedCatSet = useMemo(() => new Set(selectedCategories), [selectedCategories]);
   const selectedSubSet = useMemo(() => new Set(selectedSubs), [selectedSubs]);
+
+  // Per-group selection counts. Recomputed only when selection state actually
+  // changes — keeps the nested-traversal cost (5 groups × up to 4 categories
+  // × up to 5 subs ≈ ~100 Set lookups) off every re-render of the panel.
+  const groupSelectionCounts = useMemo(() => {
+    const counts = new Map();
+    for (const group of EXPLORE_GROUPS) {
+      let count = 0;
+      for (const cat of group.categories) {
+        if (cat.heatmapOnly) {
+          if (heatmaps[cat.heatmapKey]) count += 1;
+          continue;
+        }
+        if (selectedCatSet.has(cat.key)) count += 1;
+        if (cat.subs) {
+          for (const sub of cat.subs) {
+            if (selectedSubSet.has(`${cat.key}/${sub.key}`)) count += 1;
+          }
+        }
+      }
+      counts.set(group.key, count);
+    }
+    return counts;
+    // `heatmaps` is read inside the loop but the deps are the primitive
+    // booleans — a new `heatmaps` object reference with unchanged values
+    // intentionally doesn't trigger recomputation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCatSet, selectedSubSet, heatmapResidential, heatmapParks, heatmapTreeCanopy, heatmapGreenSpace]);
 
   return (
     <div className="explore-cat-panel" role="group" aria-label="Place categories">
@@ -70,12 +111,7 @@ export function ExploreCategoryPanel({
       <ul className="explore-cat-groups">
         {EXPLORE_GROUPS.map(group => {
           const isOpen = expandedSet.has(group.key);
-          const groupSelectedCount = group.categories.reduce((acc, cat) => {
-            if (cat.heatmapOnly) return acc + (showResidentialHeatmap ? 1 : 0);
-            const catSelected = selectedCatSet.has(cat.key);
-            const subCount = (cat.subs || []).filter(s => selectedSubSet.has(`${cat.key}/${s.key}`)).length;
-            return acc + (catSelected ? 1 : 0) + subCount;
-          }, 0);
+          const groupSelectedCount = groupSelectionCounts.get(group.key) ?? 0;
 
           return (
             <li
@@ -104,8 +140,8 @@ export function ExploreCategoryPanel({
                       return (
                         <li key={cat.key} className="explore-cat-row">
                           <WFCheck
-                            checked={!!showResidentialHeatmap}
-                            onChange={onToggleHeatmap}
+                            checked={!!heatmaps[cat.heatmapKey]}
+                            onChange={e => onToggleHeatmap(cat.heatmapKey, e)}
                             label={
                               <span className="explore-cat-row-label">
                                 <span

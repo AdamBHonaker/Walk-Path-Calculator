@@ -29,6 +29,9 @@
 
   --mist:  #2c4250;
   --moss:  #2f4034;
+  --moss-100: #2a3a2e;
+  --moss-300: #486b48;
+  --moss-500: #8fb787;
 }
 
 .theme-dusk .paper-grain {
@@ -63,6 +66,9 @@
 
   --mist:  #dde7eb;
   --moss:  #d8ddd1;
+  --moss-100: #ecefe5;
+  --moss-300: #bdc9af;
+  --moss-500: #7a9573;
 }
 
 .theme-vellum .paper-grain {
@@ -90,6 +96,9 @@
 
   --mist:  #c2d2d6;
   --moss:  #b9c4ad;
+  --moss-100: #d2dcca;
+  --moss-300: #9eaf8f;
+  --moss-500: #5e7a55;
 }
 
 .theme-field .paper-grain {

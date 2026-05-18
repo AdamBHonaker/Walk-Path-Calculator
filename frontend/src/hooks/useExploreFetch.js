@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { BACKEND_URL } from "../lib/backendUrl.js";
 import { fetchExplore } from "../lib/exploreApi.js";
 
 export function useExploreFetch({ mode, explorePrefs }) {
@@ -44,7 +43,6 @@ export function useExploreFetch({ mode, explorePrefs }) {
     setExploreError("");
     try {
       const data = await fetchExplore({
-        backendUrl: BACKEND_URL,
         origin,
         maxMinutes,
         categories,
@@ -54,7 +52,10 @@ export function useExploreFetch({ mode, explorePrefs }) {
       setExploreResult(data);
     } catch (err) {
       if (err.name === "AbortError" || signal.aborted) return;
-      setExploreError(err.message || "The explorer hit a snag — try again.");
+      const message = err.name === "TimeoutError"
+        ? "The explorer didn't respond in time. Please try again."
+        : err.message || "The explorer hit a snag — try again.";
+      setExploreError(message);
     } finally {
       if (!signal.aborted) setExploreLoading(false);
     }
@@ -77,6 +78,13 @@ export function useExploreFetch({ mode, explorePrefs }) {
   useEffect(() => {
     if (mode !== "explore") return;
     if (!exploreResult) return; // initial-fetch effect above will handle it
+    // If origin is "current" but coords haven't arrived yet (geolocation
+    // in flight), skip silently — handleExploreLocateMe will fire its own
+    // fetch once coords land. Without this, a category toggle during the
+    // locating window would surface a misleading "Allow location access"
+    // error to the user.
+    const o = explorePrefsRef.current.origin;
+    if (o.kind === "current" && (o.lat == null || o.lon == null)) return;
     fetchExploreResult();
     // exploreResult / fetchExploreResult / mode intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -6,7 +6,7 @@ export function RecentSearches({ searches, onSelect, onClear }) {
   return (
     <div className="recent-searches">
       <div className="recent-searches-header">
-        <span className="recent-searches-label">Lately Walked</span>
+        <span className="recent-searches-label">Recent trips</span>
         <button type="button" className="recent-clear-btn" onClick={onClear}>
           Clear
         </button>

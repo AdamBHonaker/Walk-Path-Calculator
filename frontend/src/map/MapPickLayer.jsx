@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
-import { lockMapGestures, unlockMapGestures } from "../mapHelpers.js";
+import { unlockMapGestures } from "../mapHelpers.js";
+import { formatLatLonLabel } from "../lib/coordsFormat.js";
 
 // Pick-on-map: drops a preview pin on click, pops a Cancel/Confirm card,
 // commits to the parent on Confirm. Owns gesture lock/unlock for pick
 // duration and the crosshair cursor.
 //
-// `unlocked` is the parent's "user has unlocked the map for free panning"
-// state — we re-lock on pick exit only if the parent hadn't unlocked.
 export function MapPickLayer({
   mapRef,
   pickMode,
-  unlocked,
   resolveLabel,
   onPickPoint,
 }) {
@@ -31,7 +29,8 @@ export function MapPickLayer({
       previewMarkerRef.current = null;
       previewReqRef.current++;
       setPreviewPick(null);
-      if (!unlocked) lockMapGestures(map);
+      // Gesture re-lock on pick exit is owned by MapView's mode/pickMode effect,
+      // so explore mode (which wants gestures unlocked) wins on initial mount.
       return;
     }
 
@@ -64,7 +63,7 @@ export function MapPickLayer({
 
     map.on("click", handleClick);
     return () => { map.off("click", handleClick); };
-  }, [pickMode, resolveLabel, unlocked, mapRef]);
+  }, [pickMode, resolveLabel, mapRef]);
 
   // Crosshair cursor while pick mode is active
   useEffect(() => {
@@ -105,7 +104,7 @@ export function MapPickLayer({
             {previewPick.resolving
               ? "Looking up that spot…"
               : (previewPick.label
-                  || `${previewPick.lat.toFixed(5)}, ${previewPick.lon.toFixed(5)}`)}
+                  || formatLatLonLabel(previewPick.lat, previewPick.lon))}
           </div>
           <div className="map-pick-confirm-sub">
             Click again to move the pin. Confirm to keep it.

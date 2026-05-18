@@ -9,7 +9,7 @@ import { loadDailyGoal, loadStoredPace } from "./lib/personaPrefs.js";
 import { PACE_LABELS, motivationMessage } from "./lib/routeFormat.js";
 import { RECENT_MAX, loadRecentSearches, saveRecentSearch, recentEntryStops, formatRecentChip } from "./lib/recentSearches.js";
 import { parseStopsParam, MAX_STOPS } from "./lib/urlParams.js";
-import { STEP_LOG_TTL_DAYS, loadStepLog, logWalk, clearStepLog } from "./lib/stepLog.js";
+import { STEP_LOG_TTL_DAYS, loadStepLog, logWalk, clearStepLog, pruneStoredStepLog } from "./lib/stepLog.js";
 
 // ── formatBlocks ─────────────────────────────────────────────────────────
 
@@ -95,8 +95,24 @@ describe("calorieEquivalent", () => {
 // ── handleHeightChange (height-to-inches conversion) ─────────────────────
 
 describe("height-to-inches conversion in App", () => {
+  // The AddressAutocomplete debounce fires ~150 ms after the last
+  // keystroke. When the test environment is slow enough that the debounce
+  // lands before the user clicks submit, an autocomplete request consumed
+  // the route's mockResolvedValueOnce — leaving the route fetch with no
+  // mocked response. We discriminate by URL so /autocomplete returns
+  // empty suggestions and /route returns the per-test routeResponse.
+  let routeResponse;
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
+    routeResponse = null;
+    vi.stubGlobal("fetch", vi.fn((url) => {
+      if (typeof url === "string" && url.includes("/autocomplete")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ suggestions: [] }),
+        });
+      }
+      return Promise.resolve(routeResponse);
+    }));
     window.history.replaceState(null, "", "/");
   });
 
@@ -105,9 +121,17 @@ describe("height-to-inches conversion in App", () => {
     window.history.replaceState(null, "", "/");
   });
 
+  // Filter fetch calls to just the /route ones so assertions don't have to
+  // care about how many /autocomplete calls fired during typing.
+  const routeCalls = () =>
+    fetch.mock.calls.filter(call => {
+      const url = call[0];
+      return typeof url === "string" && url.includes("/route");
+    });
+
   it("sends correct height_inches when both ft and in are selected", async () => {
     const user = userEvent.setup();
-    fetch.mockResolvedValueOnce({
+    routeResponse = {
       ok: true,
       json: async () => ({
         origin_coords: [41.9, -87.6],
@@ -122,12 +146,13 @@ describe("height-to-inches conversion in App", () => {
         path: [[41.9, -87.6], [41.88, -87.63]],
         directions: [],
       }),
-    });
+    };
 
     render(<App />);
 
     // Fill in origin and destination
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
 
@@ -143,15 +168,15 @@ describe("height-to-inches conversion in App", () => {
     await user.click(screen.getByRole("button", { name: /keep these particulars/i }));
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(routeCalls()).toHaveLength(1));
 
-    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    const body = JSON.parse(routeCalls()[0][1].body);
     expect(body.height_inches).toBe(69); // 5 * 12 + 9
   });
 
   it("sends null height_inches when height is not selected", async () => {
     const user = userEvent.setup();
-    fetch.mockResolvedValueOnce({
+    routeResponse = {
       ok: true,
       json: async () => ({
         origin_coords: [41.9, -87.6],
@@ -166,19 +191,20 @@ describe("height-to-inches conversion in App", () => {
         path: [[41.9, -87.6]],
         directions: [],
       }),
-    });
+    };
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Lincoln Park");
     await user.type(toInput, "River North");
 
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(routeCalls()).toHaveLength(1));
 
-    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    const body = JSON.parse(routeCalls()[0][1].body);
     expect(body.height_inches).toBeNull();
   });
 });
@@ -186,8 +212,23 @@ describe("height-to-inches conversion in App", () => {
 // ── handleSubmit error handling ───────────────────────────────────────────
 
 describe("handleSubmit error handling", () => {
+  // Same race as the height-conversion suite above: the AddressAutocomplete
+  // debounce can fire a /autocomplete request before the user clicks submit,
+  // which would consume a single `mockResolvedValueOnce`/`mockRejectedValueOnce`
+  // and leave the /route fetch unmocked. Discriminate by URL so autocomplete
+  // is always neutralized and the per-test response targets /route.
+  let routeImpl;
   beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
+    routeImpl = null;
+    vi.stubGlobal("fetch", vi.fn((url) => {
+      if (typeof url === "string" && url.includes("/autocomplete")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ suggestions: [] }),
+        });
+      }
+      return routeImpl ? routeImpl() : Promise.resolve(undefined);
+    }));
     window.history.replaceState(null, "", "/");
   });
 
@@ -198,7 +239,7 @@ describe("handleSubmit error handling", () => {
 
   it("shows a server error message when the API returns a non-ok response", async () => {
     const user = userEvent.setup();
-    fetch.mockResolvedValueOnce({
+    routeImpl = () => Promise.resolve({
       ok: false,
       status: 422,
       json: async () => ({ detail: "Origin not found in Chicago" }),
@@ -206,7 +247,8 @@ describe("handleSubmit error handling", () => {
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Nowhere");
     await user.type(toInput, "Somewhere");
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));
@@ -218,11 +260,12 @@ describe("handleSubmit error handling", () => {
 
   it("shows a generic error message on network failure", async () => {
     const user = userEvent.setup();
-    fetch.mockRejectedValueOnce(new Error("Failed to fetch"));
+    routeImpl = () => Promise.reject(new Error("Failed to fetch"));
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));
@@ -281,7 +324,8 @@ describe("animated route drawing", () => {
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));
@@ -303,7 +347,8 @@ describe("animated route drawing", () => {
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));
@@ -366,7 +411,8 @@ describe("WeightInput sends weight_kg in kg", () => {
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
 
@@ -392,7 +438,8 @@ describe("WeightInput sends weight_kg in kg", () => {
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Lincoln Park");
     await user.type(toInput, "River North");
 
@@ -435,7 +482,8 @@ describe("URL-Encoded Route Sharing", () => {
   it("pre-populates form fields from ?from and ?to URL params", () => {
     window.history.replaceState(null, "", "?from=Wrigleyville&to=Logan+Square");
     render(<App />);
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     expect(fromInput.value).toBe("Wrigleyville");
     expect(toInput.value).toBe("Logan Square");
   });
@@ -466,7 +514,8 @@ describe("URL-Encoded Route Sharing", () => {
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));
@@ -484,7 +533,8 @@ describe("URL-Encoded Route Sharing", () => {
 
     render(<App />);
 
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
 
@@ -736,12 +786,18 @@ describe("step log", () => {
       { timestamp: oneDayAgo,    date: "old", steps: 100, miles: 0.1, origin: "X", destination: "Y" },
       { timestamp: eightDaysAgo, date: "old", steps: 999, miles: 9.9, origin: "X", destination: "Y" },
     ]));
+    // loadStepLog is read-only — it filters but never writes back.
     const log = loadStepLog();
     expect(log).toHaveLength(1);
     expect(log[0].steps).toBe(100);
-    // pruned list should be persisted back
-    const stored = JSON.parse(localStorage.getItem("walkpath:stepLog"));
-    expect(stored).toHaveLength(1);
+    // Storage is unchanged until pruneStoredStepLog runs (App calls it once
+    // on mount). Verify the read-only contract.
+    const beforePrune = JSON.parse(localStorage.getItem("walkpath:stepLog"));
+    expect(beforePrune).toHaveLength(2);
+    // pruneStoredStepLog persists the trimmed list back.
+    expect(pruneStoredStepLog()).toHaveLength(1);
+    const afterPrune = JSON.parse(localStorage.getItem("walkpath:stepLog"));
+    expect(afterPrune).toHaveLength(1);
   });
 
   it("clearStepLog removes all entries", () => {
@@ -812,7 +868,8 @@ describe("alternative route flavor tabs", () => {
   }
 
   async function submitAndAwaitResult(user) {
-    const [fromInput, toInput] = screen.getAllByRole("searchbox");
+    const fromInput = screen.getByRole("combobox", { name: "Origin" });
+    const toInput = screen.getByRole("combobox", { name: "Destination" });
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
     await user.click(screen.getByRole("button", { name: /commence the journey/i }));

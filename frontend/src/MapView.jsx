@@ -51,7 +51,10 @@ export default function MapView({
   categoryStyles  = null,
   activeSubs      = null,
   showResidential = true,
-  onPlaceWalkHere = null,
+  showParks       = false,
+  showTreeCanopy  = false,
+  showGreenSpace  = false,
+  onPlaceGoHere = null,
   // Fires the moment a pin is clicked, before the popup is anchored.
   // The mobile parent uses this to drop the bottom sheet to peek so the
   // popover is fully visible against the map.
@@ -254,17 +257,19 @@ export default function MapView({
             mode={mode}
             exploreResult={exploreResult}
             showResidential={showResidential}
+            showParks={showParks}
+            showTreeCanopy={showTreeCanopy}
+            showGreenSpace={showGreenSpace}
             activeSubs={activeSubs}
             categoryStyles={categoryStyles}
             mapPadding={mapPadding}
             pickMode={pickMode}
             onPlaceTap={onPlaceTap}
-            onPlaceWalkHere={onPlaceWalkHere}
+            onPlaceGoHere={onPlaceGoHere}
           />
           <MapPickLayer
             mapRef={mapRef}
             pickMode={pickMode}
-            unlocked={unlocked}
             resolveLabel={resolveLabel}
             onPickPoint={onPickPoint}
           />

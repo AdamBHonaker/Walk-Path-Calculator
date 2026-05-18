@@ -4,7 +4,6 @@ import maplibregl from "maplibre-gl";
 import { WFFromMark, WFToMark } from "../wayfarer/primitives.jsx";
 import {
   renderWalkRoute,
-  buildTurnsGeoJson,
 } from "../mapHelpers.js";
 
 // Draw-in pacing: ~2 Chicago long blocks per second (long block ≈ 0.125 mi),
@@ -106,6 +105,13 @@ export function MapRouteLayer({
 
     const render = () => {
       stopAnim();
+      // Reset any leftover line-trim-offset from a previously-cancelled
+      // draw-in animation BEFORE the reduced-motion / short-path bails below.
+      // Without this, a route swap mid-animation that lands on a render which
+      // skips the animation (prefers-reduced-motion or path.length < 2) would
+      // leave the new polyline half-hidden at the prior trim value.
+      try { map.setPaintProperty("walk-path-line", "line-trim-offset", null); }
+      catch { /* layer not yet created */ }
       // In explore mode, the route line + endpoints don't render at all —
       // the explore-mode layer owns the map's painted state. Tear down any
       // route artifacts left behind from a previous mode flip.
@@ -234,17 +240,33 @@ export function MapRouteLayer({
     };
   }, []);
 
-  // Update turn marker highlight and fly to the active turn without re-rendering everything
+  // Active-turn highlight: flip a single feature's state instead of
+  // rebuilding + re-uploading the whole turn-points GeoJSON. The walk-turns
+  // layer paint reads `["feature-state", "active"]`, so this is a property
+  // bump on existing tile data — no source rebuild, no GPU re-upload.
+  const prevActiveTurnRef = useRef(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
     const src = map.getSource("walk-turns");
-    if (!src) return;
+    if (!src) {
+      prevActiveTurnRef.current = activeTurnIndex;
+      return;
+    }
+
+    const prev = prevActiveTurnRef.current;
+    if (prev != null && prev !== activeTurnIndex) {
+      try { map.setFeatureState({ source: "walk-turns", id: prev }, { active: false }); }
+      catch { /* feature gone (route changed underfoot) */ }
+    }
+    if (activeTurnIndex != null) {
+      try { map.setFeatureState({ source: "walk-turns", id: activeTurnIndex }, { active: true }); }
+      catch { /* feature missing (deduped or route changed) */ }
+    }
+    prevActiveTurnRef.current = activeTurnIndex;
 
     const coords = turnCoordsRef.current;
-    src.setData(buildTurnsGeoJson(coords ?? [], activeTurnIndex));
-
     if (activeTurnIndex != null && coords?.[activeTurnIndex]) {
       const [lat, lon] = coords[activeTurnIndex];
       const pad = mapPaddingRef.current;

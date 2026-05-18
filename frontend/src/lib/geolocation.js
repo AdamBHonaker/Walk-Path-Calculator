@@ -11,6 +11,8 @@
 // FEAT #1 (Neighborhood Explorer) will reuse this helper for its "current
 // location" mode (chunk 8). Keep the return shape stable.
 
+// Must stay in sync with CHICAGO_* in backend/utils.py — JS can't import the
+// Python source, so this is a hand-maintained mirror. Update both together.
 const CHICAGO_SOUTH = 41.64;
 const CHICAGO_NORTH = 42.02;
 const CHICAGO_WEST  = -87.94;

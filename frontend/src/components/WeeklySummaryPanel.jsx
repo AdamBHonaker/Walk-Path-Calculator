@@ -1,22 +1,31 @@
 import { useMemo, useState } from "react";
 
-export function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
+export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "steps", stepLengthInches }) {
   const [open, setOpen] = useState(false);
+  const isDistance = metricMode === "distance";
 
   const totals = useMemo(() => {
     let steps = 0;
     let miles = 0;
+    let minutes = 0;
     for (const e of log) {
       steps += Number(e.steps) || 0;
       miles += Number(e.miles) || 0;
+      minutes += Number(e.minutes) || 0;
     }
-    return { steps, miles };
+    return { steps, miles, minutes };
   }, [log]);
 
   if (!log.length) return null;
 
-  const weeklyGoal = (dailyGoal ?? 10_000) * 7;
-  const weeklyPct = Math.min(100, Math.round((totals.steps / weeklyGoal) * 100));
+  // Distance mode derives a weekly miles target from the user's daily step goal
+  // and stride length, so the existing dailyGoal slider drives both modes.
+  const stride = Number.isFinite(stepLengthInches) ? stepLengthInches : 30;
+  const weeklyStepGoal = (dailyGoal ?? 10_000) * 7;
+  const weeklyMileGoal = (weeklyStepGoal * stride) / (12 * 5280);
+  const weeklyPct = isDistance
+    ? Math.min(100, Math.round((totals.miles / Math.max(weeklyMileGoal, 0.0001)) * 100))
+    : Math.min(100, Math.round((totals.steps / weeklyStepGoal) * 100));
 
   return (
     <div className="weekly-summary">
@@ -29,7 +38,9 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
         <span>This week</span>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontFamily: "var(--wf-mono)", fontVariantNumeric: "tabular-nums" }}>
-            {totals.steps.toLocaleString()} steps walked over {totals.miles.toFixed(1)} mi
+            {isDistance
+              ? `${totals.miles.toFixed(1)} mi over ${Math.round(totals.minutes)} min`
+              : `${totals.steps.toLocaleString()} steps walked over ${totals.miles.toFixed(1)} mi`}
           </span>
           <svg
             width="12"
@@ -57,7 +68,9 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
         <div className="weekly-summary-body">
           <div className="goal-bar-wrap">
             <div className="goal-bar-label">
-              Weekly measure · {weeklyGoal.toLocaleString()} steps
+              {isDistance
+                ? `Weekly measure · ${weeklyMileGoal.toFixed(1)} mi`
+                : `Weekly measure · ${weeklyStepGoal.toLocaleString()} steps`}
               <span style={{ float: "right", fontFamily: "var(--wf-mono)", letterSpacing: 0 }}>
                 {weeklyPct}%
               </span>
@@ -75,8 +88,9 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear }) {
                   <em>From</em> {e.origin} <em>to</em> {e.destination}
                 </span>
                 <span className="weekly-log-steps">
-                  {Number(e.steps).toLocaleString()} steps
-                  {e.miles ? ` · ${Number(e.miles).toFixed(1)} mi` : ""}
+                  {isDistance
+                    ? <>{Number(e.miles || 0).toFixed(1)} mi{Number.isFinite(Number(e.minutes)) && e.minutes != null ? ` · ${Math.round(Number(e.minutes))} min` : " · —"}</>
+                    : <>{Number(e.steps).toLocaleString()} steps{e.miles ? ` · ${Number(e.miles).toFixed(1)} mi` : ""}</>}
                 </span>
               </li>
             ))}

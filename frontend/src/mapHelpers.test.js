@@ -45,14 +45,14 @@ describe("haversineMeters", () => {
 
 describe("buildTurnsGeoJson", () => {
   it("returns a FeatureCollection", () => {
-    const result = buildTurnsGeoJson([], null);
+    const result = buildTurnsGeoJson([]);
     expect(result.type).toBe("FeatureCollection");
     expect(result.features).toEqual([]);
   });
 
   it("includes one feature per valid turn coord", () => {
     const turns = [[41.88, -87.63], [41.90, -87.65]];
-    const { features } = buildTurnsGeoJson(turns, null);
+    const { features } = buildTurnsGeoJson(turns);
     expect(features).toHaveLength(2);
   });
 
@@ -60,39 +60,41 @@ describe("buildTurnsGeoJson", () => {
     // Two points ~1 m apart should collapse to one feature
     const base = [41.88000, -87.63000];
     const nearby = [41.88001, -87.63000]; // ~1.1 m away
-    const { features } = buildTurnsGeoJson([base, nearby], null);
+    const { features } = buildTurnsGeoJson([base, nearby]);
     expect(features).toHaveLength(1);
   });
 
   it("keeps coords that are more than 5 m apart", () => {
     const a = [41.88, -87.63];
     const b = [41.89, -87.63]; // ~1.1 km away
-    const { features } = buildTurnsGeoJson([a, b], null);
+    const { features } = buildTurnsGeoJson([a, b]);
     expect(features).toHaveLength(2);
   });
 
-  it("marks the active turn with active: true", () => {
+  it("assigns each feature a stable id matching its original turnCoords index", () => {
+    // After dedup, the surviving feature should keep its source-array index
+    // as `id` so setFeatureState({source, id}) can address it.
     const turns = [[41.88, -87.63], [41.90, -87.65]];
-    const { features } = buildTurnsGeoJson(turns, 1);
-    expect(features[0].properties.active).toBe(false);
-    expect(features[1].properties.active).toBe(true);
+    const { features } = buildTurnsGeoJson(turns);
+    expect(features[0].id).toBe(0);
+    expect(features[1].id).toBe(1);
   });
 
-  it("sets active: false for all features when activeTurnIndex is null", () => {
+  it("does not bake an `active` flag into properties (handled via feature-state)", () => {
     const turns = [[41.88, -87.63], [41.90, -87.65]];
-    const { features } = buildTurnsGeoJson(turns, null);
-    expect(features.every(f => f.properties.active === false)).toBe(true);
+    const { features } = buildTurnsGeoJson(turns);
+    expect(features.every(f => !("active" in f.properties))).toBe(true);
   });
 
   it("converts coordinates to GeoJSON [lon, lat] order", () => {
     const turns = [[41.88, -87.63]];
-    const { features } = buildTurnsGeoJson(turns, null);
+    const { features } = buildTurnsGeoJson(turns);
     expect(features[0].geometry.coordinates).toEqual([-87.63, 41.88]);
   });
 
   it("skips null/undefined entries in the turn array", () => {
     const turns = [null, [41.88, -87.63], undefined];
-    const { features } = buildTurnsGeoJson(turns, null);
+    const { features } = buildTurnsGeoJson(turns);
     expect(features).toHaveLength(1);
   });
 });
@@ -212,14 +214,16 @@ describe("renderWalkRoute", () => {
     expect(layerIds).not.toContain("walk-turns-circle");
   });
 
-  it("passes activeTurnIndex into the turns GeoJSON", () => {
+  it("emits walk-turns features with stable ids and no baked-in active flag", () => {
+    // Active-turn highlighting is now applied via setFeatureState in
+    // MapRouteLayer — the source data carries the raw turn geometry only.
     const result = { path: [[41.88, -87.63], [41.89, -87.64]] };
     const turnCoords = [[41.88, -87.63], [41.89, -87.64]];
     renderWalkRoute(map, result, turnCoords, 1, layerIds, sourceIds);
     const call = map.addSource.mock.calls.find(c => c[0] === "walk-turns");
     const features = call[1].data.features;
-    const activeFeature = features.find(f => f.properties.active === true);
-    expect(activeFeature).toBeTruthy();
+    expect(features.map(f => f.id)).toEqual([0, 1]);
+    expect(features.every(f => !("active" in f.properties))).toBe(true);
   });
 
   it("adds intermediate stop markers for multi-stop routes", () => {

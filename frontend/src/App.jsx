@@ -13,6 +13,9 @@ import {
   safeRemove,
   loadSessionJSON, saveSessionJSON, safeSessionRemove,
 } from "./lib/storage.js";
+import {
+  loadMobilityOverrideDismissed, saveMobilityOverrideDismissed,
+} from "./lib/personaPrefs.js";
 import { Masthead } from "./components/Masthead.jsx";
 import { Footer } from "./components/Footer.jsx";
 import { PersonalizeModal } from "./components/PersonalizeModal.jsx";
@@ -32,7 +35,6 @@ import { loadSheetSnap } from "./lib/sheetSnap.js";
 import { resolveCurrentLocation } from "./lib/geolocation.js";
 import { WPIcon } from "./wayfarer/walkpath-icons.jsx";
 import { WFIcon } from "./wayfarer/icons.jsx";
-import { WFCheck } from "./wayfarer/forms.jsx";
 import { useTurnCoords } from "./hooks/useTurnCoords.js";
 import { useShareCard } from "./hooks/useShareCard.js";
 import { BACKEND_URL } from "./lib/backendUrl.js";
@@ -40,14 +42,28 @@ import { fetchWithTimeout } from "./lib/fetchWithTimeout.js";
 import { MAX_STOPS, readUrlParams } from "./lib/urlParams.js";
 import { motivationMessage, formatDirectionsText } from "./lib/routeFormat.js";
 import { RECENT_KEY, recentEntryStops } from "./lib/recentSearches.js";
-import { loadStepLog, logWalk, clearStepLog } from "./lib/stepLog.js";
+import { loadStepLog, logWalk, clearStepLog, pruneStoredStepLog } from "./lib/stepLog.js";
 import { ExploreForm } from "./components/ExploreForm.jsx";
 import { ExploreCategoryPanel } from "./components/ExploreCategoryPanel.jsx";
+import { AddressAutocomplete } from "./components/AddressAutocomplete.jsx";
+import { fetchAutocomplete } from "./lib/autocompleteApi.js";
+import { formatLatLonLabel } from "./lib/coordsFormat.js";
+import { MQ_MOBILE, MQ_TABLET } from "./lib/useMediaQuery.js";
 import {
   loadMode, saveMode,
   loadExplorePrefs, saveExplorePrefs,
+  EXPLORE_DEFAULTS,
+  HEATMAP_LAYERS,
 } from "./lib/explorePrefs.js";
 import { PIN_CATEGORIES } from "./lib/exploreCategories.js";
+
+// PIN_CATEGORIES is a frozen module-level export. Project its pin-paint
+// fields once at import time so App doesn't pay a per-instance useMemo
+// cache cell for data fully known at module load.
+const EXPLORE_CATEGORY_STYLES = PIN_CATEGORIES.map(c => ({
+  key: c.key, color: c.color, glyph: c.glyph,
+}));
+
 import { usePersonalization } from "./hooks/usePersonalization.js";
 import { useRouteFetch } from "./hooks/useRouteFetch.js";
 import { useExploreFetch } from "./hooks/useExploreFetch.js";
@@ -65,6 +81,11 @@ function makeStopId() {
 // load as a belt-and-braces guard against very long-lived sessions.
 const STOPS_KEY = "walkpath:draftStops";
 const STOPS_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+// Toast auto-dismiss delay. Used by both the explicit `showToast` helper and
+// the inline pick-on-map fallback toast — kept in one place so they stay in
+// sync.
+const TOAST_DURATION_MS = 3500;
 
 export function loadStoredStops(now = Date.now()) {
   const parsed = loadSessionJSON(STOPS_KEY, null);
@@ -110,7 +131,11 @@ export default function App() {
     ];
   });
 
-  const stopValues = stops.map(s => s.value);
+  // Memoized so downstream consumers (useShareCard's shareUrl + handleShareCard
+  // memos) get a referentially stable array across re-renders that don't
+  // actually change the stop list. Without this, unrelated state churn (modal
+  // open, loading flips) would invalidate the share-card memos every render.
+  const stopValues = useMemo(() => stops.map(s => s.value), [stops]);
   const origin      = stops[0]?.value ?? "";
   const destination = stops[stops.length - 1]?.value ?? "";
   const isMultiStop = stops.length > 2;
@@ -138,26 +163,69 @@ export default function App() {
     });
   }
   function reverseStops() {
-    setStops(prev => prev.slice().reverse().map(s => ({ ...s, id: makeStopId() })));
+    // Reverse in place — keep ids stable so AddressAutocomplete instances
+    // don't unmount and drop focus / suggestion state mid-edit. The ids
+    // are React keys; React reconciles the reorder without remounting.
+    setStops(prev => prev.slice().reverse());
   }
 
   // ── Personalization ────────────────────────────────────────────────────
   const {
     heightFt, heightIn, weightKg, dailyGoal, walkPace,
-    avoidStairs, preferPedestrian,
-    setWalkPace, setAvoidStairs, setPreferPedestrian,
+    avoidStairs, preferPedestrian, mobilityProfile,
+    setWalkPace, setAvoidStairs, setPreferPedestrian, setMobilityProfile,
     handleHeightChange, handleWeightChange, handleGoalChange,
   } = usePersonalization(initialUrlParams);
+  const isWheeled = mobilityProfile === "wheeled";
 
   const [personalizeOpen, setPersonalizeOpen] = useState(false);
+  const [mobilityOverrideDismissed, setMobilityOverrideDismissed] = useState(loadMobilityOverrideDismissed);
+  const handleDismissMobilityOverride = useCallback(() => {
+    saveMobilityOverrideDismissed();
+    setMobilityOverrideDismissed(true);
+  }, []);
+  // Render the notice only when wheeled has forced stairs avoidance on top of
+  // a saved Walking preference that disagreed — silent otherwise.
+  const showMobilityOverrideNotice =
+    isWheeled && !avoidStairs && !mobilityOverrideDismissed;
 
-  // Persist stop drafts to sessionStorage on every change so a SW-triggered
-  // reload (or a normal refresh) restores what the user was typing. Two
-  // empty stops = nothing worth saving — clear instead.
+  // Switching to Wheeled defaults prefer_pedestrian on (user can still toggle
+  // it off afterwards). avoid_stairs is forced on in useRouteFetch — the
+  // persisted accessPrefs value is intentionally left untouched so a flip
+  // back to Walking restores the user's saved choice.
+  const handleMobilityProfileChange = useCallback((next) => {
+    setMobilityProfile(next);
+    if (next === "wheeled" && !preferPedestrian) setPreferPedestrian(true);
+  }, [setMobilityProfile, setPreferPedestrian, preferPedestrian]);
+
+  // Persist stop drafts to sessionStorage so a SW-triggered reload (or a
+  // normal refresh) restores what the user was typing. The save is debounced
+  // (~250 ms) — without it, JSON.stringify + storage write would fire on every
+  // keystroke. The empty-clear branch stays synchronous so removing all stops
+  // wipes the storage entry immediately rather than leaving a stale draft
+  // around for the debounce window.
+  const stopDraftTimerRef = useRef(null);
   useEffect(() => {
     const values = stops.map(s => s.value);
-    if (values.every(v => !v.trim())) safeSessionRemove(STOPS_KEY);
-    else saveStoredStops(values);
+    if (values.every(v => !v.trim())) {
+      if (stopDraftTimerRef.current) {
+        clearTimeout(stopDraftTimerRef.current);
+        stopDraftTimerRef.current = null;
+      }
+      safeSessionRemove(STOPS_KEY);
+      return;
+    }
+    if (stopDraftTimerRef.current) clearTimeout(stopDraftTimerRef.current);
+    stopDraftTimerRef.current = setTimeout(() => {
+      stopDraftTimerRef.current = null;
+      saveStoredStops(values);
+    }, 250);
+    return () => {
+      if (stopDraftTimerRef.current) {
+        clearTimeout(stopDraftTimerRef.current);
+        stopDraftTimerRef.current = null;
+      }
+    };
   }, [stops]);
 
   // ── Mode and Explore prefs ─────────────────────────────────────────────
@@ -172,6 +240,11 @@ export default function App() {
   const setMode = useCallback((next) => {
     setModeState(next);
     saveMode(next);
+    // Pick-on-map is route-only — the toggle button only renders inside
+    // buildRouteContents, so leaving Route mode with pickMode set would
+    // strand the user with a click-to-drop-pin handler and a Confirm card
+    // floating over the Explorer's polygon. Clear it on every transition.
+    if (next !== "route") setPickMode(null);
   }, []);
   useEffect(() => { saveExplorePrefs(explorePrefs); }, [explorePrefs]);
 
@@ -182,6 +255,7 @@ export default function App() {
     fetchRoute, fetchRouteRef,
   } = useRouteFetch({
     heightFt, heightIn, weightKg, dailyGoal, walkPace, avoidStairs, preferPedestrian,
+    mobilityProfile,
     initialUrlParams,
   });
 
@@ -193,6 +267,14 @@ export default function App() {
 
   // ── Remaining local state ──────────────────────────────────────────────
   const [stepLog, setStepLog]               = useState(loadStepLog);
+  // Compact the persisted step log once on mount — drops entries beyond
+  // the 7-day TTL and writes the trimmed list back. Kept out of
+  // `loadStepLog` so the lazy state initializer stays read-only (it
+  // double-fires in StrictMode dev).
+  useEffect(() => {
+    const pruned = pruneStoredStepLog();
+    setStepLog(prev => prev.length === pruned.length ? prev : pruned);
+  }, []);
   const [walkLogged, setWalkLogged]         = useState(false);
   const [activeTurnIndex, setActiveTurnIndex] = useState(null);
   const [pickMode, setPickMode]             = useState(null); // stop id | null
@@ -208,6 +290,14 @@ export default function App() {
   const swUpdateFnRef = useRef(null);
   const toastTimerRef = useRef(null);
 
+  // Toast helper defined early so any handler in the body of App (including
+  // ones declared above the later `useShareCard` block) can call it.
+  const showToast = useCallback((msg) => {
+    setToastMsg(msg);
+    clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMsg(""), TOAST_DURATION_MS);
+  }, []);
+
   // Mobile bottom-sheet state. Initial snap is the user's persisted preference
   // (loadSheetSnap), falling back to peek (0). When a new route arrives we
   // auto-promote ONLY from peek — if the user has previously chosen half or
@@ -217,8 +307,8 @@ export default function App() {
   // in App.css). Same `mainContents` / `mapNode` JSX in both desktop branches
   // preserves React component identity — no MapLibre re-init when a tablet
   // crosses the 1024 px threshold on rotation.
-  const isMobile = useMediaQuery("(max-width: 480px)");
-  const isTablet = useMediaQuery("(min-width: 481px) and (max-width: 1023px)");
+  const isMobile = useMediaQuery(MQ_MOBILE);
+  const isTablet = useMediaQuery(MQ_TABLET);
   const [sheetSnap, setSheetSnap] = useState(() => loadSheetSnap() ?? 0);
   const [mapPadding, setMapPadding] = useState(null);
   const lastResultRef = useRef(null);
@@ -296,14 +386,17 @@ export default function App() {
 
   function handleLogWalk() {
     if (!viewResult || walkLogged) return;
+    // Pass `stepLog` so logWalk skips the localStorage re-read + parse —
+    // we already have the live list in state.
     const entry = logWalk({
       steps: viewResult.total_steps,
       miles: viewResult.total_miles,
+      minutes: viewResult.total_minutes,
       origin,
       destination: isMultiStop
         ? stopValues.slice(1).join(" → ")
         : destination,
-    });
+    }, stepLog);
     if (entry) setStepLog(prev => [entry, ...prev]);
     setWalkLogged(true);
   }
@@ -354,16 +447,23 @@ export default function App() {
     setLocating(true);
     try {
       const loc = await resolveCurrentLocation();
-      if (loc.error === "denied") {
-        setExploreError("Location permission denied — pick a community area instead.");
-        return;
-      }
-      if (loc.error === "outside_coverage") {
-        setExploreError("You're outside the Chicago coverage area.");
-        return;
-      }
       if (loc.error) {
-        setExploreError("Couldn't read your location — try a community area.");
+        // Flip back to community-area mode so the form is immediately usable;
+        // preserve the prior pick if any, otherwise default. Don't auto-fetch —
+        // let the user confirm or pick a different area.
+        const prevArea = explorePrefsRef.current.origin?.communityArea;
+        const fallback = {
+          kind: "community_area",
+          communityArea: prevArea || EXPLORE_DEFAULTS.origin.communityArea,
+        };
+        setExplorePrefs(p => ({ ...p, origin: fallback }));
+        explorePrefsRef.current = { ...explorePrefsRef.current, origin: fallback };
+        const msg = loc.error === "denied"
+          ? "Location permission denied — pick a community area instead."
+          : loc.error === "outside_coverage"
+            ? "You're outside the Chicago coverage area — pick a community area."
+            : "Couldn't read your location — pick a community area.";
+        setExploreError(msg);
         return;
       }
       const next = { kind: "current", communityArea: null, lat: loc.lat, lon: loc.lon };
@@ -387,6 +487,7 @@ export default function App() {
 
   function handleExploreMaxMinutesChange(next) {
     setExplorePrefs(p => ({ ...p, maxMinutes: next }));
+    explorePrefsRef.current = { ...explorePrefsRef.current, maxMinutes: next };
   }
 
   // Slider release / "Discover" button.
@@ -435,27 +536,32 @@ export default function App() {
     });
   }
 
-  function handleToggleHeatmap(e) {
+  function handleToggleHeatmap(key, e) {
     const checked = !!(e?.target?.checked);
-    setExplorePrefs(p => ({ ...p, showResidentialHeatmap: checked }));
+    const layer = HEATMAP_LAYERS.find(l => l.key === key);
+    if (!layer) return;
+    setExplorePrefs(p => ({ ...p, [layer.prefKey]: checked }));
+  }
+
+  function setAllHeatmaps(next, value) {
+    for (const { prefKey } of HEATMAP_LAYERS) next[prefKey] = value;
+    return next;
   }
 
   function handleSelectAllCategories() {
-    setExplorePrefs(p => ({
+    setExplorePrefs(p => setAllHeatmaps({
       ...p,
       selectedCategories: PIN_CATEGORIES.map(c => c.key),
       selectedSubs: [],
-      showResidentialHeatmap: true,
-    }));
+    }, true));
   }
 
   function handleClearAllCategories() {
-    setExplorePrefs(p => ({
+    setExplorePrefs(p => setAllHeatmaps({
       ...p,
       selectedCategories: [],
       selectedSubs: [],
-      showResidentialHeatmap: false,
-    }));
+    }, false));
   }
 
   // Mobile only: when a place pin is tapped, drop the sheet to peek so the
@@ -467,20 +573,23 @@ export default function App() {
 
   // "Walk here" from a place popover → flip back to route mode and fire a
   // route fetch from the explorer's origin to the clicked place.
-  const handlePlaceWalkHere = useCallback(({ lat, lon, name, address }) => {
+  const handlePlaceGoHere = useCallback(({ lat, lon, name, address }) => {
     const o = explorePrefsRef.current.origin;
     const originName = o.kind === "community_area"
       ? o.communityArea
-      : (o.lat != null && o.lon != null ? `${o.lat.toFixed(5)}, ${o.lon.toFixed(5)}` : null);
-    if (!originName) return;
-    const destName = name || address || `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+      : (o.lat != null && o.lon != null ? formatLatLonLabel(o.lat, o.lon) : null);
+    if (!originName) {
+      showToast("Still reading your location — try again in a moment.");
+      return;
+    }
+    const destName = name || address || formatLatLonLabel(lat, lon);
     setMode("route");
     setStops([
       { id: makeStopId(), value: originName },
       { id: makeStopId(), value: destName },
     ]);
     fetchRouteRef.current([originName, destName]);
-  }, [setMode, explorePrefsRef, fetchRouteRef]);
+  }, [setMode, explorePrefsRef, fetchRouteRef, showToast]);
 
   // Reachable-neighborhood chip → route from the explorer's origin to the
   // clicked neighborhood.
@@ -488,15 +597,18 @@ export default function App() {
     const o = explorePrefsRef.current.origin;
     const originName = o.kind === "community_area"
       ? o.communityArea
-      : (o.lat != null && o.lon != null ? `${o.lat.toFixed(5)}, ${o.lon.toFixed(5)}` : null);
-    if (!originName) return;
+      : (o.lat != null && o.lon != null ? formatLatLonLabel(o.lat, o.lon) : null);
+    if (!originName) {
+      showToast("Still reading your location — try again in a moment.");
+      return;
+    }
     setMode("route");
     setStops([
       { id: makeStopId(), value: originName },
       { id: makeStopId(), value: neighborhoodName },
     ]);
     fetchRouteRef.current([originName, neighborhoodName]);
-  }, [setMode, explorePrefsRef, fetchRouteRef]);
+  }, [setMode, explorePrefsRef, fetchRouteRef, showToast]);
 
   function handleRecentSelect(item) {
     const itemStops = recentEntryStops(item);
@@ -527,12 +639,6 @@ export default function App() {
       }
     } catch { /* network or parse failure — caller falls back to coords */ }
     return null;
-  }, []);
-
-  const showToast = useCallback((msg) => {
-    setToastMsg(msg);
-    clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToastMsg(""), 3500);
   }, []);
 
   // Follow mode disengages when the user switches modes or clears the active
@@ -603,7 +709,7 @@ export default function App() {
       if (label) {
         setStopValue(target.id, label);
       } else {
-        setStopValue(target.id, `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+        setStopValue(target.id, formatLatLonLabel(lat, lon));
         showToast("That spot has no name we know — using coordinates.");
       }
     } finally {
@@ -619,17 +725,20 @@ export default function App() {
     if (label) {
       setStopValue(targetId, label);
     } else {
-      setStopValue(targetId, `${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+      setStopValue(targetId, formatLatLonLabel(lat, lon));
       setToastMsg("That spot has no name we know — using coordinates.");
       clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => setToastMsg(""), 3500);
+      toastTimerRef.current = setTimeout(() => setToastMsg(""), TOAST_DURATION_MS);
     }
   }, [pickMode]);
 
   // ── Derived map data ───────────────────────────────────────────────────
 
-  // The set of (category, subcategory) keys visible on the map. Includes
-  // parent-only entries when no sub filter is active for that category.
+  // The set of keys visible on the map — the union of selected top-level
+  // category keys ("libraries") and selected "category/subcategory" composite
+  // keys ("medical/pharmacy"). MapExploreLayer's place filter accepts either
+  // form, so a parent-only check shows every place under it and a sub-only
+  // check narrows to that subcategory.
   const activeSubsSet = useMemo(() => {
     const out = new Set();
     for (const c of explorePrefs.selectedCategories) out.add(c);
@@ -637,14 +746,9 @@ export default function App() {
     return out;
   }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
 
-  const exploreCategoryStyles = useMemo(
-    () => PIN_CATEGORIES.map(c => ({ key: c.key, color: c.color, glyph: c.glyph })),
-    [],
-  );
-
   // ── Mode toggle (Route ⇄ Explore) ─────────────────────────────────────
   const modeToggle = (
-    <div className="mode-toggle" role="tablist" aria-label="Walk planning mode">
+    <div className="mode-toggle" role="tablist" aria-label="Route planning mode">
       <button
         type="button"
         role="tab"
@@ -669,8 +773,10 @@ export default function App() {
   );
 
   // Explore-mode content: the form (origin selector + slider + chips) plus
-  // the category panel.
-  const exploreContents = (
+  // the category panel. Wrapped in a builder so only the active branch's
+  // JSX tree is constructed per render (see OPT-012) — sheet drags, theme
+  // toggles, and toast timers no longer pay to allocate the unused tree.
+  const buildExploreContents = () => (
     <>
       {modeToggle}
       <ExploreForm
@@ -692,26 +798,43 @@ export default function App() {
         </div>
       )}
       {exploreResult && (
-        <div className="explore-result-summary">
-          <div className="explore-result-stat">
-            <span className="explore-result-stat-num">
-              {exploreResult.stats?.area_sq_mi ?? "—"}
+        (exploreResult.stats?.area_sq_mi ?? 0) < 0.05 ? (
+          // Origin snapped to the graph but reaches almost nothing — typically
+          // a parking lot, highway median, or an isolated cul-de-sac.
+          <div className="explore-no-area" role="note">
+            <strong>No reachable area from here.</strong>
+            <span>
+              That spot doesn't connect to enough of the pedestrian network to
+              survey. Try a community area, or pick a different point.
             </span>
-            <span className="explore-result-stat-unit">sq mi</span>
           </div>
-          <div className="explore-result-stat">
-            <span className="explore-result-stat-num">
-              {exploreResult.places?.length ?? 0}
-            </span>
-            <span className="explore-result-stat-unit">places shown</span>
+        ) : (
+          <div className="explore-result-summary">
+            <div className="explore-result-stat">
+              <span className="explore-result-stat-num">
+                {exploreResult.stats?.area_sq_mi ?? "—"}
+              </span>
+              <span className="explore-result-stat-unit">sq mi</span>
+            </div>
+            <div className="explore-result-stat">
+              <span className="explore-result-stat-num">
+                {exploreResult.places?.length ?? 0}
+              </span>
+              <span className="explore-result-stat-unit">places shown</span>
+            </div>
           </div>
-        </div>
+        )
       )}
       <ExploreCategoryPanel
         selectedCategories={explorePrefs.selectedCategories}
         selectedSubs={explorePrefs.selectedSubs}
         expandedGroups={explorePrefs.expandedGroups}
-        showResidentialHeatmap={explorePrefs.showResidentialHeatmap}
+        heatmapStates={{
+          residential: explorePrefs.showResidentialHeatmap,
+          parks_heatmap: explorePrefs.showParksHeatmap,
+          tree_canopy: explorePrefs.showTreeCanopyHeatmap,
+          green_space: explorePrefs.showGreenSpaceHeatmap,
+        }}
         onToggleGroup={handleToggleGroup}
         onToggleCategory={handleToggleCategory}
         onToggleSub={handleToggleSub}
@@ -723,8 +846,9 @@ export default function App() {
   );
 
   // Form, results, and directions — composed once and slotted into either
-  // the desktop two-column layout or the mobile bottom sheet.
-  const routeContents = (
+  // the desktop two-column layout or the mobile bottom sheet. Wrapped in
+  // a builder for the same reason as buildExploreContents above.
+  const buildRouteContents = () => (
     <>
       {modeToggle}
       <form className="form" onSubmit={handleSubmit}>
@@ -755,16 +879,15 @@ export default function App() {
                 >
                   <WPIcon name="crosshair" size={14} />
                 </button>
-                <input
-                  type="search"
-                  placeholder={placeholder}
+                <AddressAutocomplete
+                  className="stop-autocomplete"
                   value={stop.value}
-                  onChange={e => setStopValue(stop.id, e.target.value)}
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="words"
+                  onChange={value => setStopValue(stop.id, value)}
+                  onSelect={sugg => setStopValue(stop.id, sugg.label)}
+                  getSuggestions={fetchAutocomplete}
+                  placeholder={placeholder}
+                  ariaLabel={label}
                   enterKeyHint={isLast ? "go" : "next"}
-                  aria-label={label}
                 />
                 {canRemove && (
                   <div className="stop-row-actions">
@@ -855,24 +978,12 @@ export default function App() {
           </span>
         </button>
 
-        <PaceSelector
-          pace={walkPace}
-          onChange={setWalkPace}
-        />
-
-        <fieldset className="access-prefs">
-          <legend>Considerations</legend>
-          <WFCheck
-            checked={avoidStairs}
-            onChange={e => setAvoidStairs(e.target.checked)}
-            label="Avoid stairs and steep ascents"
+        {!isWheeled && (
+          <PaceSelector
+            pace={walkPace}
+            onChange={setWalkPace}
           />
-          <WFCheck
-            checked={preferPedestrian}
-            onChange={e => setPreferPedestrian(e.target.checked)}
-            label="Prefer pedestrian ways and footpaths"
-          />
-        </fieldset>
+        )}
 
         <button
           type="submit"
@@ -894,6 +1005,8 @@ export default function App() {
         log={stepLog}
         dailyGoal={dailyGoal}
         onClear={handleClearStepLog}
+        metricMode={isWheeled ? "distance" : "steps"}
+        stepLengthInches={viewResult?.step_length_inches}
       />
 
       {error && (
@@ -909,6 +1022,22 @@ export default function App() {
 
       {loading && <LoadingSkeleton />}
 
+      {showMobilityOverrideNotice && viewResult && !loading && (
+        <div className="mobility-override-notice" role="note">
+          <span>
+            Your Mobility profile is set to <em>Wheeled</em>, so stairs are avoided regardless of your saved preferences.
+          </span>
+          <button
+            type="button"
+            className="mobility-override-dismiss"
+            onClick={handleDismissMobilityOverride}
+            aria-label="Dismiss mobility override notice"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {viewResult && !loading && (
         <RouteErrorBoundary>
           {!isMultiStop && (
@@ -916,15 +1045,21 @@ export default function App() {
               routes={result.routes}
               activeFlavor={activeFlavor}
               onChange={setActiveFlavor}
+              mobilityProfile={mobilityProfile}
             />
           )}
           {isMultiStop && (
             <div className="multi-stop-note" role="note">
-              Multi-stop walks use the fastest path. Alternatives (fewest turns, greenest) are offered for two-stop walks.
+              Multi-stop routes use the fastest path. Alternatives (fewest turns, greenest) are offered for two-stop routes.
             </div>
           )}
 
-          <StepHero result={viewResult} dailyGoal={dailyGoal} onShare={handleOpenShare} />
+          <StepHero
+            result={viewResult}
+            dailyGoal={dailyGoal}
+            onShare={handleOpenShare}
+            metricMode={isWheeled ? "distance" : "steps"}
+          />
 
           <CompareDispatch
             miles={viewResult.total_miles}
@@ -937,15 +1072,15 @@ export default function App() {
             className={`log-walk-btn${walkLogged ? " log-walk-btn--logged" : ""}`}
             onClick={handleLogWalk}
             disabled={walkLogged}
-            aria-label={walkLogged ? "Walk logged" : "Log this walk"}
+            aria-label={walkLogged ? "Trip logged" : "Log this trip"}
           >
             {walkLogged
-              ? <><WFIcon name="check" size={14} /> Logged this walk</>
-              : <><WFIcon name="plus" size={14} /> Log this walk</>}
+              ? <><WFIcon name="check" size={14} /> Logged this trip</>
+              : <><WFIcon name="plus" size={14} /> Log this trip</>}
           </button>
 
           <div className="motivation">
-            {motivationMessage(viewResult.total_steps)}
+            {motivationMessage(viewResult.total_steps, mobilityProfile)}
           </div>
 
           <DirectionLedger
@@ -954,14 +1089,14 @@ export default function App() {
             activeTurnIndex={activeTurnIndex}
             onStepClick={setActiveTurnIndex}
             legs={isMultiStop ? (result.legs ?? null) : null}
-            formatDirectionsText={formatDirectionsText}
+            formatDirectionsText={(d, r) => formatDirectionsText(d, r, mobilityProfile)}
           />
         </RouteErrorBoundary>
       )}
     </>
   );
 
-  const sidebarContents = mode === "explore" ? exploreContents : routeContents;
+  const sidebarContents = mode === "explore" ? buildExploreContents() : buildRouteContents();
 
   const mapNode = (
     <Suspense fallback={<div className="map-lazy-fallback" aria-hidden="true" />}>
@@ -977,10 +1112,13 @@ export default function App() {
         mapPadding={isMobile ? mapPadding : null}
         mode={mode}
         exploreResult={mode === "explore" ? exploreResult : null}
-        categoryStyles={exploreCategoryStyles}
+        categoryStyles={EXPLORE_CATEGORY_STYLES}
         activeSubs={activeSubsSet}
         showResidential={explorePrefs.showResidentialHeatmap}
-        onPlaceWalkHere={handlePlaceWalkHere}
+        showParks={explorePrefs.showParksHeatmap}
+        showTreeCanopy={explorePrefs.showTreeCanopyHeatmap}
+        showGreenSpace={explorePrefs.showGreenSpaceHeatmap}
+        onPlaceGoHere={handlePlaceGoHere}
         onPlaceTap={handlePlaceTap}
         userPosition={followLocation.position}
         following={followLocation.following}
@@ -1027,9 +1165,15 @@ export default function App() {
         heightIn={heightIn}
         weightKg={weightKg}
         dailyGoal={dailyGoal}
+        mobilityProfile={mobilityProfile}
+        avoidStairs={avoidStairs}
+        preferPedestrian={preferPedestrian}
         onChangeHeight={handleHeightChange}
         onChangeWeight={handleWeightChange}
         onChangeGoal={handleGoalChange}
+        onChangeMobilityProfile={handleMobilityProfileChange}
+        onChangeAvoidStairs={setAvoidStairs}
+        onChangePreferPedestrian={setPreferPedestrian}
       />
 
       {/* ── Share modal ── */}
@@ -1063,6 +1207,7 @@ export default function App() {
                   onMapReady={handleCardMapReady}
                   mapInstanceRef={cardMapRef}
                   siteHost={siteHost}
+                  mobilityProfile={mobilityProfile}
                 />
               </Suspense>
             </div>

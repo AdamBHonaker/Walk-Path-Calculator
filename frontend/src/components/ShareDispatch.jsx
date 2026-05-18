@@ -10,7 +10,7 @@ import {
 import { safePaceLabel, motivationMessage } from "../lib/routeFormat.js";
 import { calorieEquivalent } from "../calorieEquiv.js";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
-import { COLOPHON_TEXT } from "../wayfarer/primitives.jsx";
+import { COLOPHON_TEXT, DEFAULT_ATTRIBUTION_SOURCES } from "../wayfarer/primitives.jsx";
 
 const CARD_WIDTH = 480;
 const HORIZONTAL_PAD = 22;
@@ -26,9 +26,10 @@ function formatIssueDate(d = new Date()) {
 }
 
 export const ShareDispatch = forwardRef(function ShareDispatch(
-  { result, originLabel, destLabel, onMapReady, mapInstanceRef, siteHost },
+  { result, originLabel, destLabel, onMapReady, mapInstanceRef, siteHost, mobilityProfile = "walking" },
   ref,
 ) {
+  const isWheeled = mobilityProfile === "wheeled";
   const mapContainerRef = useRef(null);
   const layerIds = useRef([]);
   const sourceIds = useRef([]);
@@ -75,12 +76,12 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
   }, [result, onMapReady, mapInstanceRef]);
 
   const motivation = useMemo(
-    () => (result ? motivationMessage(result.total_steps) : null),
-    [result],
+    () => (result ? motivationMessage(result.total_steps, mobilityProfile) : null),
+    [result, mobilityProfile],
   );
   const equiv = useMemo(
-    () => (result?.calories_approx > 0 ? calorieEquivalent(result.calories_approx) : null),
-    [result],
+    () => (!isWheeled && result?.calories_approx > 0 ? calorieEquivalent(result.calories_approx) : null),
+    [result, isWheeled],
   );
 
   if (!result) return null;
@@ -195,7 +196,7 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
             fontVariantNumeric: "tabular-nums",
           }}
         >
-          {total_steps.toLocaleString()}
+          {isWheeled ? total_miles : total_steps.toLocaleString()}
         </div>
         <div style={{ flex: 1, paddingTop: 4, minWidth: 0 }}>
           <div
@@ -208,7 +209,7 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
               color: "var(--ink)",
             }}
           >
-            Steps · all the way
+            {isWheeled ? "Miles · all the way" : "Steps · all the way"}
           </div>
           {motivation && (
             <div
@@ -249,15 +250,23 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
           borderTop: "1px solid var(--ink)",
           borderBottom: "1px solid var(--ink)",
           display: "grid",
-          gridTemplateColumns: paceLabel ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr",
+          gridTemplateColumns: (isWheeled
+            ? "1fr 1fr"
+            : (paceLabel ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr")),
         }}
       >
-        {[
-          { v: total_miles, u: "miles" },
-          { v: total_minutes, u: "minutes" },
-          { v: calories_approx, u: "calories" },
-          ...(paceLabel ? [{ v: paceLabel.split(" · ")[0], u: paceLabel.split(" · ")[1] || "pace" }] : []),
-        ].map((s, i, arr) => (
+        {(isWheeled
+          ? [
+              { v: total_miles, u: "miles" },
+              { v: total_minutes, u: "minutes" },
+            ]
+          : [
+              { v: total_miles, u: "miles" },
+              { v: total_minutes, u: "minutes" },
+              { v: calories_approx, u: "calories" },
+              ...(paceLabel ? [{ v: paceLabel.split(" · ")[0], u: paceLabel.split(" · ")[1] || "pace" }] : []),
+            ]
+        ).map((s, i, arr) => (
           <div
             key={i}
             style={{
@@ -355,8 +364,31 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
         </span>
       </div>
 
+      {/* Data attribution — mirrors the page-footer WFAttribution subline so
+          the share card credits upstream sources (CDP / OSM / LocationIQ)
+          even when the PNG is shared standalone. */}
+      <div
+        style={{
+          padding: "6px 22px 0",
+          textAlign: "center",
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "var(--wf-sans)",
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: 1.5,
+            textTransform: "uppercase",
+            color: "var(--mute)",
+          }}
+        >
+          Data: {DEFAULT_ATTRIBUTION_SOURCES.join(" · ")}
+        </span>
+      </div>
+
       {/* Visit strip — printed URL invites recipients of the PNG to plan
-          their own walk. The full deep-link with stops is carried by the
+          their own trip. The full deep-link with stops is carried by the
           Web Share API / clipboard path; here we only print the host. */}
       {siteHost && (
         <div

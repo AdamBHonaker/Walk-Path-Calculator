@@ -18,6 +18,7 @@ const WEIGHT_KG_KEY     = "walkpath:weightKg";
 const WALK_PACE_KEY     = "walkpath:walkPace";
 const ACCESS_PREFS_KEY  = "walkpath:accessPrefs";
 const WEIGHT_UNIT_KEY   = "walkpath:weightUnit";
+const MOBILITY_PROFILE_KEY = "walkpath:mobilityProfile";
 
 export function loadDailyGoal() {
   const raw = safeGet(DAILY_GOAL_KEY);
@@ -33,9 +34,12 @@ export function saveDailyGoal(value) {
 
 export function loadStoredHeightFt() {
   const raw = safeGet(HEIGHT_FT_KEY);
-  if (!raw) return null;
+  if (raw == null) return null;
   const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n >= 4 && n <= 7 ? n : null;
+  // Range matches the backend's 36–108 in (3–9 ft) validator in
+  // backend/main.py:RouteRequest.validate_height. The dropdown caps at 8
+  // (9 ft is the backend upper bound but never observed in practice).
+  return Number.isFinite(n) && n >= 3 && n <= 8 ? n : null;
 }
 
 export function saveStoredHeightFt(value) {
@@ -98,4 +102,23 @@ export function loadWeightUnit() {
 
 export function saveWeightUnit(unit) {
   return safeSet(WEIGHT_UNIT_KEY, unit);
+}
+
+export function loadMobilityProfile() {
+  const v = safeGet(MOBILITY_PROFILE_KEY);
+  return v === "wheeled" ? "wheeled" : "walking";
+}
+
+export function saveMobilityProfile(value) {
+  return safeSet(MOBILITY_PROFILE_KEY, value === "wheeled" ? "wheeled" : "walking");
+}
+
+const MOBILITY_OVERRIDE_DISMISSED_KEY = "walkpath:mobilityOverrideNoticeDismissed";
+
+export function loadMobilityOverrideDismissed() {
+  return safeGet(MOBILITY_OVERRIDE_DISMISSED_KEY) === "1";
+}
+
+export function saveMobilityOverrideDismissed() {
+  return safeSet(MOBILITY_OVERRIDE_DISMISSED_KEY, "1");
 }

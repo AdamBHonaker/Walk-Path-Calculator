@@ -14,7 +14,7 @@
 
 import { loadJSON, safeGet, safeSet, saveJSON } from "./storage.js";
 import { COMMUNITY_AREA_NAMES } from "./communityAreas.js";
-import { ALL_CATEGORIES } from "./exploreCategories.js";
+import { ALL_CATEGORIES, EXPLORE_GROUPS } from "./exploreCategories.js";
 
 const MODE_KEY  = "walkpath:mode";
 const PREFS_KEY = "walkpath:explorePrefs";
@@ -28,13 +28,24 @@ const MAX_MINUTES_MAX = 45;
 const DEFAULT_PREFS = {
   origin: { kind: "community_area", communityArea: "Loop" },
   maxMinutes: 20,
-  // Two top-level groups expanded by default — enough to demonstrate the
-  // panel without forcing every group open. The user's expansion state is
-  // remembered after their first interaction.
-  expandedGroups: ["food_drink", "daily_life"],
-  selectedCategories: [],
+  // Groups expanded by default — `outdoors` is included so the pre-checked
+  // `parks` default is visible without a click. The user's expansion state
+  // is remembered after their first interaction.
+  expandedGroups: ["food_drink", "daily_life", "outdoors", "public_services"],
+  selectedCategories: ["libraries", "parks"],
   selectedSubs: [],
   showResidentialHeatmap: true,
+  // CPD park footprint heatmap. Defaults off — additive to existing
+  // residential overlay, and a fresh user shouldn't see two heatmaps at
+  // once.
+  showParksHeatmap: false,
+  // OSM-derived tree canopy density (three opacity bands). Defaults off
+  // per spec — existing users shouldn't see a new overlay they didn't
+  // opt into.
+  showTreeCanopyHeatmap: false,
+  // OSM-derived non-CPD green space (cemeteries, golf courses, nature
+  // reserves, recreation grounds). Defaults off.
+  showGreenSpaceHeatmap: false,
 };
 
 export function loadMode() {
@@ -50,11 +61,7 @@ const VALID_CATEGORY_KEYS = new Set(ALL_CATEGORIES.map(c => c.key));
 const VALID_SUB_KEYS = new Set(
   ALL_CATEGORIES.flatMap(c => (c.subs || []).map(s => `${c.key}/${s.key}`)),
 );
-const VALID_GROUP_KEYS = new Set(
-  // Read at module load time; OK because EXPLORE_GROUPS is static.
-  // We only need the top-level group keys.
-  ["daily_life", "food_drink", "outdoors", "culture", "living"],
-);
+const VALID_GROUP_KEYS = new Set(EXPLORE_GROUPS.map(g => g.key));
 
 function sanitize(prefs) {
   if (!prefs || typeof prefs !== "object") return { ...DEFAULT_PREFS };
@@ -64,14 +71,25 @@ function sanitize(prefs) {
     if (!o || typeof o !== "object" || !VALID_ORIGIN_KINDS.has(o.kind)) {
       return { ...DEFAULT_PREFS.origin };
     }
-    if (o.kind === "community_area") {
-      const name = typeof o.communityArea === "string" ? o.communityArea : "";
+    // Helper: validated community area or the default.
+    const resolveCommunityArea = (raw) => {
+      const name = typeof raw === "string" ? raw : "";
       const known = COMMUNITY_AREA_NAMES.find(
         n => n.toLowerCase() === name.toLowerCase(),
       );
-      return { kind: "community_area", communityArea: known ?? DEFAULT_PREFS.origin.communityArea };
+      return known ?? DEFAULT_PREFS.origin.communityArea;
+    };
+    if (o.kind === "community_area") {
+      return { kind: "community_area", communityArea: resolveCommunityArea(o.communityArea) };
     }
-    return { kind: "current", communityArea: null };
+    // o.kind === "current": coords were never persisted, so a restored
+    // "current" origin would auto-fetch into a permanent "Allow location
+    // access" error. Downgrade to community-area mode (preserving the prior
+    // pick if any) — the user can re-tap "📍 My location" to re-locate.
+    return {
+      kind: "community_area",
+      communityArea: resolveCommunityArea(o.communityArea),
+    };
   })();
 
   const maxMinutes = (() => {
@@ -96,6 +114,18 @@ function sanitize(prefs) {
     ? prefs.showResidentialHeatmap
     : DEFAULT_PREFS.showResidentialHeatmap;
 
+  const showParksHeatmap = typeof prefs.showParksHeatmap === "boolean"
+    ? prefs.showParksHeatmap
+    : DEFAULT_PREFS.showParksHeatmap;
+
+  const showTreeCanopyHeatmap = typeof prefs.showTreeCanopyHeatmap === "boolean"
+    ? prefs.showTreeCanopyHeatmap
+    : DEFAULT_PREFS.showTreeCanopyHeatmap;
+
+  const showGreenSpaceHeatmap = typeof prefs.showGreenSpaceHeatmap === "boolean"
+    ? prefs.showGreenSpaceHeatmap
+    : DEFAULT_PREFS.showGreenSpaceHeatmap;
+
   return {
     origin,
     maxMinutes,
@@ -103,6 +133,9 @@ function sanitize(prefs) {
     selectedCategories,
     selectedSubs,
     showResidentialHeatmap,
+    showParksHeatmap,
+    showTreeCanopyHeatmap,
+    showGreenSpaceHeatmap,
   };
 }
 
@@ -114,6 +147,20 @@ export function saveExplorePrefs(prefs) {
   saveJSON(PREFS_KEY, sanitize(prefs));
 }
 
-export const EXPLORE_DEFAULTS = { ...DEFAULT_PREFS };
+export const EXPLORE_DEFAULTS = JSON.parse(JSON.stringify(DEFAULT_PREFS));
 export const EXPLORE_BUDGET_MIN = MAX_MINUTES_MIN;
 export const EXPLORE_BUDGET_MAX = MAX_MINUTES_MAX;
+
+// Heatmap layer catalog. `key` matches the `heatmapKey` field on entries in
+// exploreCategories.js (passed up from the category panel's checkbox); `prefKey`
+// names the boolean field on the explorePrefs object. Adding a new heatmap
+// means: add an entry here, add a default to DEFAULT_PREFS above + a matching
+// branch in sanitize(), and surface the toggle in the category panel — the
+// toggle/select-all/clear-all handlers in App.jsx drive themselves from this
+// list.
+export const HEATMAP_LAYERS = [
+  { key: "residential",   prefKey: "showResidentialHeatmap" },
+  { key: "parks_heatmap", prefKey: "showParksHeatmap" },
+  { key: "tree_canopy",   prefKey: "showTreeCanopyHeatmap" },
+  { key: "green_space",   prefKey: "showGreenSpaceHeatmap" },
+];

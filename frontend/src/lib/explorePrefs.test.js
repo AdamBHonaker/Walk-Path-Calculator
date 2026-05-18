@@ -91,11 +91,64 @@ describe("loadExplorePrefs", () => {
     expect(loadExplorePrefs().origin).toEqual(EXPLORE_DEFAULTS.origin);
   });
 
-  it("preserves a 'current' origin without lat/lon", () => {
+  it("downgrades a persisted 'current' origin to community-area on load", () => {
+    // Coords aren't persisted for kind:"current", so restoring it verbatim
+    // would auto-fetch into a permanent "Allow location access" error
+    // (BUG-007). sanitize() downgrades to community-area mode instead.
     saveExplorePrefs({
       ...EXPLORE_DEFAULTS,
       origin: { kind: "current", communityArea: null },
     });
-    expect(loadExplorePrefs().origin).toEqual({ kind: "current", communityArea: null });
+    expect(loadExplorePrefs().origin).toEqual(EXPLORE_DEFAULTS.origin);
+  });
+
+  it("preserves the prior community-area pick when downgrading 'current'", () => {
+    saveExplorePrefs({
+      ...EXPLORE_DEFAULTS,
+      origin: { kind: "current", communityArea: "Logan Square" },
+    });
+    expect(loadExplorePrefs().origin).toEqual({
+      kind: "community_area",
+      communityArea: "Logan Square",
+    });
+  });
+
+  it("round-trips showTreeCanopyHeatmap once toggled on", () => {
+    expect(EXPLORE_DEFAULTS.showTreeCanopyHeatmap).toBe(false);
+    saveExplorePrefs({ ...EXPLORE_DEFAULTS, showTreeCanopyHeatmap: true });
+    expect(loadExplorePrefs().showTreeCanopyHeatmap).toBe(true);
+  });
+
+  it("falls back to the default when showTreeCanopyHeatmap is the wrong type", () => {
+    saveExplorePrefs({ ...EXPLORE_DEFAULTS, showTreeCanopyHeatmap: "yes please" });
+    expect(loadExplorePrefs().showTreeCanopyHeatmap).toBe(
+      EXPLORE_DEFAULTS.showTreeCanopyHeatmap,
+    );
+  });
+
+  it("round-trips showParksHeatmap once toggled on", () => {
+    expect(EXPLORE_DEFAULTS.showParksHeatmap).toBe(false);
+    saveExplorePrefs({ ...EXPLORE_DEFAULTS, showParksHeatmap: true });
+    expect(loadExplorePrefs().showParksHeatmap).toBe(true);
+  });
+
+  it("falls back to the default when showParksHeatmap is the wrong type", () => {
+    saveExplorePrefs({ ...EXPLORE_DEFAULTS, showParksHeatmap: "absolutely" });
+    expect(loadExplorePrefs().showParksHeatmap).toBe(
+      EXPLORE_DEFAULTS.showParksHeatmap,
+    );
+  });
+
+  it("round-trips showGreenSpaceHeatmap once toggled on", () => {
+    expect(EXPLORE_DEFAULTS.showGreenSpaceHeatmap).toBe(false);
+    saveExplorePrefs({ ...EXPLORE_DEFAULTS, showGreenSpaceHeatmap: true });
+    expect(loadExplorePrefs().showGreenSpaceHeatmap).toBe(true);
+  });
+
+  it("falls back to the default when showGreenSpaceHeatmap is the wrong type", () => {
+    saveExplorePrefs({ ...EXPLORE_DEFAULTS, showGreenSpaceHeatmap: 42 });
+    expect(loadExplorePrefs().showGreenSpaceHeatmap).toBe(
+      EXPLORE_DEFAULTS.showGreenSpaceHeatmap,
+    );
   });
 });

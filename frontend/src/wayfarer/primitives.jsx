@@ -44,6 +44,9 @@ export const WF = {
   gilt:        "var(--gilt)",
   mist:        "var(--mist)",
   moss:        "var(--moss)",
+  moss100:     "var(--moss-100)",
+  moss300:     "var(--moss-300)",
+  moss500:     "var(--moss-500)",
   serif: '"Fraunces","GT Sectra","Playfair Display", Georgia, serif',
   sans:  '"Inter", -apple-system, system-ui, sans-serif',
   mono:  '"JetBrains Mono","IBM Plex Mono", ui-monospace, monospace',
@@ -55,6 +58,30 @@ export const WF = {
 export const COLOPHON_TEXT = "⟡ Printed in Chicago, on foot ⟡";
 export function WFColophon({ as: Tag = "span", className = "", style = {} }) {
   return <Tag className={className} style={style}>{COLOPHON_TEXT}</Tag>;
+}
+
+// ── <WFAttribution> — small subline crediting upstream data sources ──
+// Renders the editorial-style "Data: …" subline that sits under the
+// colophon (page footer) and under the share-card colophon. Default copy
+// covers the project's current upstream data (CDP / OSM / LocationIQ);
+// callers can override `sources` for surface-specific lists.
+export const DEFAULT_ATTRIBUTION_SOURCES = [
+  "City of Chicago Open Data Portal",
+  "OpenStreetMap",
+  "LocationIQ",
+];
+export function WFAttribution({
+  as: Tag = "span",
+  className = "",
+  style = {},
+  prefix = "Data:",
+  sources = DEFAULT_ATTRIBUTION_SOURCES,
+}) {
+  return (
+    <Tag className={className} style={style}>
+      {prefix} {sources.join(" · ")}
+    </Tag>
+  );
 }
 
 // ── Map marks ──────────────────────────────────────────────

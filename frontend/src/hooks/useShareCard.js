@@ -68,7 +68,7 @@ export function useShareCard({
     if (stopsArr.length < 2) return window.location.origin + "/";
     const params = new URLSearchParams();
     if (stopsArr.length > 2) {
-      params.set("stops", stopsArr.map(encodeURIComponent).join("|"));
+      params.set("stops", stopsArr.join("|"));
     } else {
       params.set("from", stopsArr[0]);
       params.set("to", stopsArr[1]);
@@ -170,7 +170,10 @@ export function useShareCard({
       a.href = objectUrl;
       a.download = filename;
       a.click();
-      URL.revokeObjectURL(objectUrl);
+      // Revoke on the next macrotask, not synchronously: iOS Safari and
+      // some webviews start the download asynchronously after `click()`
+      // returns, and revoking too early leaves the user with a 0-byte file.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
     } catch (err) {
       console.error("[RouteCard] PNG capture failed:", err);
       showToast?.("Couldn't render the card. Please try again.");
