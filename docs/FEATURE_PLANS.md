@@ -16,7 +16,6 @@ Chunked plans for upcoming major features, followed by ideas deferred until post
 | # | Feature | Type | Effort |
 |---|---------|------|--------|
 | 1 | Multi-City Support | Structural | High (was Very High before cross-city routing was deferred to a follow-on — see plan section) |
-| 2 | Ship `chicago_boundary.json` as a release artifact (lakefront `/explore` clipping) | Bolt-On | Low |
 
 **Unscoped notes** (need a scoping pass before they become chunked plans):
 
@@ -202,41 +201,6 @@ If a future smaller city is added and lacks footways entirely, add a `supported_
       - Coverage-error toasts in [frontend/src/App.jsx](frontend/src/App.jsx) lines 464, 658, 698 ("You're outside the Chicago coverage area") — read the active city's display name.
       - Motivation copy in [frontend/src/lib/routeFormat.js](frontend/src/lib/routeFormat.js) — sweep for Chicago-specific strings.
       - The `chicago-mark` icon name in [frontend/src/wayfarer/walkpath-icons.jsx](frontend/src/wayfarer/walkpath-icons.jsx) — generalize to `{slug}-mark` per city (each city contributes its own flag glyph alongside `flag.svg`).
-
----
-
-## 2. Ship `chicago_boundary.json` as a release artifact
-
-**Type:** Bolt-On | **Effort:** Low | **Area:** Backend / deploy
-
-**Why.** [backend/explore.py](backend/explore.py) already supports clipping the `/explore` isochrone against `backend/data/chicago_boundary.json` so lakefront origins don't bleed polygons into Lake Michigan. The file is built on demand by [backend/scripts/build_chicago_boundary.py](backend/scripts/build_chicago_boundary.py), gitignored due to size, and currently absent from the Railway image — meaning waterfront isochrones in production render with the unclipped raw hull. Local-dev users who never ran the script see the same behavior. The code is graceful (missing file → skip clipping, no error), so this is a visible-only-on-waterfront quality regression rather than an outage.
-
-The same release-artifact + Dockerfile-curl pattern that landed for `street_graph_igraph.pkl` ([6eb8f5e](https://github.com/AdamBHonaker/Passage/commit/6eb8f5e)) and `chicago_geocode.db` ([397e469](https://github.com/AdamBHonaker/Passage/commit/397e469)) applies here verbatim.
-
-**Chunks.**
-
-1. **Build the artifact locally.** Confirm `backend/data/chicago_boundary.json` exists. If not, run `python backend/scripts/build_chicago_boundary.py` to produce it. Sanity-check the file with a quick GeoJSON viewer or `python -c "import json; print(json.load(open('backend/data/chicago_boundary.json'))['type'])"` — should be a `Polygon` or `MultiPolygon`.
-
-2. **Upload to the `street-graph` GitHub release tag.** Asset name must be exactly `chicago_boundary.json` (the Dockerfile curl in chunk 3 is hardcoded to that filename). Same release the `.pkl` and `.db` live on.
-
-3. **Add a Dockerfile curl step.** In [backend/Dockerfile](backend/Dockerfile), after the existing `chicago_geocode.db` curl block:
-   ```dockerfile
-   # Download the optional Chicago boundary polygon used by /explore to clip
-   # isochrones against Lake Michigan for lakefront origins. explore.py
-   # already handles the file being absent (skip clipping); we ship it so
-   # waterfront origins render correctly in prod.
-   RUN curl -fL -o data/chicago_boundary.json \
-       "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/chicago_boundary.json"
-   ```
-   No integrity check — same reasoning as `chicago_geocode.db`, this is data, not pickled code.
-
-4. **Update docs.** In [CLAUDE.md](../CLAUDE.md):
-   - The project-structure comment under `backend/data/` currently lists `chicago_boundary.json` as "Generated locally on demand (gitignored)" — update to flag it as a release artifact matching the surrounding entries.
-   - In the "Greenest-routing graph release runbook" intro, add a third artifact row to the bullet list (`chicago_boundary.json`, ~? KB, optional lakefront clipping, no integrity check).
-
-5. **Deploy verification.** After the next Railway rebuild, eyeball a lakefront origin (e.g., Streeterville, Lakeview East, South Shore) in the Neighborhood Explorer. The isochrone should hug the shoreline rather than overshooting into the lake. No new logs to grep — the change is purely visual.
-
-**Definition of done.** Lakefront isochrones in prod are clipped against the Chicago boundary; the project-structure note and the runbook intro both list `chicago_boundary.json` as a release artifact; this entry is deleted from `FEATURE_PLANS.md` and a short note lands in `FEATURE_HISTORY.md`.
 
 ---
 
