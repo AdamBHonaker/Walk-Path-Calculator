@@ -35,6 +35,17 @@ COPY . .
 RUN curl -fL -o street_graph_igraph.pkl \
     "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/street_graph_igraph.pkl"
 
+# Download the prebuilt geocoding SQLite + FTS5 indexes (~72 MB). Built locally
+# from backend/scripts/build_address_points.py + build_intersections.py +
+# migrate_geocode_cache.py; gitignored because of size. Without this file,
+# local_search collapses to the 77 community-area centroids and every street
+# address / intersection / curated POI query falls through to LocationIQ (or
+# returns None if LOCATIONIQ_API_KEY is unset). Refresh procedure: rebuild
+# locally with the scripts above, upload the new chicago_geocode.db to the
+# `street-graph` GitHub release (overwrite), push.
+RUN curl -fL -o data/chicago_geocode.db \
+    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/chicago_geocode.db"
+
 # Expose the port FastAPI will run on
 EXPOSE 8000
 

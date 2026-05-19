@@ -50,11 +50,14 @@ Passage/
 │   │                     #   tree_canopy_kde.json [sparse 50 m OSM tree-density grid],
 │   │                     #   parks_polygons.json [CPD park boundaries — name + acres + outer ring],
 │   │                     #   green_space_polygons.json [OSM cemeteries/golf/nature_reserve/rec_ground].
-│   │                     #   Generated locally (gitignored): chicago_geocode.db [SQLite/FTS5
+│   │                     #   Built locally and shipped as a `street-graph` GitHub release
+│   │                     #   asset (gitignored due to size; production curls it at build time
+│   │                     #   alongside street_graph_igraph.pkl): chicago_geocode.db [SQLite/FTS5
 │   │                     #   ~72 MB — addresses, intersections, cached_forward/cached_reverse;
-│   │                     #   built by build_address_points + build_intersections + migrate_geocode_cache];
-│   │                     #   chicago_boundary.json [optional — built by build_chicago_boundary.py
-│   │                     #   when /explore needs lakefront clipping].
+│   │                     #   built by build_address_points + build_intersections + migrate_geocode_cache].
+│   │                     #   Generated locally on demand (gitignored): chicago_boundary.json
+│   │                     #   [optional — built by build_chicago_boundary.py when /explore needs
+│   │                     #   lakefront clipping].
 │   ├── scripts/          # Ingestion scripts:
 │   │                     #   build_community_area_centroids, build_places_osm,
 │   │                     #   build_libraries / _farmers_markets / _schools_cps /
@@ -400,7 +403,12 @@ Multi-stop direction steps additionally include `"leg_index": 0`.
 
 ## Greenest-routing graph release runbook
 
-How the `street_graph_igraph.pkl` artifact is produced, what fails if it goes wrong, and how to roll back. Specific to Feature 4 (tree-canopy + park-proximity edge weights — see [`docs/FEATURE_PLANS.md`](docs/FEATURE_PLANS.md)).
+How the production artifacts at the `street-graph` GitHub release tag are produced, what fails if any go wrong, and how to roll back. Two artifacts live on the tag:
+
+- **`street_graph_igraph.pkl`** (~28 MB) — the pedestrian routing graph with Feature 4 greenest-routing edge weights baked in. Loaded by `walking.py` at startup. SEC-001 SHA-256 integrity check enforced via `STREET_GRAPH_SHA256`.
+- **`chicago_geocode.db`** (~72 MB) — the SQLite + FTS5 geocoding indexes (~519k OSM addresses, ~45k intersections, curated POIs, LocationIQ response cache). Opened read-only by `local_search.py`. No integrity check — it's data, not pickled code; the threat surface is much smaller.
+
+The Dockerfile `curl`s both at build time. The rest of this runbook focuses on the `.pkl` (which has the more complex refresh + integrity story); the `.db` shows up where its refresh procedure differs.
 
 ### Build chain
 
@@ -415,6 +423,7 @@ How the `street_graph_igraph.pkl` artifact is produced, what fails if it goes wr
 - **Tree-canopy / parks data refresh** (yearly, per the heatmap ingest scripts): re-run `python fetch_street_graph.py` to rebuild the `.pkl`. **Upload the new `.pkl` to the `street-graph` release** (overwrite). **Rotate `STREET_GRAPH_SHA256`** in both `backend/.env` and the Railway service variable — see "Pickle integrity check" below.
 - **OSM street-network refresh**: re-run `fetch_street_graph.py --force` to redownload the `.graphml`, then `python fetch_street_graph.py` (no flag) to rebuild the `.pkl`. Upload the new `.pkl` to the release. **Rotate `STREET_GRAPH_SHA256`** as above.
 - **Algorithm change** (formula constants, etc.): code-only, no artifact action, no hash rotation.
+- **Geocoding-index refresh** (re-running `build_address_points.py` / `build_intersections.py` / `migrate_geocode_cache.py`): rebuild `backend/data/chicago_geocode.db` locally, upload it to the `street-graph` release (overwrite). No hash rotation needed — there's no integrity check on this artifact.
 
 ### Pickle integrity check (SEC-001)
 
