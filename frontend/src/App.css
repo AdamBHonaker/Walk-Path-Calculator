@@ -622,6 +622,42 @@
   font-size: 0.7rem;
 }
 
+/* Toggle-button right cluster: the mono summary string + chevron svg. */
+.weekly-summary-toggle-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.weekly-summary-toggle-summary {
+  font-family: var(--wf-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Chevron svg sits next to the summary string; the rotated-down state is a
+ * modifier class. The transition prop is static; the `transform` flip is the
+ * only state-driven thing and lives on the modifier. */
+.weekly-summary-chevron-svg {
+  color: var(--mute);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.weekly-summary-chevron-svg--open {
+  transform: rotate(180deg);
+}
+
+/* Right-aligned mono percentage inside the goal-bar label. */
+.weekly-summary-pct {
+  float: right;
+  font-family: var(--wf-mono);
+  letter-spacing: 0;
+}
+
+/* Bottom row of the open panel — hint copy left, "Clear log" right. */
+.weekly-summary-footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
 .weekly-summary-body {
   display: flex;
   flex-direction: column;
@@ -702,10 +738,115 @@
   color: var(--mute);
 }
 
-/* ── Error: styling lives in components/ErrorDispatch.jsx (inline) ──────── */
+/* ── Error Dispatch (alert panel) ────────────────────────────────────────
+ * Editorial advisory frame: double rust-red rule at the top, italic body,
+ * optional "Try again" ghost button. */
+.error-dispatch {
+  border: 1px solid var(--ember);
+  border-top: 3px double var(--ember);
+  padding: 14px 18px;
+  background: var(--paper-bright);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.error-dispatch-label {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+.error-dispatch-body {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.45;
+}
+.error-dispatch-retry {
+  align-self: flex-start;
+  background: transparent;
+  border: 1px solid var(--ember);
+  color: var(--ember);
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
 /* ── Loading skeleton: styling lives in components/LoadingSkeleton.jsx ──── */
 
 /* ── Route Flavor Tabs ───────────────────────────────────────────────────── */
+/* Wheeled-mode explainer that replaces the tab strip when the response
+ * collapses to a single `custom` flavor. */
+.route-flavor-wheeled-note {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--mute-fog);
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--mute);
+  text-align: center;
+}
+
+/* Tab grid. `grid-template-columns` is set inline so the column count
+ * tracks `routes.length` (2 vs 3 flavors). */
+.route-flavor-tablist {
+  display: grid;
+  border-bottom: 1px solid var(--mute-fog);
+  background: transparent;
+}
+
+.route-flavor-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.route-flavor-tab--compact {
+  padding: 12px 6px;
+}
+.route-flavor-tab--active {
+  border-bottom-color: var(--ember);
+  color: var(--ink);
+}
+
+.route-flavor-tab__label {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  font-weight: 400;
+}
+.route-flavor-tab--active .route-flavor-tab__label {
+  font-weight: 600;
+}
+
+.route-flavor-tab__stats {
+  font-family: var(--wf-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--mute);
+}
 
 /* ── Step Hero Card ──────────────────────────────────────────────────────── */
 

@@ -328,11 +328,12 @@ export default function App() {
     lastResultRef.current = result;
   }, [result, isMobile]);
 
-  // Mode flip → if the user enters explore mode while the sheet is at peek,
-  // promote it to half so the form is actually visible.
+  // Initial mobile mount or mode flip → if the sheet is at peek, promote it
+  // to half so the form's inputs are actually visible. At peek (140 px) the
+  // route/explore forms sit entirely offscreen, so a fresh mobile load in
+  // either mode needs this nudge before the user can interact.
   useEffect(() => {
     if (!isMobile) return;
-    if (mode !== "explore") return;
     if (userMovedSheetRef.current) return;
     setSheetSnap(prev => prev === 0 ? 1 : prev);
   }, [mode, isMobile]);

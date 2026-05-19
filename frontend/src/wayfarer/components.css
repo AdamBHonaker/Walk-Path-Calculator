@@ -1,0 +1,142 @@
+/* ============================================================
+   WAYFARER — Component class rules
+   ------------------------------------------------------------
+   Class rules for primitives + form controls that previously
+   carried their static styling in JSX `style={{ ... }}` blocks.
+   Migrated as part of TD-035 so the production CSP can move
+   toward `style-src 'self'` (no `'unsafe-inline'`).
+
+   Only dynamic properties (computed widths, drag transforms,
+   the WFSheet's runtime sheet height, per-instance overrides
+   passed via the `style` prop) remain in JSX.
+   ============================================================ */
+
+/* ── WFSheet — bottom-sheet primitive ───────────────────────
+   The sheet's `height` and `transform: translateY(...)` stay
+   inline (driven by snapPx / drag state) and the `transition`
+   value is set inline too because it flips between `none`
+   (mid-drag) and the eased token (resting). Everything else
+   moves here. */
+.wf-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  border-top: 1px solid var(--ink);
+  box-shadow:
+    0 -8px 24px rgba(23,19,16,0.18),
+    0 -1px 0 rgba(23,19,16,0.05);
+}
+.theme-dusk .wf-sheet {
+  box-shadow:
+    0 -8px 24px rgba(0,0,0,0.45),
+    0 -1px 0 rgba(0,0,0,0.25);
+}
+
+.wf-sheet-handle {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 10px 0 6px;
+  width: 100%;
+  cursor: grab;
+  touch-action: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.wf-sheet-handle-bar {
+  display: block;
+  width: 44px;
+  height: 4px;
+  background: var(--mute-fog);
+  border-radius: 2px;
+}
+
+.wf-sheet-handle-rule {
+  display: block;
+  height: 1px;
+  width: 100%;
+  background: var(--ink);
+  opacity: 0.85;
+}
+
+.wf-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 16px max(16px, var(--safe-bottom));
+}
+
+/* ── WFCheck / WFRadio — editorial form controls ────────────
+   The `style` prop callers pass for layout overrides is still
+   spread inline at the JSX site (it's the consumer's choice).
+   The static base + state-driven background swap moves here. */
+.wf-check,
+.wf-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  min-height: 44px;
+  padding: 4px 0;
+}
+.wf-check--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.wf-check__box {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.wf-check__box--filled {
+  background: var(--ink);
+}
+
+.wf-radio__ring {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.wf-radio__dot {
+  width: 8px;
+  height: 8px;
+  background: var(--ink);
+  border-radius: 50%;
+}
+
+.wf-check__label,
+.wf-radio__label {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* Visually hidden but reachable by AT — the underlying <input>
+   carries the actual focus + form semantics. */
+.wf-check__input,
+.wf-radio__input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}

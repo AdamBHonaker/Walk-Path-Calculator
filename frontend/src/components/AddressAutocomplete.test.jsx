@@ -299,6 +299,58 @@ describe("AddressAutocomplete", () => {
       expect(listbox.style.maxHeight).not.toBe("");
     });
 
+    it("re-anchors on a transform-driven ancestor move (WFSheet drag)", async () => {
+      // The WFSheet moves itself via CSS `transform: translateY(...)` and
+      // dispatches no scroll/resize event during the drag. The portal
+      // tracking relies on capture-phase pointermove for the drag, plus a
+      // post-pointerup rAF burst for the snap-transition tail. Drive the
+      // pointermove path here — getBoundingClientRect of the input is
+      // forced to a fresh top so the re-measurement is observable.
+      let inputTop = 100;
+      let inputBottom = 140;
+      const origGetRect = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = function () {
+        if (this.tagName === "INPUT") {
+          return {
+            top: inputTop, bottom: inputBottom, left: 0, right: 200,
+            width: 200, height: inputBottom - inputTop, x: 0, y: inputTop,
+            toJSON() {},
+          };
+        }
+        return origGetRect.call(this);
+      };
+
+      try {
+        const getSuggestions = vi.fn(async () => SAMPLE);
+        render(<PortalHarness getSuggestions={getSuggestions} />);
+        const input = screen.getByLabelText("Origin");
+
+        fireEvent.focus(input);
+        fireEvent.change(input, { target: { value: "wri" } });
+        await advance(200);
+
+        const listbox = screen.getByRole("listbox");
+        const topBefore = listbox.style.top;
+        expect(topBefore).toBe(`${inputBottom + 2}px`);
+
+        // Sheet drags up by 80 px — the input's rect now sits higher on
+        // screen. Fire a capture-phase pointermove on the window; the
+        // component should rAF-schedule an update and reposition.
+        inputTop = 20;
+        inputBottom = 60;
+        await act(async () => {
+          window.dispatchEvent(new Event("pointermove"));
+          // Flush the rAF that scheduleUpdate enqueued.
+          await new Promise(r => setTimeout(r, 50));
+        });
+
+        expect(listbox.style.top).toBe(`${inputBottom + 2}px`);
+        expect(listbox.style.top).not.toBe(topBefore);
+      } finally {
+        Element.prototype.getBoundingClientRect = origGetRect;
+      }
+    });
+
     it("recomputes position on visualViewport resize (iOS soft-keyboard)", async () => {
       // JSDOM doesn't ship visualViewport, so stub it for this test only.
       // The component's useLayoutEffect must attach a resize listener on it.

@@ -981,6 +981,55 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-19 · Tree canopy data source pivoted from OSM Overpass to NLCD TCC 2021 raster (TD-033)
+
+**Files:** `backend/scripts/build_tree_canopy.py` (rewrite), `backend/requirements-dev.txt`, `backend/data/tree_canopy_kde.json` (regenerated), `backend/street_graph_igraph.pkl` (rebaked), `backend/.env` (SHA rotated), `CLAUDE.md`.
+
+**Priority:** 🟢 Low
+
+**What the debt was:** Feature 2 (Tree Canopy Heatmap) shipped against OpenStreetMap `natural=tree` nodes via Overpass — a ~30k-point dataset that clusters in Grant/Millennium Park where OSM mappers are most active and leaves dense residential canopy (Lincoln Park, Pullman, Beverly) reading sparse. The signal was "where have OSM mappers been" rather than true canopy fraction. The TD-033 resolution path called for pivoting to NLCD Tree Canopy Cover — a national 30 m raster of canopy fraction — keeping the runtime (`tree_canopy.py`), response field, and frontend layer unchanged.
+
+**How it was resolved:**
+
+- Rewrote [`backend/scripts/build_tree_canopy.py`](../../backend/scripts/build_tree_canopy.py) to fetch the NLCD TCC 2021 CONUS raster from MRLC's GeoServer WCS endpoint (`mrlc_download__nlcd_tcc_conus_2021_v2021-4`) instead of running Overpass. The fetch + bake is now a single sub-3-second pipeline: one GeoTIFF download per chunk → Pillow decode → 2-D numpy histogram of native pixels into the output grid via `np.bincount`. No KDE smoothing — NLCD is already a smoothed canopy product.
+- **Chunked fetch**: requesting the full Chicago bbox in one shot trips a silent MRLC server quirk that zeroes out everything east of about longitude -87.65 (Lincoln Park, Hyde Park, Jackson Park, lakefront all read 0). Splitting into three longitudinal chunks (`CHUNK_COUNT = 3`) sidesteps it — each chunk stays under 0.15° wide. The bake accumulates per-cell sums + counts directly into the shared output grid, so chunk boundaries don't seam.
+- **Departures from the TD spec:**
+  - Used **MRLC's WCS** rather than the USFS RDW ImageServer originally suggested in the resolution plan. The USFS service at `imagery.geoplatform.gov/iipp/.../USFS_EDW_NLCD_TCC_CONUS` was investigated but `/exportImage` always applies server-side symbology — the raw 0-100 pixel values are reachable only via per-point `/identify` (~1.5 M HTTP calls for Chicago at 50 m, infeasible). MRLC's WCS returns the raw single-band U8 GeoTIFF in one HTTP call. Same underlying NLCD TCC product; MRLC ships through the 2021 v2021-4 release, USFS through 2023.
+  - **Output grid is 100 m, not 50 m** as the TD requested. NLCD's signal is uniformly real (not OSM-sparse), so a 50 m grid landed at 10.8 MB / 229k cells — 20× the previous size and 6× the largest other checked-in artifact. 100 m brings it back to ~2.7 MB / ~56k cells, which keeps the repo's data-artifact norms intact. After the runtime's `unary_union` step the heatmap polygons are visually indistinguishable at typical zoom levels between 50 m and 100 m squares.
+  - **Density semantics shifted from "max-normalized OSM count" to "raw NLCD canopy fraction"**. The runtime's band thresholds (`low` 0.05 / `mid` 0.15 / `high` 0.40) coincidentally remain sensible — 5% / 15% / 40% canopy fraction is a meaningful light/medium/dense classification — so the runtime didn't need to change. The current artifact splits 60% / 27% / 12% across the three bands with max density 0.91.
+- Added `Pillow>=10.0,<12` to [`backend/requirements-dev.txt`](../../backend/requirements-dev.txt) (ingest-only dep — runtime doesn't touch it).
+- Regenerated [`backend/data/tree_canopy_kde.json`](../../backend/data/tree_canopy_kde.json) (2.66 MB, 56,001 cells, `source: nlcd_tcc_conus_2021`, `cell_size_m: 100`).
+- **Re-baked [`backend/street_graph_igraph.pkl`](../../backend/street_graph_igraph.pkl)** so the FEAT-4 per-edge `tree_canopy_score` reflects the new NLCD values (the TD anticipated this — the bake samples the canopy artifact at edge midpoints during pickle build). New bake stats: 39.6% of edges non-zero canopy (was 47.1% under OSM), mean 0.054, max 0.894. Park-proximity column unchanged (its source artifact didn't move).
+- **Rotated `STREET_GRAPH_SHA256`** in local [`backend/.env`](../../backend/.env) to the new pickle digest (`415d8be872887b6e0cfc3456954c26101d420584726aed0ae309d50e948b3eba`) per SEC-001. **Production deploy chain still needs to follow** — upload the new `.pkl` to the `street-graph` GitHub release tag and rotate `STREET_GRAPH_SHA256` in the Railway service variables before the next deploy, per the runbook in CLAUDE.md "Pickle integrity check (SEC-001)".
+- Updated CLAUDE.md "Tree canopy heatmap" bullet, the API doc for `tree_canopy_heatmap`, the file-listing comment, and the `tree_canopy.py` one-liner to describe the NLCD source. The MRLC chunking quirk is documented inline so a future maintainer doesn't waste time trying to simplify it back to a single request.
+
+**Acceptance notes** — the TD's original acceptance criterion was "Lincoln Park reads dense, Pullman reads sparse, Grant Park stays dense." Spot-checking the new artifact: forest preserves (LaBagh Woods) and leafy residential (Beverly, Pullman) light up clearly across mid/high bands, Loop and industrial corridors (Goose Island) read low/sparse, and the eastern coverage gap (Lincoln Park, Hyde Park, Jackson Park) that the chunked fetch fixed now reads as moderate canopy. The TD acceptance had a typo (it described Pullman as "sparse" while the description correctly listed Pullman as a place OSM under-served and NLCD should over-serve); reality landed on the description's side — Pullman reads moderate-to-dense under NLCD.
+
+Verification: `pytest tests/test_tree_canopy.py tests/test_walking_greenest.py` → **21/21 passing**. Broader sample (`pytest tests/test_tree_canopy.py tests/test_walking_greenest.py tests/test_explore.py tests/test_main.py tests/test_parks.py tests/test_green_space.py`) → **93 passed, 1 skipped**.
+
+---
+
+### 2026-05-18 · Inline-style → CSS-class migration (TD-035 active entry, partial — ShareDispatch deferred to TD-044)
+
+**Files:** `frontend/src/components/{ErrorDispatch,RouteFlavorTabs,WeeklySummaryPanel}.jsx`, `frontend/src/wayfarer/{primitives,forms}.jsx`, `frontend/src/App.css`; new `frontend/src/wayfarer/components.css` (imported from `wayfarer/index.css`).
+
+**Priority:** 🟢 Low
+
+*(Note on ID: this is the inline-style migration entry that was active in `Technical_Debt.md` — distinct from the 2026-05-13 backend-helpers TD-035 above. The ID was reused; the active entry has been replaced with TD-044, which scopes the remaining work narrowly.)*
+
+**What the debt was:** Two Wayfarer primitives and seven feature components carried their static styling in JSX `style={{ ... }}` blocks (~33 occurrences across the in-scope files). The production CSP therefore had to allow `style-src 'self' 'unsafe-inline'`. Originally surfaced as SEC-007 on 2026-05-13 and reclassified to tech debt because the practical risk is bounded by the SHA-256-hashed `script-src` from SEC-005 — inline-style XSS without a script foothold is limited to CSS-selector exfiltration.
+
+**How it was resolved:**
+- Added [`frontend/src/wayfarer/components.css`](../../frontend/src/wayfarer/components.css) (imported from `wayfarer/index.css`) holding `.wf-sheet`, `.wf-sheet-handle`, `.wf-sheet-handle-bar`, `.wf-sheet-handle-rule`, `.wf-sheet-body`, `.wf-check`, `.wf-check__box`, `.wf-check__label`, `.wf-radio`, `.wf-radio__ring`, `.wf-radio__dot`, `.wf-radio__label`, and the matching visually-hidden `__input` rules. Dusk theme gets a darker `box-shadow` override on `.wf-sheet`.
+- Added `.error-dispatch{,-label,-body,-retry}`, `.route-flavor-wheeled-note`, `.route-flavor-tablist`, `.route-flavor-tab{,--compact,--active}`, `.route-flavor-tab__{label,stats}`, `.weekly-summary-toggle-{meta,summary}`, `.weekly-summary-chevron-svg{,--open}`, `.weekly-summary-pct`, and `.weekly-summary-footer-row` to [`App.css`](../../frontend/src/App.css).
+- Migrated [`ErrorDispatch.jsx`](../../frontend/src/components/ErrorDispatch.jsx) (4 → 0 inline styles), [`RouteFlavorTabs.jsx`](../../frontend/src/components/RouteFlavorTabs.jsx) (5 → 1 dynamic — `gridTemplateColumns: repeat(${routes.length}, 1fr)`), [`WeeklySummaryPanel.jsx`](../../frontend/src/components/WeeklySummaryPanel.jsx) (6 → 1 dynamic — the existing goal-bar `width: ${weeklyPct}%`), [`primitives.jsx`](../../frontend/src/wayfarer/primitives.jsx) WFSheet (5 → 1 dynamic block carrying `height` + `transform: translateY(...)` + `transition` + the caller-supplied `...style` spread), and [`forms.jsx`](../../frontend/src/wayfarer/forms.jsx) WFCheck/WFRadio (9 → 2 caller-`...style` spread slots only).
+- Three other files (LoadingSkeleton, StepHero, ExploreCategoryPanel) were audited and left alone — their inline styles are fully dynamic (component props, per-category color swatches, computed goal-bar widths). The TD acceptance explicitly excluded "dynamically-computed properties (animation transforms, MapLibre paint hex values)."
+- The CSP `style-src` was deliberately **not** tightened in this PR: ShareDispatch still carries ~30 inline-style blocks (held back from this migration because its share-card PNG export is visually load-bearing and warrants a baseline-and-diff loop, not a blind refactor). The remaining work — including the `style-src 'self'` flip — is tracked as **TD-044** in [Technical_Debt.md](../Technical_Debt.md).
+
+Verification: `npm test` → **297/297 passing** (no new tests added; the WFSheet test suite asserts `sheet.style.height` against the still-inline dynamic height and still passes). `npm run build` clean. Built `dist/index.html` correctly still carries `style-src 'self' 'unsafe-inline'` — the CSP tightening is gated on TD-044.
+
+---
+
 ### 2026-05-13 · Backend tech-debt batch — routing helpers, heatmap clipper, requirements (TD-035, TD-036, TD-037)
 
 **Files:** `backend/walking.py`, `backend/parks.py`, `backend/green_space.py`; new `backend/heatmap_clipper.py`; deleted `backend/requirements-test.txt`.
@@ -1675,6 +1724,20 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 ---
 
 ## Efficiency Improvements Implemented
+
+### 2026-05-18 · Production Dockerfile rebuilt the `.pkl` in-container instead of fetching it prebuilt (OPT-001, post-FEAT-4 candidates scan)
+
+**Files:** [backend/Dockerfile](../../backend/Dockerfile), [CLAUDE.md](../../CLAUDE.md), [README.md](../../README.md)
+
+**Impact:** 🟡 Medium
+
+**Category:** Slow cold-start
+
+**What was inefficient:** The Dockerfile fetched `street_graph.graphml` (~314 MB raw / ~79 MB compressed) from the `street-graph` GitHub release tag and ran `python fetch_street_graph.py` to produce `street_graph_igraph.pkl` in the container — an osmnx graphml load + intersection consolidation + dedup + the FEAT-4 canopy/park bake on every deploy (~100 s of cold-start work on a Railway build). Every deploy paid this cost, even when neither the graph nor the canopy/parks data had changed.
+
+**Implemented:** Shipped via commit `6eb8f5e` (the FEAT-4 production-rollout discovery that the in-container bake was not bit-identical with the locally-baked `.pkl` and so failed SEC-001's SHA-256 check on Railway). [backend/Dockerfile](../../backend/Dockerfile) now `curl`s the prebuilt `street_graph_igraph.pkl` (~28 MB) from the same `street-graph` release tag the `.graphml` used to live on; the in-container `fetch_street_graph.py` invocation is gone. `.graphml` was dropped from the release entirely — it stays as an off-repo local working file on the developer machine, regenerable via `python fetch_street_graph.py --force` from OSMnx. Builds are roughly 5–10× faster and bit-identical across deploys, which the SEC-001 hash check now requires. The [CLAUDE.md](../../CLAUDE.md) "Greenest-routing graph release runbook" — build chain, refresh procedures, hash rotation, deploy checklist, rollback — was rewritten to describe the new flow (rebuild `.pkl` locally → upload to release → rotate `STREET_GRAPH_SHA256` → push). Tradeoffs land where the scoping pass expected: every canopy/parks data refresh now requires a manual re-bake-and-upload step, but in practice both datasets have been refreshed only once each since the project started.
+
+---
 
 ### 2026-05-13 · `autocomplete` linearly scanned the entire POI + neighborhood indexes on every keystroke (OPT-001, backend scan)
 

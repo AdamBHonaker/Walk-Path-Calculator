@@ -372,18 +372,13 @@ export function WFSheet({
       ref={containerRef}
       className={`wf-sheet paper-grain ${className}`.trim()}
       style={{
-        position: "absolute",
-        left: 0,
-        right: 0,
-        bottom: 0,
+        // Dynamic bits only: the resolved snap height, the drag/translate
+        // offset, and the transition value (which flips between `none`
+        // mid-drag and the eased token at rest). Static positioning,
+        // border, and shadow live in `.wf-sheet` in components.css.
         height: maxHeightPx || "auto",
         transform: `translateY(${translateY}px)`,
         transition,
-        borderTop: `1px solid ${WF.ink}`,
-        boxShadow: "0 -8px 24px rgba(23,19,16,0.18), 0 -1px 0 rgba(23,19,16,0.05)",
-        display: "flex",
-        flexDirection: "column",
-        zIndex: 20,
         ...style,
       }}
       role="dialog"
@@ -398,33 +393,9 @@ export function WFSheet({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         aria-label={handleLabel}
-        style={{
-          appearance: "none",
-          background: "transparent",
-          border: "none",
-          padding: "10px 0 6px",
-          width: "100%",
-          cursor: "grab",
-          touchAction: "none",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 6,
-          flexShrink: 0,
-        }}
       >
-        <span aria-hidden="true" style={{
-          display: "block",
-          width: 44, height: 4,
-          background: WF.muteFog,
-          borderRadius: 2,
-        }} />
-        <span aria-hidden="true" style={{
-          display: "block",
-          height: 1, width: "100%",
-          background: WF.ink,
-          opacity: 0.85,
-        }} />
+        <span aria-hidden="true" className="wf-sheet-handle-bar" />
+        <span aria-hidden="true" className="wf-sheet-handle-rule" />
       </button>
       <div
         className="wf-sheet-body wf-scroll"
@@ -432,14 +403,6 @@ export function WFSheet({
         onPointerMove={onBodyPointerMove}
         onPointerUp={onBodyPointerUp}
         onPointerCancel={onBodyPointerUp}
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-          overscrollBehavior: "contain",
-          WebkitOverflowScrolling: "touch",
-          padding: "0 16px max(16px, var(--safe-bottom))",
-        }}
       >
         {children}
       </div>

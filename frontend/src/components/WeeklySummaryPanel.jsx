@@ -36,8 +36,8 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
         aria-expanded={open}
       >
         <span>This week</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontFamily: "var(--wf-mono)", fontVariantNumeric: "tabular-nums" }}>
+        <span className="weekly-summary-toggle-meta">
+          <span className="weekly-summary-toggle-summary">
             {isDistance
               ? `${totals.miles.toFixed(1)} mi over ${Math.round(totals.minutes)} min`
               : `${totals.steps.toLocaleString()} steps walked over ${totals.miles.toFixed(1)} mi`}
@@ -51,12 +51,7 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            style={{
-              color: "var(--mute)",
-              transform: open ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s ease",
-              flexShrink: 0,
-            }}
+            className={`weekly-summary-chevron-svg${open ? " weekly-summary-chevron-svg--open" : ""}`}
             aria-hidden="true"
           >
             <polyline points="6 9 12 15 18 9" />
@@ -71,9 +66,7 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
               {isDistance
                 ? `Weekly measure · ${weeklyMileGoal.toFixed(1)} mi`
                 : `Weekly measure · ${weeklyStepGoal.toLocaleString()} steps`}
-              <span style={{ float: "right", fontFamily: "var(--wf-mono)", letterSpacing: 0 }}>
-                {weeklyPct}%
-              </span>
+              <span className="weekly-summary-pct">{weeklyPct}%</span>
             </div>
             <div className="goal-bar-track">
               <div className="goal-bar-fill" style={{ width: `${weeklyPct}%` }} />
@@ -96,7 +89,7 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
             ))}
           </ol>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <div className="weekly-summary-footer-row">
             <p className="weekly-summary-hint">Entries fade after seven days.</p>
             <button type="button" className="weekly-clear-btn" onClick={onClear}>
               Clear log

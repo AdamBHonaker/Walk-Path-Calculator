@@ -260,19 +260,31 @@ export function AddressAutocomplete({
         88,
         Math.min(DEFAULT_MAX_HEIGHT_PX, flip ? spaceAbove : spaceBelow),
       );
-      setPos({
+      const next = {
         top: flip ? rect.top - maxHeight - 2 : rect.bottom + 2,
         left: rect.left,
         width: rect.width,
         maxHeight,
-      });
+      };
+      // Skip the state churn when nothing moved. The rAF poll below runs
+      // update() every frame, so without this guard we'd re-render the
+      // listbox at 60 Hz even when sitting still.
+      setPos(prev => (
+        prev
+        && prev.top === next.top
+        && prev.left === next.left
+        && prev.width === next.width
+        && prev.maxHeight === next.maxHeight
+          ? prev
+          : next
+      ));
     }
     update();
-    // High-frequency scroll/resize events (capture-phase ancestor scroll, the
-    // WFSheet drag, iOS visualViewport keyboard transitions) can fire 60+
-    // times per second. Coalesce through requestAnimationFrame so the
-    // measurement + setPos round trip runs at most once per frame regardless
-    // of event density.
+    // High-frequency scroll/resize events (capture-phase ancestor scroll,
+    // iOS visualViewport keyboard transitions) can fire 60+ times per
+    // second. Coalesce through requestAnimationFrame so the measurement +
+    // setPos round trip runs at most once per frame regardless of event
+    // density.
     let rafId = 0;
     const scheduleUpdate = () => {
       if (rafId) return;
@@ -289,12 +301,42 @@ export function AddressAutocomplete({
     const vv = window.visualViewport;
     vv?.addEventListener("resize", scheduleUpdate);
     vv?.addEventListener("scroll", scheduleUpdate);
+    // The WFSheet drag mutates `transform: translateY(...)` on its
+    // container — no scroll/resize event fires, so the listeners above
+    // can't catch it. Capture-phase pointermove on window does: pointer
+    // capture redirects events to the captured element but they still
+    // bubble through document. After release, the sheet animates to its
+    // settled snap via a CSS transition on the same transform; that
+    // animation fires no DOM events during its run, so we kick off a
+    // bounded rAF burst on pointerup to track its tail. Burst is
+    // ~400 ms — slightly longer than --dur-considered (320 ms).
+    const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+    const onPointerMove = () => scheduleUpdate();
+    let burstRafId = 0;
+    let burstUntilMs = 0;
+    const burstTick = () => {
+      burstRafId = 0;
+      if (now() >= burstUntilMs) return;
+      update();
+      burstRafId = requestAnimationFrame(burstTick);
+    };
+    const onPointerEnd = () => {
+      burstUntilMs = now() + 400;
+      if (!burstRafId) burstRafId = requestAnimationFrame(burstTick);
+    };
+    window.addEventListener("pointermove", onPointerMove, true);
+    window.addEventListener("pointerup", onPointerEnd, true);
+    window.addEventListener("pointercancel", onPointerEnd, true);
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
+      if (burstRafId) cancelAnimationFrame(burstRafId);
       window.removeEventListener("scroll", scheduleUpdate, true);
       window.removeEventListener("resize", scheduleUpdate);
       vv?.removeEventListener("resize", scheduleUpdate);
       vv?.removeEventListener("scroll", scheduleUpdate);
+      window.removeEventListener("pointermove", onPointerMove, true);
+      window.removeEventListener("pointerup", onPointerEnd, true);
+      window.removeEventListener("pointercancel", onPointerEnd, true);
     };
   }, [portalEnabled, renderedListboxOpen, suggestions.length, inputRef]);
 

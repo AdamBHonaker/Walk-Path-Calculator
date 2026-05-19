@@ -16,58 +16,45 @@
 import { WF } from "./primitives.jsx";
 
 export function WFCheck({ checked = false, onChange, label, style = {}, disabled = false }) {
+  // Caller-supplied `style` is still spread for layout overrides — the
+  // base appearance lives in `.wf-check` (see wayfarer/components.css).
+  const labelClass = `wf-check${disabled ? " wf-check--disabled" : ""}`;
+  const boxClass = `wf-check__box${checked ? " wf-check__box--filled" : ""}`;
   return (
-    <label style={{
-      display: "inline-flex", alignItems: "center", gap: 10,
-      cursor: disabled ? "not-allowed" : "pointer",
-      opacity: disabled ? 0.55 : 1,
-      minHeight: 44, padding: "4px 0",
-      ...style,
-    }}>
-      <span style={{
-        width: 16, height: 16, border: `1.5px solid ${WF.ink}`,
-        background: checked ? WF.ink : "transparent",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        flexShrink: 0,
-      }}>
+    <label className={labelClass} style={style}>
+      <span className={boxClass}>
         {checked && (
           <svg width="10" height="10" viewBox="0 0 10 10">
             <path d="M1.5 5 L4 7.5 L8.5 2" fill="none" stroke={WF.paper} strokeWidth="1.5" strokeLinecap="round" />
           </svg>
         )}
       </span>
-      {label && (
-        <span style={{ fontFamily: WF.serif, fontSize: 14, color: WF.ink }}>{label}</span>
-      )}
-      <input type="checkbox" checked={checked} onChange={onChange} disabled={disabled}
-        style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
+      {label && <span className="wf-check__label">{label}</span>}
+      <input
+        type="checkbox"
+        className="wf-check__input"
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+      />
     </label>
   );
 }
 
 export function WFRadio({ checked = false, onChange, label, name, style = {} }) {
   return (
-    <label style={{
-      display: "inline-flex", alignItems: "center", gap: 10, cursor: "pointer",
-      minHeight: 44, padding: "4px 0",
-      ...style,
-    }}>
-      <span style={{
-        width: 16, height: 16, border: `1.5px solid ${WF.ink}`, borderRadius: "50%",
-        display: "inline-flex", alignItems: "center", justifyContent: "center",
-        flexShrink: 0,
-      }}>
-        {checked && (
-          <span style={{
-            width: 8, height: 8, background: WF.ink, borderRadius: "50%",
-          }} />
-        )}
+    <label className="wf-radio" style={style}>
+      <span className="wf-radio__ring">
+        {checked && <span className="wf-radio__dot" />}
       </span>
-      {label && (
-        <span style={{ fontFamily: WF.serif, fontSize: 14, color: WF.ink }}>{label}</span>
-      )}
-      <input type="radio" checked={checked} onChange={onChange} name={name}
-        style={{ position: "absolute", opacity: 0, pointerEvents: "none" }} />
+      {label && <span className="wf-radio__label">{label}</span>}
+      <input
+        type="radio"
+        className="wf-radio__input"
+        checked={checked}
+        onChange={onChange}
+        name={name}
+      />
     </label>
   );
 }
