@@ -177,7 +177,7 @@ Passage/
 
 - Python 3.10+
 - Node.js 18+
-- The Chicago pedestrian street graph (`street_graph.graphml`, ~314 MB raw / ~79 MB compressed download) — not in this repo due to size. Fetch it from this repo's GitHub `street-graph` release tag (this is what the production Dockerfile does). `fetch_street_graph.py` builds the runtime `.pkl` from the `.graphml`, baking the greenest-routing edge attributes from `data/tree_canopy_kde.json` + `data/parks_polygons.json` along the way. A pre-Feature-4 `.pkl` will refuse to load; rebuild via `python fetch_street_graph.py`.
+- The Chicago pedestrian street graph as the prebuilt pickle `street_graph_igraph.pkl` (~28 MB) — fetch from this repo's GitHub `street-graph` release tag and place in `backend/`. Production Docker builds `curl` the same asset directly. For local rebuilds (changing the bake formula, refreshing heatmap data, etc.), `python fetch_street_graph.py` regenerates the `.pkl` from `street_graph.graphml` — a ~314 MB OSM snapshot kept off-repo as a local working file (not on the release). Re-fetch the `.graphml` from OSMnx via `python fetch_street_graph.py --force` when needed. A pre-Feature-4 `.pkl` will refuse to load.
 
 ### Backend
 
@@ -201,11 +201,10 @@ cp .env.example .env                  # see env-var notes below
 | `STREET_GRAPH_SHA256` | Recommended in production | Expected SHA-256 of `backend/street_graph_igraph.pkl`. When set, the backend verifies the digest before `pickle.load` and refuses to start on a mismatch (pickle is RCE-by-design, so the hash is the trust boundary). When unset, the backend logs a one-time warning and loads without verification. Rotate whenever the `.pkl` rebuilds. Full runbook in CLAUDE.md ("Pickle integrity check (SEC-001)"). |
 | `CHICAGO_DATA_PORTAL_API_KEY_ID` / `_SECRET` | Only for re-running CDP ingestion scripts | HTTP Basic auth pair for the Socrata SODA API. Register at [data.cityofchicago.org](https://data.cityofchicago.org). |
 | `CDP_API_ENDPOINT_LIBRARIES` / `CDP_API_ENDPOINT_Schools` / `CDP_API_ENDPOINT_POLICE_STATIONS` / `CDP_API_ENDPOINT_FIRE_STATIONS` / `CDP_API_ENDPOINT_PARKS` | Only for re-running CDP ingestion scripts | Each points at the dataset's classic SODA URL (e.g. `https://data.cityofchicago.org/resource/x8fc-8rcq.json`). The `_PARKS` endpoint is the `.geojson` variant (`https://data.cityofchicago.org/resource/ejsh-fztr.geojson`) — the classic `.json` SODA endpoint returns empty column maps for that geospatial asset. Mixed case on `Schools` is intentional — the scripts grep for that exact spelling. |
-| `GOOGLE_MAPS_API_KEY` | Only for re-running `verify_neighborhood_coords.py` | Required by [`backend/scripts/verify_neighborhood_coords.py`](backend/scripts/verify_neighborhood_coords.py), which is deliberately kept on Google as an independent cross-source for landmark verification (LocationIQ + the local FTS5 indexes are both OSM-backed). Not read by any runtime endpoint. Generate at the Google Cloud console with the Geocoding API enabled. |
 
-Runtime endpoints (`/route`, `/explore`, etc.) do **not** read the `CHICAGO_DATA_PORTAL_*` / `CDP_API_ENDPOINT_*` / `GOOGLE_MAPS_API_KEY` vars — those are ingestion-only.
+Runtime endpoints (`/route`, `/explore`, etc.) do **not** read the `CHICAGO_DATA_PORTAL_*` / `CDP_API_ENDPOINT_*` vars — those are ingestion-only.
 
-Place `street_graph.graphml` in `backend/`, then:
+Place `street_graph_igraph.pkl` in `backend/` (fetched from the release per Prerequisites), then:
 
 ```bash
 uvicorn main:app --reload

@@ -165,7 +165,7 @@ cp .env.example .env   # add LOCATIONIQ_API_KEY only if you want the hosted
 uvicorn main:app --reload
 ```
 
-The street graph (`street_graph.graphml` or `street_graph_igraph.pkl`) must be present in `backend/`. Fetch the `.graphml` (~314 MB raw / ~79 MB compressed) from this repo's GitHub `street-graph` release tag and let `fetch_street_graph.py` build the `.pkl` from it (this is what the production Dockerfile does). The `.pkl` is what walking.py loads at runtime; it carries the Feature 4 greenest-routing edge attributes (`tree_canopy_score`, `park_proximity_score`) baked from `data/tree_canopy_kde.json` + `data/parks_polygons.json`. A pre-Feature-4 `.pkl` will refuse to load — see "Greenest-routing graph release runbook" below.
+At runtime `walking.py` loads `backend/street_graph_igraph.pkl` — the prebuilt pickle that carries the Feature 4 greenest-routing edge attributes (`tree_canopy_score`, `park_proximity_score`) baked from `data/tree_canopy_kde.json` + `data/parks_polygons.json`. Production fetches the `.pkl` (~28 MB) directly from this repo's GitHub `street-graph` release tag — see "Greenest-routing graph release runbook" below for the build chain and the SEC-001 integrity check. For local dev, `fetch_street_graph.py` rebuilds the `.pkl` from `street_graph.graphml`, a ~314 MB OSM snapshot kept off-repo as a local working file (not on the release); re-fetch it via `python fetch_street_graph.py --force` if you don't have a copy. A pre-Feature-4 `.pkl` will refuse to load.
 
 ### Frontend
 ```bash
@@ -404,15 +404,16 @@ How the `street_graph_igraph.pkl` artifact is produced, what fails if it goes wr
 
 ### Build chain
 
-1. The `street-graph` GitHub release tag holds **`street_graph.graphml`** (not the `.pkl`). Refresh it only when the underlying OSM street network needs to change.
-2. The production Dockerfile fetches the `.graphml`, then runs `python fetch_street_graph.py`.
-3. `fetch_street_graph.py` builds `street_graph_igraph.pkl` and, **as part of the same pass**, bakes per-edge `tree_canopy_score` + `park_proximity_score` from `data/tree_canopy_kde.json` + `data/parks_polygons.json` (both checked into the repo). The pickle is marked `format_version: 3`.
-4. At startup `walking.py` loads the `.pkl`, validates that both score columns are present and sized to `ecount()`, and otherwise refuses to boot (`_graph_load_failed = True`, all routes degrade to haversine until the operator intervenes).
+1. **Local-only.** `street_graph.graphml` is the canonical OSM snapshot, kept off-repo on the developer's dev machine (it is *not* a release asset). `fetch_street_graph.py --force` re-fetches it from OSMnx if you lose your copy — but the result depends on the current state of OSM, so keep an off-machine backup if reproducibility matters.
+2. **Local-only.** `python fetch_street_graph.py` builds `street_graph_igraph.pkl` from the `.graphml` and, **as part of the same pass**, bakes per-edge `tree_canopy_score` + `park_proximity_score` from `data/tree_canopy_kde.json` + `data/parks_polygons.json` (both checked into the repo). The pickle is marked `format_version: 3`.
+3. **Release artifact.** Upload the rebuilt `.pkl` to the `street-graph` GitHub release tag (overwrite the existing asset). This is the byte-identical artifact production consumes; the SEC-001 hash check makes byte equality a hard integrity requirement, not a convenience. We ship the `.pkl` (not the `.graphml` + an in-container bake) because the bake is not bit-identical across platforms — float drift in the KDE / park-proximity steps diverges between Windows local and the Linux container, and the hash check then refuses to load.
+4. **Production.** The Dockerfile `curl`s the `.pkl` directly from the release at build time (no in-container rebuild, no `fetch_street_graph.py` invocation).
+5. **Runtime.** `walking.py` loads the `.pkl`, validates that both score columns are present and sized to `ecount()`, and otherwise refuses to boot (`_graph_load_failed = True`, all routes degrade to haversine until the operator intervenes).
 
 ### What this means for refreshes
 
-- **Tree-canopy / parks data refresh** (yearly, per the heatmap ingest scripts): re-run `python fetch_street_graph.py` to rebuild the `.pkl`. The `.graphml` and the GitHub release asset do not change. **You must also rotate `STREET_GRAPH_SHA256`** — see "Pickle integrity check" below.
-- **OSM street-network refresh**: re-run `fetch_street_graph.py --force` to redownload the `.graphml`, then upload the new `.graphml` to the `street-graph` release tag (overwrite in place). The bake step picks up the new edges automatically on the next deploy. **Rotate `STREET_GRAPH_SHA256`** after this too.
+- **Tree-canopy / parks data refresh** (yearly, per the heatmap ingest scripts): re-run `python fetch_street_graph.py` to rebuild the `.pkl`. **Upload the new `.pkl` to the `street-graph` release** (overwrite). **Rotate `STREET_GRAPH_SHA256`** in both `backend/.env` and the Railway service variable — see "Pickle integrity check" below.
+- **OSM street-network refresh**: re-run `fetch_street_graph.py --force` to redownload the `.graphml`, then `python fetch_street_graph.py` (no flag) to rebuild the `.pkl`. Upload the new `.pkl` to the release. **Rotate `STREET_GRAPH_SHA256`** as above.
 - **Algorithm change** (formula constants, etc.): code-only, no artifact action, no hash rotation.
 
 ### Pickle integrity check (SEC-001)
@@ -450,11 +451,12 @@ Case doesn't matter — `walking.py` does `.strip().lower()` on the env var, so 
 
 **Verifying it took effect.** On the next backend startup, look for `street_graph_igraph.pkl SHA-256 verified` in the logs (locally: uvicorn console; Railway: deploy logs). If you instead see `STREET_GRAPH_SHA256 not set …`, the variable didn't reach the process. If you see `Refusing to load …`, the digest doesn't match the file — either the artifact was tampered with (the case the check exists for) or you computed the hash against a different `.pkl` than the one in the deploy. Recompute and update the var.
 
-**⚠️ Critical: rotate the hash whenever the `.pkl` changes.** The pickle is rebuilt every time `fetch_street_graph.py` runs — yearly heatmap-data refresh, any OSM street-network refresh, any FEAT-4 formula bake change. After each rebuild:
+**⚠️ Critical: rotate the hash AND upload the new `.pkl` whenever the pickle changes.** The pickle is rebuilt every time `fetch_street_graph.py` runs — yearly heatmap-data refresh, any OSM street-network refresh, any FEAT-4 formula bake change. After each rebuild:
 
 1. Recompute the hash on the new `.pkl` (commands above).
-2. Update `backend/.env` locally.
-3. Update the `STREET_GRAPH_SHA256` Railway variable so the next deploy boots cleanly. **Do this before pushing the code change that triggers the Railway rebuild**, or the deploy will boot into the "Refusing to load" branch and serve 503s until the variable is corrected.
+2. **Upload the new `.pkl` to the `street-graph` GitHub release tag** (overwrite the existing asset). Production will `curl` this on the next deploy — the hash check requires byte equality.
+3. Update `backend/.env` locally.
+4. Update the `STREET_GRAPH_SHA256` Railway variable so the next deploy boots cleanly. **Do steps 2–4 before pushing the code change that triggers the Railway rebuild**, or the deploy will fail — either the `curl` 404s on a stale asset, or the hash check refuses to load and the service degrades to haversine until the variable is corrected.
 
 If you ever need to deploy without the check (emergency rollback, debugging a hash dispute), unset `STREET_GRAPH_SHA256` in the deploy env — the backend reverts to "warn and load" behavior. This is the lesser-of-two-evils escape hatch; it should not be the steady state.
 
@@ -466,15 +468,16 @@ The risk window is "production fetches an artifact whose attributes don't match 
 - **B) bake step produces malformed columns** — revert [backend/fetch_street_graph.py](backend/fetch_street_graph.py) `_bake_green_signals` (or its caller in `_save_igraph_artifact`). The next deploy will rebuild a v2-shaped `.pkl`, **but the fail-fast guard in `walking.py` will then refuse to boot.** Pair this with rollback (C) so the service stays up.
 - **C) full feature rollback** — revert [backend/walking.py](backend/walking.py) chunk-2 + chunk-3 changes (the greenest weight branch + the fail-fast guard + the `_edge_tree_canopy` / `_edge_park_proximity` cache columns). The chunk-1 bake step in `fetch_street_graph.py` can stay — unused dict keys in the pickle are harmless to a reverted loader.
 
-There is no "rollback the release asset" recipe because the `.graphml` is unchanged across FEAT-4. The artifact at the `street-graph` tag is stable; rollback is purely a code revert.
+Rollbacks (A)/(B)/(C) above are code-only — they don't require touching the release directly. After the code revert, rebuild the `.pkl` locally with `python fetch_street_graph.py`, upload it to the `street-graph` release (overwrite), recompute `STREET_GRAPH_SHA256`, update `backend/.env` and Railway, then push. Same procedure as a normal refresh; the only difference is what code is on disk when the bake runs.
 
 ### Deploy checklist
 
 1. Locally: `python fetch_street_graph.py` (pick "1" — rebuild pickle from cached graphml). Confirm the histogram step prints non-zero canopy + parks distributions and the pickle ends `format_version: 3`.
-2. **Recompute the pickle SHA-256** (`Get-FileHash -Algorithm SHA256 backend\street_graph_igraph.pkl` or `shasum -a 256 backend/street_graph_igraph.pkl`). Update `STREET_GRAPH_SHA256` in `backend/.env` locally **and** in the Railway service variables. Do this *before* pushing — if Railway rebuilds with a stale hash, the new `.pkl` will be refused and the service will degrade to haversine until you correct the variable. Details: "Pickle integrity check (SEC-001)" above.
-3. `pytest tests/test_walking_greenest.py -v` — 14 should pass.
-4. Push to main. Railway rebuilds; tail the build for "Baking tree_canopy_score + park_proximity_score per edge…" and the boot for both `street_graph_igraph.pkl SHA-256 verified` and `igraph loaded:` (no "Refusing to load" error).
-5. Spot-check the Lakeview East → Lincoln Park fixture in prod (`POST /route` with `origin=41.9405,-87.6420`, `destination=41.9210,-87.6500`, compare `routes[fastest]` vs `routes[greenest]` — greenest should diverge to a footway-heavy path).
+2. **Upload the new `.pkl` to the `street-graph` GitHub release tag** (https://github.com/AdamBHonaker/Passage/releases/tag/street-graph → Edit release → drag-replace `street_graph_igraph.pkl`). Asset name must remain exactly `street_graph_igraph.pkl` — the Dockerfile `curl` is hardcoded to that filename.
+3. **Recompute the pickle SHA-256** (`Get-FileHash -Algorithm SHA256 backend\street_graph_igraph.pkl` or `shasum -a 256 backend/street_graph_igraph.pkl`). Update `STREET_GRAPH_SHA256` in `backend/.env` locally **and** in the Railway service variables. Do steps 2–3 *before* pushing — if Railway rebuilds while the release asset is stale or the Railway hash doesn't match the uploaded bytes, the service will degrade to haversine until the gap is closed. Details: "Pickle integrity check (SEC-001)" above.
+4. `pytest tests/test_walking_greenest.py -v` — 14 should pass.
+5. Push to main. Railway rebuilds; tail the build for the `curl … street_graph_igraph.pkl` step and the boot for both `street_graph_igraph.pkl SHA-256 verified` and `igraph loaded:` (no "Refusing to load" error).
+6. Spot-check the Lakeview East → Lincoln Park fixture in prod (`POST /route` with `origin=41.9405,-87.6420`, `destination=41.9210,-87.6500`, compare `routes[fastest]` vs `routes[greenest]` — greenest should diverge to a footway-heavy path).
 
 ## Porting Notes
 

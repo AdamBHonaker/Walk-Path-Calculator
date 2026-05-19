@@ -23,10 +23,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Download the street graph and build the fast igraph artifact from it
-RUN curl -fL -o street_graph.graphml \
-    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/street_graph.graphml" \
-    && python fetch_street_graph.py
+# Download the prebuilt street-graph pickle directly from the GitHub release.
+# We ship the .pkl (not just the .graphml + an in-container bake) because the
+# bake in fetch_street_graph.py is not bit-identical across platforms — float
+# drift in the KDE / park-proximity steps diverges between Windows local and
+# the Linux container, and the SEC-001 SHA-256 check requires byte equality
+# with STREET_GRAPH_SHA256. Refresh procedure: rebuild locally with
+# `python fetch_street_graph.py`, upload the new .pkl to the `street-graph`
+# GitHub release (overwrite the asset), recompute STREET_GRAPH_SHA256, and
+# update it in both backend/.env and Railway *before* pushing the code change.
+RUN curl -fL -o street_graph_igraph.pkl \
+    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/street_graph_igraph.pkl"
 
 # Expose the port FastAPI will run on
 EXPOSE 8000
