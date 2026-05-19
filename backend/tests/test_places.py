@@ -145,3 +145,60 @@ class TestCuratedSources:
         farmers = [p for p in results if p.get("subcategory") == "farmers_market"]
         # 2013 dataset has ~24 entries; expect at least a handful inside the city bbox.
         assert len(farmers) > 5
+
+
+class TestResidentialHeatmap:
+    """Tests for places.residential_heatmap — the single-unioned MultiPolygon
+    returned for the explorer's heatmap fill."""
+
+    def test_none_polygon_returns_none(self):
+        result = places.residential_heatmap(None)
+        assert result is None
+
+    def test_empty_polygon_returns_none(self):
+        from shapely.geometry import Polygon
+        result = places.residential_heatmap(Polygon())
+        assert result is None
+
+    def test_non_overlapping_polygon_returns_none(self):
+        # A box in the Pacific Ocean — no Chicago residential polygons there.
+        from shapely.geometry import Polygon
+        pacific_box = Polygon([(-160, 20), (-159, 20), (-159, 21), (-160, 21), (-160, 20)])
+        result = places.residential_heatmap(pacific_box)
+        assert result is None
+
+    def test_chicago_box_returns_geojson_mapping(self):
+        # Logan Square — dense residential neighbourhood, should have
+        # residential polygons in the real dataset.
+        from shapely.geometry import Polygon
+        logan_sq = Polygon([
+            (-87.72, 41.92), (-87.69, 41.92),
+            (-87.69, 41.94), (-87.72, 41.94),
+            (-87.72, 41.92),
+        ])
+        result = places.residential_heatmap(logan_sq)
+        if result is None:
+            pytest.skip("residential_polygons.json absent or has no Logan Sq coverage")
+        assert result["type"] in ("MultiPolygon", "Polygon"), (
+            f"expected MultiPolygon or Polygon, got {result.get('type')}"
+        )
+
+    def test_result_coordinates_inside_query_polygon(self):
+        """All coordinate vertices in the returned geometry must be within the
+        original query polygon's bounding box (clipping must work correctly)."""
+        from shapely.geometry import Polygon, shape
+        logan_sq = Polygon([
+            (-87.72, 41.92), (-87.69, 41.92),
+            (-87.69, 41.94), (-87.72, 41.94),
+            (-87.72, 41.92),
+        ])
+        result = places.residential_heatmap(logan_sq)
+        if result is None:
+            pytest.skip("residential_polygons.json absent or has no Logan Sq coverage")
+        geom = shape(result)
+        minx, miny, maxx, maxy = logan_sq.bounds
+        # All ring coordinates must be within the query bbox (with tiny float slack).
+        for coord in geom.geoms if hasattr(geom, "geoms") else [geom]:
+            for x, y in list(coord.exterior.coords):
+                assert minx - 1e-8 <= x <= maxx + 1e-8
+                assert miny - 1e-8 <= y <= maxy + 1e-8

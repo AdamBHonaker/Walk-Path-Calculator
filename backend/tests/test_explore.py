@@ -82,4 +82,6 @@ class TestExplore:
         # rounding in the boundary geometry — anything larger means real
         # overshoot into the lake.
         overshoot = poly.difference(boundary).area / max(poly.area, 1e-12)
-        assert overshoot < 0.001, f"polygon overshoots boundary by {overshoot:.4%}"
+        # 0.01% tolerance — tight enough to catch real lake overshoot
+        # (the old 0.1% allowed hundreds of m² past the shoreline).
+        assert overshoot < 0.0001, f"polygon overshoots boundary by {overshoot:.5%}"

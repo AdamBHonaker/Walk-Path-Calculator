@@ -5,6 +5,7 @@ import {
   buildTurnsGeoJson,
   clearLayers,
   renderWalkRoute,
+  renderExplore,
   WALK_PATH_COLOR,
 } from "./mapHelpers.js";
 
@@ -244,5 +245,76 @@ describe("renderWalkRoute", () => {
     };
     renderWalkRoute(map, result, null, null, layerIds, sourceIds);
     expect(sourceIds).not.toContain("walk-stops");
+  });
+});
+
+// ── Symbol layer text-font regression (commit 67c8c17 fix) ───────────────
+describe("symbol layers use single Noto Sans Bold font (not a comma-joined list)", () => {
+  let capturedLayers;
+  let mockMap;
+
+  beforeEach(() => {
+    capturedLayers = [];
+    mockMap = {
+      addSource: vi.fn(),
+      addLayer: vi.fn((cfg) => capturedLayers.push(cfg)),
+      getSource: vi.fn(() => null),
+      getLayer: vi.fn(() => null),
+      fitBounds: vi.fn(),
+      setPaintProperty: vi.fn(),
+      setFeatureState: vi.fn(),
+      on: vi.fn(),
+      off: vi.fn(),
+      once: vi.fn(),
+      isStyleLoaded: vi.fn(() => true),
+    };
+  });
+
+  it("walk-stops-label text-font is exactly [\"Noto Sans Bold\"]", () => {
+    // renderWalkRoute adds the stop-label symbol layer for multi-stop routes.
+    const fakeResult = {
+      path: [[41.88, -87.63], [41.90, -87.65]],
+      directions: [],
+      stop_coords: [[41.88, -87.63], [41.885, -87.635], [41.90, -87.65]],
+      stops: ["A", "B", "C"],
+    };
+    renderWalkRoute(mockMap, fakeResult, [], null, [], []);
+    const stopLabel = capturedLayers.find(l => l.id === "walk-stops-label");
+    expect(stopLabel).toBeDefined();
+    expect(stopLabel.layout?.["text-font"]).toEqual(["Noto Sans Bold"]);
+    const font = stopLabel.layout?.["text-font"];
+    expect(Array.isArray(font)).toBe(true);
+    expect(font).toHaveLength(1);
+    expect(font[0]).not.toContain(",");
+  });
+
+  it("explore-places-cluster-count text-font is exactly [\"Noto Sans Bold\"]", () => {
+    const fakeResult = {
+      polygon: { type: "Polygon", coordinates: [[[-87.7, 41.9], [-87.6, 41.9], [-87.6, 42.0], [-87.7, 42.0], [-87.7, 41.9]]] },
+      places: [],
+    };
+    renderExplore(mockMap, fakeResult, {}, [], []);
+    const clusterCount = capturedLayers.find(l => l.id === "explore-places-cluster-count");
+    expect(clusterCount).toBeDefined();
+    expect(clusterCount.layout?.["text-font"]).toEqual(["Noto Sans Bold"]);
+    const font = clusterCount.layout?.["text-font"];
+    expect(Array.isArray(font)).toBe(true);
+    expect(font).toHaveLength(1);
+    expect(font[0]).not.toContain(",");
+  });
+
+  it("explore-places-glyph text-font is exactly [\"Noto Sans Bold\"]", () => {
+    const fakeResult = {
+      polygon: { type: "Polygon", coordinates: [[[-87.7, 41.9], [-87.6, 41.9], [-87.6, 42.0], [-87.7, 42.0], [-87.7, 41.9]]] },
+      places: [],
+    };
+    renderExplore(mockMap, fakeResult, {}, [], []);
+    const glyph = capturedLayers.find(l => l.id === "explore-places-glyph");
+    expect(glyph).toBeDefined();
+    expect(glyph.layout?.["text-font"]).toEqual(["Noto Sans Bold"]);
+    const font = glyph.layout?.["text-font"];
+    expect(Array.isArray(font)).toBe(true);
+    expect(font).toHaveLength(1);
+    expect(font[0]).not.toContain(",");
   });
 });

@@ -301,6 +301,44 @@ class TestStitchLegs:
         assert slices[2] == (2, 3)
 
 
+class TestMultiStopEmptyLegEndpoint:
+    """Integration test: one leg returns an empty path from the routing
+    engine. The endpoint must either gracefully degrade or return a
+    documented error shape — not crash with a 500."""
+
+    def test_empty_middle_leg_does_not_500(self, monkeypatch):
+        """When the routing engine returns an empty path for a middle leg, the
+        endpoint must not raise an unhandled exception (500). Any structured
+        4xx or a degraded 200 is acceptable — an unhandled 500 is not."""
+        import walking as _walking
+
+        # Only run if the graph is available; otherwise skip gracefully.
+        if _walking._load_graph() is None:
+            pytest.skip("street graph not available — skipping empty-leg endpoint test")
+
+        import main as _main
+        original_compute = _main._compute_route
+        call_count = {"n": 0}
+
+        def patched_compute(olat, olon, dlat, dlon, flavor="fastest"):
+            call_count["n"] += 1
+            # Return an empty path for the second leg only.
+            if call_count["n"] == 2:
+                return ((), (), 0.0)
+            return original_compute(olat, olon, dlat, dlon, flavor)
+
+        # Patch main's local binding (from walking import _compute_route).
+        monkeypatch.setattr(_main, "_compute_route", patched_compute)
+
+        resp = client.post("/route", json={
+            "stops": ["Wrigleyville", "Lincoln Park", "Logan Square"],
+        })
+        # Must not crash with 500.
+        assert resp.status_code != 500, (
+            f"empty middle-leg caused a 500: {resp.text[:300]}"
+        )
+
+
 class TestReverseGeocode:
     """Coverage for GET /reverse-geocode — bbox validation, response shape, caching."""
 
@@ -624,6 +662,38 @@ class TestGeocoderCircuitBreaker:
         detail = resp.json().get("detail")
         assert isinstance(detail, dict)
         assert "overloaded" in detail["message"]
+
+    @pytest.mark.parametrize("status_code,should_trip", [
+        (429, True),   # canonical rate-limit → trips breaker
+        (500, False),  # server error → one-off failure, breaker stays closed
+        (503, False),  # upstream unavailable → one-off failure
+        (403, False),  # auth failure → one-off failure
+    ])
+    def test_non_429_http_errors_do_not_trip_breaker(self, monkeypatch, status_code, should_trip):
+        """Only HTTP 429 should open the circuit breaker; other 4xx/5xx should
+        propagate as one-off failures without engaging the cool-off window."""
+        import geocoding
+        from geocoding import geocode_external, GeocoderDegradedError
+
+        def mock_resp(code):
+            from unittest.mock import Mock
+            resp = Mock()
+            resp.status_code = code
+            resp.content = b'{"error":"test"}'
+            resp.json = lambda: {"error": "test"}
+            return resp
+
+        monkeypatch.setattr(geocoding._http_session, "get", lambda *a, **kw: mock_resp(status_code))
+
+        try:
+            geocode_external("__breaker_test_query__")
+        except (GeocoderDegradedError, Exception):
+            pass
+
+        assert geocoding._circuit_is_open() is should_trip, (
+            f"HTTP {status_code}: expected breaker open={should_trip}, "
+            f"got open={geocoding._circuit_is_open()}"
+        )
 
 
 def _circuit_inflated_cooloff() -> float:
