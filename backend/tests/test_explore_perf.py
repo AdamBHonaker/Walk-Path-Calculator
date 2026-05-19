@@ -30,13 +30,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 
 import explore
-import walking
 
 
-pytestmark = pytest.mark.skipif(
-    walking._load_graph() is None,
-    reason="street graph unavailable in this environment",
-)
+pytestmark = pytest.mark.requires_artifact("street_graph_igraph.pkl")
 
 
 # Loop — central, dense graph coverage; a 45-minute isochrone from the Loop

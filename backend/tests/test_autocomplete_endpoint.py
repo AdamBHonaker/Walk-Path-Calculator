@@ -23,11 +23,7 @@ from main import app
 
 client = TestClient(app)
 
-DB_PRESENT = local_search.DB_PATH.exists()
-needs_db = pytest.mark.skipif(
-    not DB_PRESENT,
-    reason="chicago_geocode.db missing; run backend/scripts/build_*.py first",
-)
+needs_db = pytest.mark.requires_artifact("data/chicago_geocode.db")
 
 
 # ── Validation ───────────────────────────────────────────────────────────────

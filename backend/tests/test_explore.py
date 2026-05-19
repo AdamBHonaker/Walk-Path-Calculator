@@ -6,13 +6,9 @@ import pytest
 from shapely.geometry import shape
 
 import explore
-import walking
 
 
-pytestmark = pytest.mark.skipif(
-    walking._load_graph() is None,
-    reason="street graph unavailable in this environment",
-)
+pytestmark = pytest.mark.requires_artifact("street_graph_igraph.pkl")
 
 
 # Wicker Park / Bucktown — central enough that a 20-min isochrone stays
@@ -64,10 +60,7 @@ class TestExplore:
         second = explore._explore_quantized.cache_info()
         assert second.hits == first.hits + 1
 
-    @pytest.mark.skipif(
-        not explore.BOUNDARY_PATH.exists(),
-        reason="Chicago boundary data file missing — run build_chicago_boundary.py",
-    )
+    @pytest.mark.requires_artifact("data/chicago_boundary.json")
     def test_lakefront_polygon_is_clipped_to_boundary(self):
         # Streeterville — sits a few blocks from Navy Pier, so a generous
         # walking budget naturally extends the unclipped hull east into the
@@ -82,4 +75,6 @@ class TestExplore:
         # rounding in the boundary geometry — anything larger means real
         # overshoot into the lake.
         overshoot = poly.difference(boundary).area / max(poly.area, 1e-12)
-        assert overshoot < 0.001, f"polygon overshoots boundary by {overshoot:.4%}"
+        # 0.01% tolerance — tight enough to catch real lake overshoot
+        # (the old 0.1% allowed hundreds of m² past the shoreline).
+        assert overshoot < 0.0001, f"polygon overshoots boundary by {overshoot:.5%}"

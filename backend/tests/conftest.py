@@ -36,3 +36,32 @@ def _clear_external_geocoder_key():
     os.environ.pop("LOCATIONIQ_API_KEY", None)
     yield
     geocoding._LOCATIONIQ_API_KEY = saved
+
+
+import os as _os
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "requires_artifact(name): mark test as requiring a runtime artifact; "
+        "skips locally when absent, fails in CI (CI=true).",
+    )
+
+
+def pytest_runtest_setup(item):
+    for marker in item.iter_markers("requires_artifact"):
+        artifact_name = marker.args[0] if marker.args else None
+        if not artifact_name:
+            continue
+        path = Path(__file__).resolve().parent.parent / artifact_name
+        if not path.exists():
+            in_ci = _os.getenv("CI", "").lower() in ("true", "1", "yes")
+            if in_ci:
+                pytest.fail(
+                    f"Required artifact '{artifact_name}' not found at {path}. "
+                    "Fetch it before running in CI.",
+                    pytrace=False,
+                )
+            else:
+                pytest.skip(f"Artifact '{artifact_name}' not present — skipping locally.")

@@ -33,13 +33,11 @@ import walking  # noqa: E402
 def _graph_loaded():
     """Ensure the street graph is loaded once for the whole module.
 
-    Skips the module when no pickle is present (e.g. fresh checkout in CI
-    without the release asset). Without this guard every test would log a
-    "graph unavailable" fallback and silently pass against haversine.
+    The @requires_artifact mark on each consumer class handles the
+    skip-locally / fail-in-CI gate before this fixture ever runs.
     """
     g = walking._load_graph()
-    if g is None:
-        pytest.skip("street graph artifact not present — skipping greenest fixtures")
+    assert g is not None, "graph should be loaded when artifact is present"
     return g
 
 
@@ -48,6 +46,7 @@ def _graph_loaded():
 # require the actual graph, just the populated edge cache columns.
 # ---------------------------------------------------------------------------
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestGreenestWeightVector:
     def test_v3_pickle_populates_canopy_and_park_columns(self, _graph_loaded):
         assert walking._edge_tree_canopy is not None, "v3 pickle should populate canopy column"
@@ -171,6 +170,7 @@ def edge_lookup(_graph_loaded):
     return _build_edge_lookup()
 
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestGreenestFixtureRoutes:
     @pytest.mark.parametrize("label,olat,olon,dlat,dlon", FIXTURE_ROUTES,
                              ids=[r[0] for r in FIXTURE_ROUTES])
@@ -231,6 +231,7 @@ class TestGreenestFixtureRoutes:
 # discount. Production deploys must surface the rebuild requirement.
 # ---------------------------------------------------------------------------
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestV3FailFast:
     def test_v2_shaped_pickle_refuses_to_load(self, _graph_loaded, tmp_path, monkeypatch, caplog):
         """A pickle that lacks the v3 canopy + park columns must trip the
@@ -283,20 +284,112 @@ class TestV3FailFast:
         walking._load_graph()
 
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestAvoidStairsStillWorks:
     def test_avoid_stairs_layers_on_greenest_weights(self, _graph_loaded):
         """`avoid_stairs=True` adds _AVOID_STAIRS_PENALTY_M on top of the
-        flavor weights. Verify the combined vector is at least as costly as
-        the base greenest weights on every edge — i.e., the penalty layer is
-        ADDITIVE, never replaces the green-aware discount."""
+        flavor weights. Verify the combined vector is EXACTLY additive:
+        - On stairs edges: combined - base ≈ _AVOID_STAIRS_PENALTY_M
+        - On non-stairs edges: combined - base ≈ 0
+        """
+        import numpy as np
         base = np.asarray(walking._get_flavor_weights("greenest"), dtype=np.float64)
         combined = np.asarray(walking._get_avoid_stairs_weights("greenest"), dtype=np.float64)
         assert combined.shape == base.shape
-        # combined - base should be 0 on non-stairs and _AVOID_STAIRS_PENALTY_M on stairs.
+
         diffs = combined - base
-        # All differences are non-negative.
-        assert float(diffs.min()) >= -1e-3
-        # The stairs penalty actually fires on at least a handful of edges
-        # (the Chicago graph has steps near the riverwalk / l-stations).
-        stairs_count = int((diffs > walking._AVOID_STAIRS_PENALTY_M / 2).sum())
-        assert stairs_count >= 0  # no assertion on count — pickle may be too coarse
+        # Build stairs mask from the edge cache
+        highways = np.asarray(walking._edge_highways)
+        stairs_mask = highways == "steps"
+        non_stairs_mask = ~stairs_mask
+
+        # On every non-stairs edge, avoid_stairs must add nothing.
+        assert float(diffs[non_stairs_mask].max()) <= 1e-3, (
+            "avoid_stairs penalty bled onto non-stairs edges"
+        )
+        # On stairs edges, the penalty must be exactly _AVOID_STAIRS_PENALTY_M
+        # (within numerical tolerance). If there are no stairs in this graph,
+        # the test still passes (avoid_stairs is a no-op on stairless graphs).
+        if stairs_mask.any():
+            np.testing.assert_allclose(
+                diffs[stairs_mask],
+                walking._AVOID_STAIRS_PENALTY_M,
+                atol=1e-3,
+                err_msg="avoid_stairs penalty not exactly additive on stairs edges",
+            )
+
+
+class TestPickleIntegrity:
+    """Verify that _verify_pickle_integrity fails closed on SHA-256 mismatch
+    and warns-and-loads when the env var is unset. These tests do NOT require
+    the real pickle artifact — they write a tiny synthetic pickle to tmp_path."""
+
+    def _write_tiny_pickle(self, path):
+        import pickle as _pkl
+        path.write_bytes(_pkl.dumps({"format_version": 3, "test": True}))
+        return path
+
+    def test_mismatch_returns_false_without_loading(self, tmp_path, monkeypatch, caplog):
+        """SHA-256 mismatch must return False and must not call pickle.load."""
+        import pickle as _pkl
+        from unittest.mock import patch
+
+        pkl_path = self._write_tiny_pickle(tmp_path / "test.pkl")
+        # Set the env var to a known-wrong digest (all-zeros, 64 hex chars)
+        monkeypatch.setattr(walking, "_STREET_GRAPH_SHA256", "0" * 64)
+
+        with patch.object(_pkl, "load", side_effect=AssertionError("pickle.load must NOT be called")) as mock_load:
+            with caplog.at_level("ERROR", logger="walking"):
+                result = walking._verify_pickle_integrity(pkl_path)
+
+        assert result is False, "mismatch must return False"
+        mock_load.assert_not_called()
+        assert any("SHA-256 mismatch" in r.message for r in caplog.records), (
+            "must log the mismatch with 'SHA-256 mismatch' in the message"
+        )
+
+    def test_match_returns_true_and_logs_verified(self, tmp_path, monkeypatch, caplog):
+        """Correct SHA-256 must return True and log a verification confirmation."""
+        import hashlib
+
+        pkl_path = self._write_tiny_pickle(tmp_path / "test.pkl")
+        digest = hashlib.sha256(pkl_path.read_bytes()).hexdigest()
+        monkeypatch.setattr(walking, "_STREET_GRAPH_SHA256", digest)
+
+        with caplog.at_level("INFO", logger="walking"):
+            result = walking._verify_pickle_integrity(pkl_path)
+
+        assert result is True
+        assert any("SHA-256 verified" in r.message for r in caplog.records)
+
+    def test_unset_env_var_warns_once_and_returns_true(self, tmp_path, monkeypatch, caplog):
+        """No env var → warn exactly once and allow load (backward compat)."""
+        pkl_path = self._write_tiny_pickle(tmp_path / "test.pkl")
+        monkeypatch.setattr(walking, "_STREET_GRAPH_SHA256", "")
+        monkeypatch.setattr(walking, "_pickle_hash_warned", False)
+
+        with caplog.at_level("WARNING", logger="walking"):
+            result1 = walking._verify_pickle_integrity(pkl_path)
+            result2 = walking._verify_pickle_integrity(pkl_path)
+
+        assert result1 is True
+        assert result2 is True
+        warn_msgs = [r for r in caplog.records if "without integrity check" in r.message]
+        assert len(warn_msgs) == 1, "warning must fire exactly once, not on every call"
+
+    def test_load_graph_sets_failed_flag_on_mismatch(self, tmp_path, monkeypatch):
+        """_load_graph must set _graph_load_failed=True when integrity check fails."""
+        pkl_path = self._write_tiny_pickle(tmp_path / "test.pkl")
+        monkeypatch.setattr(walking, "IGRAPH_PATH", pkl_path)
+        monkeypatch.setattr(walking, "GRAPH_PATH", tmp_path / "no.graphml")
+        monkeypatch.setattr(walking, "_STREET_GRAPH_SHA256", "0" * 64)
+        monkeypatch.setattr(walking, "_graph_cache", None)
+        monkeypatch.setattr(walking, "_graph_load_failed", False)
+
+        result = walking._load_graph()
+
+        assert result is None
+        assert walking._graph_load_failed is True
+
+        # Cleanup so the module stays usable after this test.
+        walking._graph_load_failed = False

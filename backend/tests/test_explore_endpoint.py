@@ -6,16 +6,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import pytest
 from fastapi.testclient import TestClient
 
-import walking
 from main import app
 
 client = TestClient(app)
 
 
-pytestmark = pytest.mark.skipif(
-    walking._load_graph() is None,
-    reason="street graph unavailable in this environment",
-)
+pytestmark = pytest.mark.requires_artifact("street_graph_igraph.pkl")
 
 
 class TestExploreValidation:
