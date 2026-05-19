@@ -75,3 +75,8 @@ backend copy/
 
 # Top-level dev/utility scripts (not backend/scripts/)
 /scripts/
+
+# Temporary scratch files from data-ingestion development
+/tmp*
+*.tif
+*.tiff
