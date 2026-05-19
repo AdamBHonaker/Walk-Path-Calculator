@@ -45,6 +45,305 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Geolocation CTA on the map | Bolt-On | 2026-05-05 |
 | Code-splitting MapView for faster cold-load | Bolt-On | 2026-05-05 |
 | Follow My Location (live map tracking) | Bolt-On | 2026-05-11 |
+| Neighborhood Explorer (Isochrone) | Structural | 2026-05-11 |
+| Accessibility Mode (Mobility profile) | Bolt-On | 2026-05-12 |
+| Chicago Data Portal Integration (Explorer) | Bolt-On | 2026-05-12 |
+| PWA Icon Rebrand (walkpath → passage) | Bolt-On | 2026-05-12 |
+| Local-First Geocoding + LocationIQ Fallback | Structural | 2026-05-12 |
+| Tree Canopy Heatmap (Neighborhood Explorer) | Bolt-On | 2026-05-14 |
+| Parks + Green-Space Heatmaps (Neighborhood Explorer) | Bolt-On | 2026-05-14 |
+| Greenest Routing — Tree + Park Edge Weights | Structural | 2026-05-14 |
+
+---
+
+## Greenest Routing — Tree + Park Edge Weights
+**Type:** Structural | **Area:** Backend + Graph artifact + Frontend (light) | **Shipped:** 2026-05-14
+
+The `greenest` route flavor used to be a single-signal heuristic — discount OSM `footway` / `path` / `cycleway` edges by ~40 %, ship it. With the Tree Canopy + Parks + Green-Space heatmaps shipped earlier the same day, the project had two new authoritative signals (per-edge tree-canopy density + per-edge distance-to-nearest-park, with acreage weighting) sitting on disk but only being painted on the explorer. FEAT-4 bakes both signals onto the pedestrian graph's edges and folds them into the greenest weight function, so routing actually prefers the routes a walker would describe as greener — past Lincoln Park rather than around it via Clark, down the Logan Square boulevards rather than parallel arterials.
+
+**Architecture: bake once, read at runtime.** Two per-edge `float32` columns are computed during graph build and pickled alongside the existing edge attributes — `tree_canopy_score` (the KDE density value sampled at the edge midpoint) and `park_proximity_score` (1 − d/200 m, capped at 0, multiplied by a 1.0–1.5× log-acreage factor that saturates at ~100 acres). Runtime Dijkstra reads two extra floats per edge — effectively zero additional cost on top of the pre-existing weight vector build. Pickle bumped from `format_version: 2` to `3` to carry the new arrays.
+
+**Backend (chunk 1 — bake step):**
+- New `_bake_green_signals(edges, attr_geometry, vx_lons, vx_lats)` helper in [`fetch_street_graph.py`](backend/fetch_street_graph.py). Projects to a Chicago-centered equirectangular frame so park distances and canopy cell containment can be checked in meters. Samples the canopy KDE at each edge's **arc-length** midpoint (not endpoint-midpoint) so a long edge that bends through a leafy block is scored from inside the block, not its straight-line center. For parks, builds an `STRtree` of projected polygons, calls `tree.nearest(midpoint)`, and scores only if the resulting distance is ≤ 200 m.
+- Histograms print at build time so an operator running `python fetch_street_graph.py` can immediately spot a malformed bake (all-zeros, or distribution shifted toward 1.0). Local 232,759-edge graph: canopy 3.6 % non-zero (sparse OSM `natural=tree` coverage); park proximity 22.6 % non-zero with a fat tail near 1.0 (matches Chicago's park density). Spot-check across 12 hand-picked points: every park interior hit `park=1.000`; every bare arterial returned `0/0`.
+- Pickle size grew from ~26.6 MB → ~28.1 MB (+5.6 %), well under the 20 % cap from the acceptance criteria.
+
+**Backend (chunk 2 — weight function):**
+- New named constants in [`walking.py`](backend/walking.py): `_GREEN_FOOTWAY_WEIGHT = 0.20`, `_GREEN_CANOPY_WEIGHT = 0.15`, `_GREEN_PARK_WEIGHT = 0.15`, `_GREEN_DETOUR_FLOOR = 0.5`. Constants live as module-level locals (not magic numbers in expressions) so the rationale is greppable.
+- Greenest weight formula:
+  ```
+  greenest_weight = L · max(_GREEN_DETOUR_FLOOR,
+      1 − _GREEN_FOOTWAY_WEIGHT · is_footway_or_path
+        − _GREEN_CANOPY_WEIGHT  · tree_canopy_score
+        − _GREEN_PARK_WEIGHT    · park_proximity_score)
+  ```
+  The 0.5× floor caps any single edge's discount, which mathematically caps the greenest path within ~2× of fastest's distance — preventing pathological "route 4× longer chasing trees" outcomes. The starting constants from the spec ship as-is — the live-graph discount distribution (min 0.502, max 1.000, mean 0.862) and fixture-route divergence both proved healthy without retuning.
+- `_edge_tree_canopy` + `_edge_park_proximity` numpy columns added to the existing module-level cache. Wired through `_populate_edge_caches_v2` (read from the v3 pickle), `_populate_edge_caches` (v1 graphml fallback — left as None, fail-fast below catches this), and `_evict_graph` (null both on eviction).
+- New [`tests/test_walking_greenest.py`](backend/tests/test_walking_greenest.py) — 14 tests across 3 classes:
+  - **Weight-vector pinning** (6 tests): v3-pickle column population, score range [0,1], per-edge ≥ 0.5× floor, ≥ 1000 discounted edges, **fastest weights byte-identical to the lengths array** (object-identity `is` check), fewest_turns still `lengths + turn_penalty`.
+  - **Fixture routes** (6 tests): parametrized 2× detour-floor check across 4 routes, plus dedicated assertions that Lakeview East → Lincoln Park exposes ≥ 1.5× more park proximity under greenest than under fastest, and that a ~1.5 mi UIC → Loop utility route detours by ≤ 10 %.
+  - **Fail-fast posture** (1 test, chunk 3): builds a v2-shaped pickle by stripping the new keys, asserts `_load_graph()` refuses cleanly.
+  - **Avoid-stairs interaction** (1 test): combined Dijkstra weights still derive from the greenest-aware base; the stairs penalty layers additively.
+
+**Backend (chunk 3 — fail-fast posture):**
+- Scope departure from the spec: the production Dockerfile fetches `street_graph.graphml` (not `.pkl`) from the `street-graph` GitHub release tag and rebuilds the `.pkl` in-container via `fetch_street_graph.py`. The chunk-1 bake step therefore runs as part of every Railway build with **zero release-asset action required** — the `.graphml` on the tag stays untouched. (Whether to switch to publishing a prebuilt `.pkl` for faster deploys is captured as post-FEAT-4 OPT-001 in [`Efficiency_Improvements.md`](Efficiency_Improvements.md).)
+- Fail-fast guard added to [`walking.py`](backend/walking.py) `_load_graph()` — post-populate, both `_edge_tree_canopy` and `_edge_park_proximity` must be present and sized to `ecount()`, else the function logs a pointed error (naming the `python fetch_street_graph.py` rebuild command), sets `_graph_load_failed = True`, and returns None. Matches the existing SHA-256-mismatch fail-closed posture: silent degradation of `greenest` to the legacy footway-only discount is strictly worse than haversine fallback for the whole route flow, because operators won't notice the degradation until users complain.
+- Pre-existing doc misstatement fixed in [`CLAUDE.md`](../CLAUDE.md) and [`README.md`](../README.md) — both previously claimed the Dockerfile fetches the `.pkl` directly. New "Greenest-routing graph release runbook" section in CLAUDE.md captures the build chain, three refresh scenarios (canopy/parks data, OSM street network, algorithm change), three-tier rollback recipe (formula-constants-only / bake-revert / full-feature-revert), and a 4-step deploy checklist.
+
+**Frontend (chunk 4):**
+- Greenest motivation copy in [`RouteFlavorTabs.jsx`](frontend/src/components/RouteFlavorTabs.jsx) updated from `"More off-street"` to `"Through parks, under canopy"`. The `detail` field was previously dead — defined in `FLAVOR_META` but rendered nowhere. Chunk 4 wires it as a `title` attribute on each tab `<button>`, so the new copy reaches users via desktop hover, mobile long-press, and screen-reader accessible-name extensions. No other UI surface changed; existing greenest-tab tests in [`App.test.jsx`](frontend/src/App.test.jsx) (selection, switch, sticky-state) continue to pass at 296/296.
+
+**Out of scope:**
+- A new routing flavor (`shadiest`, `leafiest`). FEAT-4 strengthens `greenest`; it doesn't fork it.
+- Per-user weight toggles ("I care more about trees than parks"). Fixed split at launch.
+- Mobility-profile-aware greenest variants — wheeled users get the same greenest. The `custom` flavor (`prefer_pedestrian=true` or `avoid_stairs=true`) inherits the new combined formula automatically, since `prefer_pedestrian` already routed under `greenest` pre-feature.
+- Runtime overlay of canopy / park data on top of an un-baked graph. The architecture deliberately pre-bakes so routing pays zero per-request overhead beyond two float32 reads per edge.
+- Generalization to other cities — folded into FEAT-1 chunk 4 (Evanston graph bake) and chunk 9 (Evanston canopy/parks data) when that feature ships.
+
+**Pending verification:** real Railway deploy verification tracked as **PV-006** in [`Pending_Verification.md`](Pending_Verification.md) — bake step ran in container, walking.py boots without "Refusing to load" error, greenest diverges from fastest on the marquee Lakeview-East → Lincoln-Park fixture, fastest is byte-identical on a baseline route, `prefer_pedestrian` custom flavor still routes. Code-side correctness is verified by the 14-test [`test_walking_greenest.py`](backend/tests/test_walking_greenest.py) suite; the production verification is purely "did the in-container bake produce the expected pickle and did the fail-fast guard stay quiet."
+
+**Calibration verdict:** starting constants from the spec ship as-is. The fixture spread shows healthy behavior — Lakeview East → Lincoln Park diverges by +3 % distance for **5× more park exposure** (avg 0.187 vs 0.037), short utility routes detour by ≤ 1 %, no fixture exceeds the 2× detour floor, no edge sits at the floor by accident (the max-discount edge combo of footway + canopy=1 + park=1 lands exactly at the floor by construction). The Logan Square boulevard route is identical between fastest and greenest because boulevards already win on length — the boulevard system is its own natural optimum, and the new signal happens to agree.
+
+---
+
+## Parks + Green-Space Heatmaps (Neighborhood Explorer)
+**Type:** Bolt-On | **Area:** Backend + Frontend + Data | **Shipped:** 2026-05-14
+
+Two new heatmap overlays for the Neighborhood Explorer's isochrone, distinguishing **authoritative Chicago Park District park footprints** (saturated `--field` green, sharp polygon edges) from **OSM-derived non-CPD green space** (softer `--moss-500` wash — cemeteries, golf courses, Cook County Forest Preserves, school athletic fields). The existing OSM `parks` place category continues to feed pin-level "there is a park here" results; these layers answer the orthogonal question "how much of this walkshed is parkland or green space." Both toggle alongside the residential and tree-canopy heatmaps; default off so existing users don't see new overlays they didn't opt into.
+
+**Why two layers, not one:** CPD's "Parks - Chicago Park District Park Boundaries" dataset is authoritative for Park District jurisdiction and includes per-park `name` + `acres` — the metadata the planned Greenest-routing feature (FEAT-4) needs to weight "proximity to a 1208-acre Lincoln Park" differently from "proximity to a 0.2-acre pocket park." OSM `landuse=cemetery` / `leisure=golf_course` / `leisure=nature_reserve` / `landuse=recreation_ground` cover what CPD doesn't (Graceland / Rosehill cemeteries, Diversey golf, Cook County Forest Preserves), but with mixed "pleasant to walk" semantics — the kinds shouldn't be folded into routing weights. Keeping the two artifacts separate preserves both signals.
+
+**Backend (data layer):**
+- New [`backend/scripts/build_parks.py`](backend/scripts/build_parks.py) — fetches `https://data.cityofchicago.org/resource/ejsh-fztr.geojson` (the `.geojson` variant; the classic `.json` SODA endpoint returns empty column maps for this geospatial asset) via the shared `_cdp_client.py` helper. Output [`backend/data/parks_polygons.json`](backend/data/parks_polygons.json) — 982 KB, 804 outer rings from 617 CPD park features, each carrying `name` + `acres`. Refresh cadence yearly.
+- New [`backend/scripts/build_green_space.py`](backend/scripts/build_green_space.py) — Overpass query for the four OSM kinds inside the street-graph bbox. Output [`backend/data/green_space_polygons.json`](backend/data/green_space_polygons.json) — 303 KB, 533 polygons (73 cemeteries / 38 golf / 88 nature reserves / 334 rec grounds). Each polygon carries `kind` for per-kind styling.
+
+**Backend (runtime):**
+- New [`backend/parks.py`](backend/parks.py) — STRtree-backed loader, `parks_in_polygon(polygon) → FeatureCollection | None`. One Feature per park (MultiPolygon parks grouped by name), `properties` carries `{ name, acres }`. Returns `None` cleanly when the artifact is missing or no parks overlap.
+- New [`backend/green_space.py`](backend/green_space.py) — STRtree-backed loader, `green_space_in_polygon(polygon) → FeatureCollection | None`. One Feature per `kind` (intra-kind polygons unioned into a single MultiPolygon). Returns `None` cleanly when the artifact is missing or no polygons overlap.
+- [`backend/main.py`](backend/main.py) `/explore` response gains `parks_heatmap` + `green_space_heatmap` fields alongside `residential_heatmap` / `tree_canopy_heatmap`.
+- New [`backend/tests/test_parks.py`](backend/tests/test_parks.py) + [`backend/tests/test_green_space.py`](backend/tests/test_green_space.py) cover artifact loads, polygon clip GeoJSON shape, empty-overlap, missing-artifact paths. Response-shape assertions added to [`test_explore_endpoint.py`](backend/tests/test_explore_endpoint.py).
+
+**Frontend:**
+- Two new heatmap-only category rows in the **Outdoors** group of [`exploreCategories.js`](frontend/src/lib/exploreCategories.js): "Park footprints (heatmap)" (`heatmapKey: "parks_heatmap"`) and "Other green space (heatmap)" (`heatmapKey: "green_space"`).
+- [`explorePrefs.js`](frontend/src/lib/explorePrefs.js) gains `showParksHeatmap` + `showGreenSpaceHeatmap` (both default `false`) plus sanitize branches. The shared `HEATMAP_LAYERS` registry binds key → prefKey so the toggle / select-all / clear-all handlers in `App.jsx` drive themselves; adding the third + fourth heatmap was one entry per row in the registry, not bespoke wiring.
+- [`MapExploreLayer.jsx`](frontend/src/map/MapExploreLayer.jsx) paints two new MapLibre layers. Z-order (bottom → top): residential → green-space → tree canopy → CPD parks → place pins → route polyline. CPD parks sit above green-space so a park tagged as both visually wins as the authoritative source. Theme-reactive recolor via the existing `themeVersion` observer.
+- The `ExploreCategoryPanel` was generalized during chunk 3 from a single `residential` boolean to a `heatmapStates: {key: bool}` map + `onToggleHeatmap(key, e)` signature; the four heatmap rows (residential, parks, tree canopy, green space) all flow through the same handler. The per-group selection count memo keys on the four primitive booleans so an inline-literal `heatmapStates` object reference doesn't bust the cache.
+
+**Mobile parity (chunk 4):** the toggles ride the same `WFCheck` row used on desktop, rendered inside the `MobileLayout` bottom sheet under the **Outdoors** group. The 8 px deadzone in [`WFSheet`](frontend/src/wayfarer/primitives.jsx)'s body-drag state machine prevents a toggle tap from triggering a sheet snap (same posture as Tree canopy). `handleToggleHeatmap` does not re-fetch — toggling a heatmap on/off shows/hides the layer instantly.
+
+**Tests:** new [`explorePrefs.test.js`](frontend/src/lib/explorePrefs.test.js) cases for `showParksHeatmap` + `showGreenSpaceHeatmap` round-trip + wrong-type fallback (4 added, `explorePrefs` suite 20/20). Backend suite green; frontend suite **296/296 passing**.
+
+**Pending verification:** real-device mobile sign-off tracked as **PV-004** in [`Pending_Verification.md`](Pending_Verification.md) — toggle taps not interfering with sheet snap, dual-layer visual distinction, z-order on overlap, persistence across reload, Cream ↔ Dusk theme recolor, isochrone clipping. Wiring is structurally identical to desktop (and to the shipped Tree canopy row), but needs a person on a phone to confirm.
+
+**Out of scope:** routing integration (covered by planned FEAT-4, Greenest Routing — `parks_polygons.json` is the source artifact for the park-proximity edge-weight bake; green-space is intentionally **not** fed to routing because cemeteries / golf carry mixed "pleasant to walk" semantics); per-park amenity filtering (the existing OSM `parks` place category serves that need); merge / dedupe with the existing OSM `parks` pin category (they coexist deliberately); multi-city generalization (part of FEAT-1 chunk 9).
+
+---
+
+## Tree Canopy Heatmap (Neighborhood Explorer)
+**Type:** Bolt-On | **Area:** Backend + Frontend + Data | **Shipped:** 2026-05-14
+
+A tree-density overlay for the Neighborhood Explorer's isochrone, sourced from OpenStreetMap `natural=tree` nodes (~30,803 Chicago-bbox points) and baked at ingest time into a sparse 50 m KDE grid. Walkers care about *where it's pleasant to walk* — shade is the single biggest comfort lever on a summer afternoon — so the layer answers "how shaded is this walkshed" in three opacity-stepped moss bands rather than per-tree dots. Toggleable alongside residential, parks, and green-space heatmaps; defaults off so existing users don't see a new overlay they didn't opt into.
+
+**Source pivot:** the original FEATURE_PLANS scope assumed a Chicago Data Portal "Street Tree Inventory" dataset. CDP turned out not to publish a comprehensive per-tree inventory (only 311 trim/debris service requests and seasonal Christmas-tree recycling). Pivoted on 2026-05-12 to OSM `natural=tree` nodes via Overpass — uneven mapper coverage but real per-tree point data, no CDP credentials required, and matches the source pattern of `build_residential.py`.
+
+**Backend (data layer):**
+- New [`backend/scripts/build_tree_canopy.py`](backend/scripts/build_tree_canopy.py) — Overpass query for `natural=tree` nodes inside the Chicago bbox → 2D histogram at 50 m resolution → gaussian filter at 75 m bandwidth → max-normalized 0–1 density grid → sparse-encoded JSON (skip zero cells). Refresh cadence yearly.
+- New [`backend/data/tree_canopy_kde.json`](backend/data/tree_canopy_kde.json) — sparse 50 m KDE grid, ~5,700 non-zero cells out of ~240k city-wide, ~500 KB on disk.
+
+**Backend (runtime):**
+- New [`backend/tree_canopy.py`](backend/tree_canopy.py) — loads the KDE artifact once at server start; `tree_canopy_in_polygon(polygon)` clips cells whose centroids fall inside the isochrone and returns a GeoJSON FeatureCollection of up to three unioned-square density bands (`low` ≥ 0.05, `mid` ≥ 0.15, `high` ≥ 0.40). Returns `None` cleanly when the artifact is missing or no cells overlap.
+- [`backend/main.py`](backend/main.py) `/explore` response gains a `tree_canopy_heatmap` field alongside `residential_heatmap` / `parks_heatmap` / `green_space_heatmap`.
+- New [`backend/tests/test_tree_canopy.py`](backend/tests/test_tree_canopy.py) (7 cases) covers artifact load, polygon clip, empty-overlap, missing-artifact paths. Response-shape assertion added to [`test_explore_endpoint.py`](backend/tests/test_explore_endpoint.py).
+
+**Frontend:**
+- New `tree_canopy_heatmap` pseudo-category in the **Outdoors** group of [`exploreCategories.js`](frontend/src/lib/exploreCategories.js) (`heatmapOnly` row — same wiring used by parks + green space).
+- [`explorePrefs.js`](frontend/src/lib/explorePrefs.js) gains `showTreeCanopyHeatmap` (default `false`) plus a sanitize branch. The shared `HEATMAP_LAYERS` registry binds key → prefKey so the toggle / select-all / clear-all handlers in `App.jsx` drive themselves.
+- New `--moss-100`, `--moss-300`, `--moss-500` tokens in [`wayfarer/tokens.css`](frontend/src/wayfarer/tokens.css) with per-theme overrides in [`themes.css`](frontend/src/wayfarer/themes.css). Cream theme reads as a faint moss wash; Dusk theme darkens proportionally.
+- [`MapExploreLayer.jsx`](frontend/src/map/MapExploreLayer.jsx) paints the new `explore-canopy-fill` MapLibre layer using a `match` expression on `density_band`. Theme-reactive recolor via the existing `themeVersion` observer (no per-render cost).
+- New `<WFAttribution>` primitive in [`wayfarer/primitives.jsx`](frontend/src/wayfarer/primitives.jsx) — small "Data: City of Chicago Open Data Portal · OpenStreetMap · LocationIQ" subline retroactively crediting upstream sources the project already uses. Rendered below the colophon in [`Footer`](frontend/src/components/Footer.jsx) (page footer) and mirrored in [`ShareDispatch`](frontend/src/components/ShareDispatch.jsx) so the share-card PNG carries the attribution when shared standalone.
+
+**Calibration story:** the original density thresholds (0.25 / 0.5 / 0.75) left only ~580 cells visible after the live OSM fetch, concentrated in Grant/Millennium Park where mappers are most active. Retuned on 2026-05-12 to **0.05 / 0.15 / 0.40**, surfacing ~5,700 cells across the city (low 4,341 / mid 1,205 / high 168) so neighborhood parkways get a faint moss wash while the downtown-park hierarchy stays intact.
+
+**Honest framing — OSM coverage caveat:** because the source is OSM `natural=tree`, density partly reflects where mappers spent time, not real canopy. Lincoln Park's residential blocks read sparser than Grant Park's curated mapping. The toggle copy frames the layer as a *tree-density signal* rather than a canopy-fraction model. A future pivot to NLCD raster canopy data is scoped out (out-of-scope at ship time) and remains an open path if the signal proves too uneven in real use.
+
+**Tests:** new [`explorePrefs.test.js`](frontend/src/lib/explorePrefs.test.js) cases for `showTreeCanopyHeatmap` round-trip + wrong-type fallback. Backend suite green; frontend suite **292/292 passing**.
+
+**Pending verification:** real-device mobile sign-off tracked as **PV-005** in [`Pending_Verification.md`](Pending_Verification.md) — toggle behavior inside the `MobileLayout` bottom sheet, theme recolor on Dusk swap, and share-card PNG capture of the new attribution subline. Wiring is structurally identical to desktop (same panel + handler; `WFSheet`'s 8 px body-drag deadzone protects taps from triggering snap), but needs a person on a phone to confirm.
+
+**Out of scope:** routing integration (covered by FEAT-4, Greenest Routing); raster canopy fallback; private-yard / non-parkway canopy; multi-city generalization (part of FEAT-1 chunk 9).
+
+---
+
+## Local-First Geocoding + LocationIQ Fallback
+**Type:** Structural | **Area:** Backend + Frontend + Data | **Shipped:** 2026-05-12
+
+Replaces the previous Google Maps Geocoding fallback with a five-tier local-first cascade backed by a 71.9 MB SQLite/FTS5 artifact (`backend/data/chicago_geocode.db`) plus LocationIQ as the runtime hosted fallback. Every forward lookup now runs through, in order: coord-pair regex → exact `NEIGHBORHOOD_COORDS` → fuzzy `NEIGHBORHOOD_COORDS` → `local_search.forward` (FTS5 over 519,053 Chicago OSM addresses + 45,670 cross-streets + curated POIs) → LocationIQ `/v1/search`. Reverse mirrors the same shape. Results from LocationIQ — both hits and misses — persist to `cached_forward` / `cached_reverse`, so a query that ever resolves once never re-bills the hosted service. Driven by: zero variable cost at current scale, the Google ToS §3.2.3(b) 30-day storage limit, and the need for a real autocomplete UI rather than form-submit-then-geocode.
+
+The hosted fallback is **optional**: without `LOCATIONIQ_API_KEY` set, free-text queries that miss every local tier simply return `None`. Nearly all real Chicago queries are resolved by the local tiers; LocationIQ exists for the long tail.
+
+**Why this answers cost + quality:** the Chicago Data Portal address points (sourced via OSM Overpass at ingest time) are the city's own authoritative address file — coords are at least as good as Google's for in-Chicago lookups. Cross-streets derived from the street graph are guaranteed to land on routable graph nodes (strictly better than any geocoder for the routing use case — no snap step needed). LocationIQ's 5,000 req/day free tier is never threatened at Passage's scale and explicitly permits permanent caching.
+
+**Backend (data layer):**
+- New `backend/data/chicago_geocode.db` (~71.9 MB, gitignored — generated locally by the build scripts below). Four FTS5-indexed tables: `addresses`, `intersections`, `cached_forward`, `cached_reverse`.
+- New ingestion scripts: [`backend/scripts/build_address_points.py`](backend/scripts/build_address_points.py) (OSM Overpass → 519k normalized addresses), [`build_intersections.py`](backend/scripts/build_intersections.py) (OSM Overpass named centerlines + Shapely STRtree geometric crossings → 45k cross-street pairs), [`migrate_geocode_cache.py`](backend/scripts/migrate_geocode_cache.py) (one-shot: legacy `geocode_cache.json` → `cached_*` tables, then renames the JSON to `.deprecated`). Shared helpers: [`_geocode_db.py`](backend/scripts/_geocode_db.py) (schema + `connect()`), [`_cdp_client.py`](backend/scripts/_cdp_client.py) (Socrata SODA), [`geocode_text.py`](backend/geocode_text.py) (address + street normalize).
+
+**Backend (runtime):**
+- New [`backend/local_search.py`](backend/local_search.py): `autocomplete()` (source-priority ranking neighborhood > intersection > address > POI, with bbox + Chicago-center tiebreakers, label-level dedupe), `forward()`, `nearest_address()`, `parse_cross_street()` (handles `and`, `&`, `@`, `at`, `x`, `/`, `\`, `intersection of`, `corner of`, `the corner of` + directional/suffix variants). Read-only SQLite connection, mmap'd, lazy.
+- Full rewrite of [`backend/geocoding.py`](backend/geocoding.py): `geocode_google` → `geocode_external` (LocationIQ `/v1/search`); `_reverse_geocode_google` → `_reverse_geocode_external` (LocationIQ `/v1/reverse`); JSON cache plumbing (`_geocode_cache`, `_load_geocode_cache`, `_save_geocode_cache`, atexit flush, FIFO eviction) fully retired in favor of SQLite-backed `_cache_get_forward` / `_cache_set_forward` / `_cache_get_reverse` / `_cache_set_reverse`. The 429 circuit breaker is preserved verbatim and now trips on LocationIQ 429s. `resolve_location` cascade threads through `local_search.forward` before the hosted fallback; `reverse_geocode_point` adds `local_search.nearest_address` as the Tier-2 reverse step.
+- New `GET /autocomplete?q=&limit=` endpoint in [`backend/main.py`](backend/main.py). Local-first; supplements with one LocationIQ result only when local hits < 3 AND the query's first token is digit-prefixed (heuristic for a hand-typed address). Silently drops the supplement when the breaker is open so the typeahead never 503s.
+- `LocationOutsideChicagoError` and `GeocoderDegradedError` preserved unchanged.
+- New `backend/tests/conftest.py` clears `_LOCATIONIQ_API_KEY` for the session so tests don't depend on a developer's local `.env`.
+
+**Frontend:**
+- New [`frontend/src/components/AddressAutocomplete.jsx`](frontend/src/components/AddressAutocomplete.jsx) — generic typeahead combobox with pluggable `getSuggestions(query, {signal})`. Debounced 150 ms with abort-on-keystroke; WAI-ARIA combobox 1.1 inline pattern (`role="combobox"` / `aria-controls` / `aria-expanded` / `aria-activedescendant`); full keyboard nav (`↑` / `↓` / `Enter` / `Esc` / `Home` / `End`); soft-fails on errors. Mobile parity via React portal: the listbox renders into `document.body` with `position: fixed` and is repositioned on `scroll` (capture phase) / `resize` / `visualViewport.resize` + `scroll`. iOS soft-keyboard support is the load-bearing case — `visualViewport.height` shrinks when the keyboard opens, and the `maxHeight` clamp keeps the bottom row above the keyboard.
+- New [`frontend/src/lib/autocompleteApi.js`](frontend/src/lib/autocompleteApi.js) — thin `fetchAutocomplete(query, {limit, signal})` over `GET /autocomplete`, 5 s timeout, reuses `fetchWithTimeout` + `backendUrl`.
+- [`App.jsx`](frontend/src/App.jsx) route stop inputs swapped from raw `<input type="search">` to `<AddressAutocomplete>` driven by `fetchAutocomplete` (API mode).
+- [`ExploreForm.jsx`](frontend/src/components/ExploreForm.jsx) community-area picker swapped from `<select>` to `<AddressAutocomplete>` driven by a local filter over the 77 names (local-only mode — the backend's `lookup_centroid` only accepts those exact 77 strings, so a full-address-autocomplete origin is deferred to Feature 1 / Multi-City).
+- CSS in [`App.css`](frontend/src/App.css): `.address-autocomplete*` rules including a `--portaled` variant for the fixed-positioned listbox; new `.sr-only` helper for the live-region result-count announcement.
+- 12 `App.test.jsx` selectors updated from `getAllByRole("searchbox")` to `getByRole("combobox", { name: "Origin" / "Destination" })` since the inputs now declare `role="combobox"`.
+
+**Docs:**
+- [`backend/.env.example`](backend/.env.example): `GOOGLE_MAPS_API_KEY` row replaced with `LOCATIONIQ_API_KEY` and the free-tier policy.
+- [`CLAUDE.md`](CLAUDE.md) + [`README.md`](README.md) rewritten across the geocoding sections: setup instructions, the "Geocoding (local-first cascade)" + "Address autocomplete" entries in Key Design Decisions, `/reverse-geocode` source enum, new `/autocomplete` endpoint reference. Multi-City Support plan in [`FEATURE_PLANS.md`](FEATURE_PLANS.md) also updated to reference `LOCATIONIQ_API_KEY` and per-city SQLite files instead of Google + per-city JSON.
+- [`docs/MOBILE_TESTING.md`](docs/MOBILE_TESTING.md): added "Address autocomplete — Chunk 5 mobile sign-off checklist" with iPhone Safari + Android Chrome checklists for portrait + landscape.
+- [`backend/scripts/verify_neighborhood_coords.py`](backend/scripts/verify_neighborhood_coords.py): deliberately **kept** on Google as an independent cross-source for landmark verification (LocationIQ + our local indexes are both OSM-backed; Google is the only genuinely independent reference). Docstring updated to make this intentional, not legacy.
+- `backend/utils.py:CHICAGO_BBOX_GOOGLE`: now only used by the verify script. Annotated as such; safe to remove if the verify script ever migrates.
+
+**Tests:**
+- Backend: **194 pass / 1 skipped**. New: [`test_local_search.py`](backend/tests/test_local_search.py) (34 cases — cross-street parser variants, autocomplete ranking, source-priority dedupe, Chicago-bbox bias, label-dedupe for OSM-split intersections), [`test_autocomplete_endpoint.py`](backend/tests/test_autocomplete_endpoint.py) (validation + the four LocationIQ supplement-gate paths). Updated: [`test_geocoding.py`](backend/tests/test_geocoding.py) (Google → LocationIQ), [`test_main.py`](backend/tests/test_main.py) `TestGeocoderCircuitBreaker` (429 mock body changed from Google's `OVER_QUERY_LIMIT` to LocationIQ's `Rate Limited`; cache pop uses the new `_cache_clear_forward_for_test` hook).
+- Frontend: **268 pass**. New: [`AddressAutocomplete.test.jsx`](frontend/src/components/AddressAutocomplete.test.jsx) (15 cases — debounce coalescing, click + keyboard selection, ArrowUp wrap, Escape close, Enter-without-active preserves form submit, empty-query short-circuit, blur close, in-flight abort on keystroke, soft-fail on getSuggestions throw, source-pill rendering, portal-into-`document.body`, `positioning="absolute"` opt-out, `position: fixed` inline style, visualViewport-resize listener wiring); [`ExploreForm.test.jsx`](frontend/src/components/ExploreForm.test.jsx) (6 cases — combobox role + accessible name, local prefix filtering, commit-only-on-known-name, mid-type does NOT touch parent state, kind-toggle hide/restore round-trip).
+
+**Post-chunk-5 audit fix.** A scope re-audit on 2026-05-12 caught a real UX bug in chunk 4's ExploreForm wiring that the original tests had missed: the AddressAutocomplete's `value` was bound directly to `origin.communityArea`, so typing into the field updated only an internal ref — the displayed text stayed pinned to the persisted origin name. Replaced the ref with a controlled local `areaQuery` state synced from `origin.communityArea` via `useEffect`, so what the user types is what they see, and the parent's origin only commits when a suggestion is selected.
+
+**Verified locally** against a running uvicorn (no `LOCATIONIQ_API_KEY` set during development — the local cascade resolved every probe):
+- `?q=Wrigleyville` → Tier 1 (in-memory neighborhood).
+- `?q=1060 W Addison St` → Tier 2 addresses.
+- `?q=Clark and Belmont` / `?q=Clark%2FBelmont` → Tier 2 intersections; coord on a street-graph node.
+- `/reverse-geocode?lat=41.9476&lon=-87.6553` → Tier 1 neighborhood label.
+- Circuit-breaker test mocking a LocationIQ 429 trips the breaker, subsequent calls short-circuit, breaker closes after cool-off.
+
+**Pending — real-device verification:** the mobile-sheet portal behavior, iOS soft-keyboard repositioning, and the WAI-ARIA TalkBack pattern on Android Chrome all need a human in front of a phone. The checklist lives in [`docs/MOBILE_TESTING.md`](docs/MOBILE_TESTING.md) under "Address autocomplete — Chunk 5 mobile sign-off checklist".
+
+**Deliberate departures from the original plan:**
+- Address source switched from Chicago Data Portal Address Points → OSM Overpass `addr:housenumber+addr:street` because the Data Portal dataset wasn't where the plan claimed. ~95 %+ Chicago coverage; LocationIQ catches the rest.
+- Intersection source switched from "walk the consolidated street graph" → fresh Overpass query for named centerlines + Shapely STRtree geometric crossings, because OSMnx's `consolidate_intersections` step strips most names from edges connecting collapsed nodes (Clark Street had only 18 named edges in the consolidated graph; missed every famous intersection). Result: 37,693 unique pairs, every spot-checked landmark resolves.
+- Intersections stored in **one canonical alphabetical ordering** (rather than the spec's "both orderings") — FTS5's column-less `MATCH` makes order-agnostic queries trivial, so half the rows for identical query behavior.
+- Two `cached_*` tables instead of the spec's single `cached` table — schemas differ enough (`query` PK vs. `(lat_q, lon_q)` PK) that one table would need nullable columns.
+- Explorer combobox kept filtering **locally** over the 77 community-area names rather than calling `/autocomplete`. The backend's `lookup_centroid` only accepts those 77 strings — a full-address Explorer origin is a Feature-1 (Multi-City) area-division change, not a chunk-4 scope expansion.
+- Wayfarer `WFInput` primitive (suggested by the spec) was retired in May 2026; the input styling comes from `.form input[type="search"]` (when nested) or a mirror rule on `.address-autocomplete-input` (when not). Functionally equivalent.
+
+---
+
+## PWA Icon Rebrand (walkpath → passage)
+**Type:** Bolt-On | **Area:** Frontend (assets + manifest) | **Shipped:** 2026-05-12
+
+User-facing icon and manifest assets were renamed from the historical `walkpath-icon-option-a-*` filenames to the current product brand. Internal identifiers (the `walkpath:` localStorage namespace, the `WPIcon` component, `walkpath-icons.jsx`, and MapLibre `walk-path` source IDs) are intentionally left alone — per the naming carve-out in CLAUDE.md, renaming them would orphan user data and force a cascade of import churn for no user benefit.
+
+**What changed:**
+- Replaced six legacy PNGs + an SVG in `frontend/public/` (`favicon.svg`, `walkpath-icon-option-a-{180,192,512}.png`, `walkpath-icon-option-a.svg`) with the new icon set: `passage-icon.svg`, `passage-icon-{16,32,180,192,512}.png`.
+- [frontend/index.html](frontend/index.html) — three `<link rel="icon">` tags + `<link rel="apple-touch-icon">` now point at the new files; 16 × 16 and 32 × 32 favicons added (the legacy set only had a 192 PNG plus the SVG).
+- [frontend/vite.config.js](frontend/vite.config.js) — `vite-plugin-pwa` `includeAssets` and the manifest `icons` array updated to the new filenames; manifest now ships dedicated 192 × 192 and 512 × 512 PNG icons (the legacy manifest only carried `image/svg+xml` with `sizes="any"`, which some installers refuse). 512 × 512 doubles as the `maskable` icon.
+- The old `frontend/public/manifest.webmanifest` static file was deleted; the only manifest in production is the one Vite emits from `vite.config.js`.
+
+**Naming carve-out (unchanged):** `walkpath:*` localStorage keys, `WPIcon` component, `walkpath-icons.jsx` filename, and `walk-*` MapLibre source IDs all still use the historical prefix. See the note at the top of [`CLAUDE.md`](../CLAUDE.md).
+
+---
+
+## Chicago Data Portal Integration (Explorer)
+**Type:** Bolt-On | **Area:** Backend (ingestion) + Frontend (catalog) | **Shipped:** 2026-05-12
+
+Authenticated ingestion from the Chicago Data Portal for libraries, schools, police stations, and fire stations. Replaces the anonymous `requests.get` call in `build_libraries.py` with an HTTP-Basic SODA client shared by four scripts, gains two net-new public-safety categories in the explorer, and gives schools a CPS-authoritative layer on top of OSM coverage.
+
+**Backend — shared client + ingestion scripts:**
+- [backend/scripts/_cdp_client.py](backend/scripts/_cdp_client.py) — `fetch_rows(endpoint_env, *, limit=5000, where=None)`. Loads `CHICAGO_DATA_PORTAL_API_KEY_ID` / `_SECRET` + the per-dataset `CDP_API_ENDPOINT_*` URL from `backend/.env` via `dotenv`, sends `Authorization: Basic base64(id:secret)`. Raises `RuntimeError` naming the offending env var when creds or endpoint are missing.
+- [backend/scripts/build_libraries.py](backend/scripts/build_libraries.py) — rewritten to use `_cdp_client`. Source key (`cpl_locations`) and mapping unchanged → existing dedupe semantics preserved.
+- [backend/scripts/build_schools_cps.py](backend/scripts/build_schools_cps.py) — `cps_schools` source key, `schools` category. `name = short_name.title()`, `address = address.title()`, coords from string-typed `lat` / `long`.
+- [backend/scripts/build_police_stations.py](backend/scripts/build_police_stations.py) — `cpd_stations` source key, `police_stations` category. Display name: `District {n} — {district_name.title()}` for numeric districts, `district_name.title()` otherwise (handles "Headquarters").
+- [backend/scripts/build_fire_stations.py](backend/scripts/build_fire_stations.py) — `cfd_stations` source key, `fire_stations` category. Expands unit prefix `E`→`Engine`, `T`→`Truck`, `S`→`Squad`; unknown prefixes pass through raw. Coords nested at `location.latitude` / `location.longitude`.
+- No changes to `build_places_osm.py` — OSM schools stay in `places_osm.json`. CPS rows win at colliding `(category, ~1m point)` via the existing dedupe at [`places.py:104`](backend/places.py#L104); universities, colleges, private/parochial schools continue to come from OSM.
+- [backend/.env.example](backend/.env.example) — declares the four `CDP_API_ENDPOINT_*` vars plus the credentials pair; values stay blank per the project convention.
+
+**Frontend — catalog:**
+- [frontend/src/lib/exploreCategories.js](frontend/src/lib/exploreCategories.js) — new top-level `public_services` group with `police_stations` (`P`, `--harbor`) and `fire_stations` (`F`, `--ember`). Existing `P` (parks, `--field`) and `F` (gyms, `--harbor`) are disambiguated by color.
+- No `places.py` / `explore.py` / `main.py` changes — category-key plumbing is data-driven end-to-end.
+
+**Tests:** new [backend/tests/test_cdp_client.py](backend/tests/test_cdp_client.py) (6 cases — missing key-id / secret / endpoint / blank endpoint, plus auth header + `$limit` and optional `$where` propagation). Existing `test_places.py` (15) / `test_explore.py` (5 + 1 skipped) / `test_explore_endpoint.py` (15) still pass.
+
+**Live row counts (2026-05-12 fetch):** libraries 81 (curated total 105 after merge with farmers markets). Schools / police / fire counts confirmed by user during chunk-2 run.
+
+---
+
+## Accessibility Mode (Mobility profile)
+**Type:** Bolt-On | **Area:** Frontend | **Shipped:** 2026-05-12
+
+An opt-in **Mobility profile** in `PersonalizeModal` (Walking default / Wheeled) that recognises not every Passage user walks. Wheeled hardens routing prefs, reframes the personal-progress metric away from step count, and lays the foundation for richer surface/grade work later.
+
+**Persistence + plumbing:**
+- `loadMobilityProfile()` / `saveMobilityProfile()` / `loadMobilityOverrideDismissed()` / `saveMobilityOverrideDismissed()` in [frontend/src/lib/personaPrefs.js](frontend/src/lib/personaPrefs.js) — persisted under `walkpath:mobilityProfile` and `walkpath:mobilityOverrideNoticeDismissed`.
+- [`usePersonalization`](frontend/src/hooks/usePersonalization.js) surfaces the value alongside height / weight / pace.
+- [`useRouteFetch`](frontend/src/hooks/useRouteFetch.js) forces `avoid_stairs=true` and pins `pace="normal"` in the outgoing payload when the profile is `wheeled`. Persisted `walkpath:accessPrefs` and `walkpath:walkPace` are left untouched so a flip back to Walking restores the user's saved values.
+
+**Personalize UI:**
+- New "Mobility profile" section in [`PersonalizeModal`](frontend/src/components/PersonalizeModal.jsx) between "Daily measure" and "Display". Two-card segmented control mirroring the Theme pattern, with the relocated `avoid_stairs` / `prefer_pedestrian` toggles directly below. The route-form "Considerations" fieldset is removed.
+- When Wheeled is active, `avoid_stairs` is disabled+on; switching to Wheeled defaults `prefer_pedestrian` on but it stays user-toggleable. [`WFCheck`](frontend/src/wayfarer/forms.jsx) gained a `disabled` prop.
+- [`PaceSelector`](frontend/src/components/PaceSelector.jsx) is hidden from the route form in wheeled mode.
+
+**Metric reframing:**
+- [`StepHero`](frontend/src/components/StepHero.jsx) accepts a `metricMode` prop (`steps` | `distance`). In `distance` mode it renders `total_miles` + `total_minutes` as the primary metric and omits the calorie chip, calorie equivalent, daily-measure goal bar, and stride note.
+- [`WeeklySummaryPanel`](frontend/src/components/WeeklySummaryPanel.jsx) swaps to miles + minutes and computes a weekly mile target from `(dailyGoal × stride_in) / (12 × 5280)`. [`stepLog.js`](frontend/src/lib/stepLog.js) now persists `minutes` per entry; pre-existing entries without minutes render `—` until they age out of the 7-day window.
+- [`ShareDispatch`](frontend/src/components/ShareDispatch.jsx) PNG mirrors the swap: drop figure shows miles, stats grid drops calories and the pace cell, calorie equivalent aside is hidden.
+
+**Copy strategy:**
+- Profile-gated swap in [`lib/routeFormat.js`](frontend/src/lib/routeFormat.js) — motivation tiers and plain-text directions header swap "walked"/"walking" → "rolled"/"rolling" only when `mobilityProfile === "wheeled"`.
+- Neutral rewrite everywhere else (no runtime branching): "Log this walk" → "Log this trip"; "Multi-stop walks…" → "Multi-stop routes…"; aria "Walk planning mode" → "Route planning mode"; "No walkable area" → "No reachable area"; "Lately Walked" → "Recent trips"; popover "Walk here" → "Go here" (prop renamed `onPlaceWalkHere` → `onPlaceGoHere`); CompareDispatch "Worth Walking?" → "Worth the trip?"; RouteFlavorTabs detail "Shortest walk" → "Shortest route"; ShareDispatch explainer "their own walk" → "their own trip".
+- Internal identifiers unchanged per CLAUDE.md naming carve-out: `walkpath:*` localStorage keys, `walk-*` MapLibre source IDs, `WPIcon` component, `stepLog` `steps` field.
+
+**Other:**
+- [`RouteFlavorTabs`](frontend/src/components/RouteFlavorTabs.jsx) renders a small static line "Optimized for accessible routes." in place of the tabs when the response collapses to a single flavor AND `mobilityProfile === "wheeled"`.
+- [`ExploreForm`](frontend/src/components/ExploreForm.jsx) minutes label gained a small ⓘ tooltip noting the canonical 3 mph survey-time assumption (visible regardless of profile).
+- Override notice: when wheeled is active but the user's saved `accessPrefs.avoidStairs` is `false`, a dismissible inline note renders above route results — "Your Mobility profile is set to *Wheeled*, so stairs are avoided regardless of your saved preferences." Dismissal persists across reload.
+
+**Out of scope (deferred):** wheelchair wheel-rotation counter; surface/curb-cut/grade router enrichment; wheeled-aware Explore isochrone speed; CompareDispatch / `compareEstimates.js` copy rewrite; `Masthead` tagline; `ExploreForm` user-facing "walk" strings; `DirectionLedger` per-segment step prose.
+
+**Tests:** new [`PersonalizeModal.test.jsx`](frontend/src/components/PersonalizeModal.test.jsx), [`StepHero.test.jsx`](frontend/src/components/StepHero.test.jsx), and [`useRouteFetch.test.js`](frontend/src/hooks/useRouteFetch.test.js) cover profile persistence, the avoid_stairs disabled+on lock, prefer_pedestrian default-on toggle, motivation / directions header swap, and wheeled-mode payload override. Full suite 247/247 green.
+
+---
+
+## Neighborhood Explorer (Isochrone)
+**Type:** Structural | **Area:** Backend + Frontend | **Shipped:** 2026-05-11
+
+A second top-level mode that answers "what's around me on foot in 20 minutes?" rather than "how do I get to a known destination?" Pick an origin (current location or one of Chicago's 77 community areas) and a 5–45 min time budget; the backend returns an isochrone polygon, the neighborhoods whose centroids fall inside it, a category-filtered list of places, and a residential-area heatmap. Twelve planned chunks; all twelve landed across 2026-05-05 → 2026-05-11.
+
+**Backend — isochrone, places, boundary clip:**
+- [backend/explore.py](backend/explore.py) — bounded single-source Dijkstra over the pedestrian igraph (`distances(source=…)` with `length` weights), concave-hull polygon via `shapely.concave_hull` at ratio 0.4 with a convex-hull fallback, equirectangular-projected area, neighborhood-centroid containment via prepared geometry. LRU-cached on quantized `(lat, lon, minutes)`. Lake Michigan clip step `_clip_to_boundary` intersects the hull against the City of Chicago admin polygon (graceful no-op if the data file is missing).
+- [backend/community_areas.py](backend/community_areas.py) — 77-entry `COMMUNITY_AREA_CENTROIDS` table with case-insensitive lookup. Centroids are shapely `representative_point()` so they're guaranteed to fall inside each polygon, even O'Hare.
+- [backend/places.py](backend/places.py) — STRtree spatial index over OSM + curated places (~9,200 records across 22 category/subcategory pairs), prepared-geometry containment, residential-heatmap clipper that unions `landuse=residential` polygons intersecting the isochrone into a GeoJSON MultiPolygon.
+- [backend/main.py](backend/main.py) — `POST /explore` validates origin (exactly-one-of community_area / lat-lon, Chicago-bbox guard, snap-or-422), runs places + heatmap concurrently via `asyncio.gather` on the threadpool so shapely doesn't block the event loop. Response shape: `{ origin_coords, max_minutes, polygon, reachable_neighborhoods, stats: { node_count, area_sq_mi }, places, residential_heatmap }`.
+- Ingestion scripts under [backend/scripts/](backend/scripts/): `build_community_area_centroids.py`, `build_places_osm.py` (single batched Overpass `nwr` with 27 tag filters), `build_libraries.py` + `build_farmers_markets.py` (curated city feeds; share `_curated_common.merge_and_write`), `build_residential.py`, `build_chicago_boundary.py`. Generated data checked in at [backend/data/](backend/data/): `community_area_centroids.json`, `places_osm.json`, `places_curated.json`, `residential_polygons.json`, `chicago_boundary.json`.
+
+**Frontend — mode toggle, form, map paint, popups:**
+- [frontend/src/App.jsx](frontend/src/App.jsx) — top-level `mode` state (`route` ⇄ `explore`) persisted in `walkpath:mode`; explore-mode renders `exploreContents` (the form + category panel) instead of the route form. Geolocation-denied auto-fallback to community-area mode with prior pick restored.
+- [frontend/src/components/ExploreForm.jsx](frontend/src/components/ExploreForm.jsx) — origin selector (My location + Community area), 5–45 min slider that only commits on `onPointerUp`/`onKeyUp`, "Within reach" neighborhood-chip rail, locating-state on the submit button.
+- [frontend/src/components/ExploreCategoryPanel.jsx](frontend/src/components/ExploreCategoryPanel.jsx) — collapsible category groups (Daily life / Food & drink / Outdoors / Culture / Living at ship; a sixth, Public services, landed with Chicago Data Portal Integration on 2026-05-12), parent/child checkbox interplay, residential-heatmap as a "heatmap-only" pseudo-category.
+- [frontend/src/map/MapExploreLayer.jsx](frontend/src/map/MapExploreLayer.jsx) — owns the polygon fill + stroke, residential heatmap fill, supercluster pins (cluster radius 40, max-zoom 13), single-circle pin layer painted by a `match` expression on category, single-symbol glyph layer over the pin. Popup is a React root anchored by `maplibregl.Popup` so it stays glued to the pin during pan/zoom. Theme observer re-resolves CSS-var hex on Cream ↔ Dusk swap without refetching.
+- [frontend/src/mapHelpers.js](frontend/src/mapHelpers.js) — `renderExplore` sets up the three sources (`explore-poly`, `explore-residential`, `explore-places`) and the layer stack (`explore-poly-fill`, `explore-residential-fill`, `explore-poly-stroke`, `explore-places-cluster`, `-cluster-count`, `-pin`, `-glyph`).
+- [frontend/src/hooks/useExploreFetch.js](frontend/src/hooks/useExploreFetch.js) — abortable fetch with prefs ref so slider commits don't capture stale values, auto-fetch on mode flip into explore, refetch on category change. Subcategory filtering is client-side (the backend returns every place under each selected parent).
+- [frontend/src/lib/explorePrefs.js](frontend/src/lib/explorePrefs.js), [exploreCategories.js](frontend/src/lib/exploreCategories.js), [exploreApi.js](frontend/src/lib/exploreApi.js), [communityAreas.js](frontend/src/lib/communityAreas.js) — persistence (with sanitize that strips unknown keys and clamps the budget), the static category catalog, the API client, and the 77-name dropdown source.
+
+**Schema departures from the original spec:**
+- Response field is `subcategory`, not `sub_category` — for consistency with how the data is tagged everywhere else.
+- Polygon fill color is `--field` (Wayfarer token resolving to `#1f6d3b`), not the literal `#2d7a3e` from the spec — the token already exists and reads cleanly in both Cream and Dusk themes.
+
+**Tests:**
+- Backend: `test_explore.py` (7 cases — adds `test_lakefront_polygon_is_clipped_to_boundary` for the Streeterville case), `test_explore_endpoint.py` (15 cases), `test_explore_perf.py` (3 cases — 30-min < 500 ms, 45-min < 1.5 s, ≤80k node count), `test_places.py`, `test_community_areas.py`. Performance budgets measured at 30-min ≈ 114 ms / 45-min ≈ 156 ms on dev hardware — ~3–10× under target.
+- Frontend: `explorePrefs.test.js` (9 cases), `exploreCategories.test.js` (7 cases), `useExploreFetch.test.js` (8 cases — abort-on-unmount, refetch-on-categories, sentinel for empty selection), `MapExploreLayer.test.jsx` (4 cases — source/layer registration, residential heatmap, teardown on mode flip).
+
+**Mobile UX:**
+- Sheet auto-promotes peek → half on first explore entry.
+- Pin tap drops sheet to peek so the MapLibre popup isn't clipped under the sheet body.
+- Explore mode unlocks map pan/zoom by default — panning the polygon to look around is the whole point.
+
+**Resolved bugs along the way** (per `archive/RESOLVED_HISTORY.md`): BUG-033 (Walk-here failing on current-location origin), BUG-034 (stale `fetchRoute` closure), BUG-035 (`fitBounds` re-firing on every render), BUG-036 (graph eviction not clearing `_explore_quantized` LRU). All shipped in 67c8c17.
 
 ---
 
@@ -117,7 +416,7 @@ The Cream / Dusk theme switcher used to live in `TweaksPanel`, a hidden componen
 ## Map-First Mobile UI Foundation
 **Type:** Structural | **Area:** Frontend + Wayfarer | **Shipped:** 2026-05-05
 
-Replaces the single-breakpoint "stack the layout vertically" mobile fallback (a leftover from the Wayfarer Phase 1 migration) with a real map-first composition: below 768 px the app renders a new `MobileLayout` — full-bleed map, floating compact `Masthead`, and a draggable `WFSheet` containing form / results / directions. Wayfarer was extended with the responsive primitives the new layout depends on so future components inherit them.
+Replaces the single-breakpoint "stack the layout vertically" mobile fallback (a leftover from the Wayfarer Phase 1 migration) with a real map-first composition: below 480 px (originally 768 px — narrowed concurrently by the "Tablet range (481–1023 px) layout" entry below) the app renders a new `MobileLayout` — full-bleed map, floating compact `Masthead`, and a draggable `WFSheet` containing form / results / directions. Wayfarer was extended with the responsive primitives the new layout depends on so future components inherit them.
 
 This entry covers the platform layer; the sheet-behaviour refinements (snap memory, haptic, velocity, drag-from-body, landscape profile) and per-component polish (segmented pace, off-screen PNG, tablet range) shipped concurrently and have their own entries below.
 
@@ -129,7 +428,7 @@ This entry covers the platform layer; the sheet-behaviour refinements (snap memo
 - Form primitives ([forms.jsx](frontend/src/wayfarer/forms.jsx)) bumped to a 16 px font floor (defeats iOS zoom-on-focus) and a 44 px `minHeight` on `WFInput` / `WFButton` / `WFCheck` / `WFRadio`.
 
 **App-level branch:**
-- New [`useMediaQuery`](frontend/src/lib/useMediaQuery.js) hook — SSR-safe `matchMedia` subscription used for `(max-width: 768px)` and other breakpoints.
+- New [`useMediaQuery`](frontend/src/lib/useMediaQuery.js) hook — SSR-safe `matchMedia` subscription used for `(max-width: 480px)` and other breakpoints.
 - New [`MobileLayout`](frontend/src/components/MobileLayout.jsx) — composition root that takes `masthead`, `map`, and children, wraps them in a fixed-position shell, and owns the `WFSheet`.
 - [App.jsx](frontend/src/App.jsx) extracts `mainContents` and `mapNode` once and slots them into either the existing desktop two-column layout or `MobileLayout`. The same JSX nodes mean React (and the MapLibre instance) preserve component identity across breakpoint crossings — no re-init when a tablet rotates.
 - Sheet auto-promotes from peek to half on route arrival, respecting the user's stored snap preference (see Sheet Snap Memory entry).
@@ -177,6 +476,7 @@ The `WFSheet` previously only dragged from its handle, leaving the largest targe
 - **`touch-action` on the body:** kept the current default (`auto` / pan-y) rather than flipping to `none`. The commit branch only fires when `scrollTop === 0` — there's nothing for the browser to scroll above that, so native scroll quietly no-ops while the JS drag runs. Synthesizing body scroll ourselves would have been a far larger undertaking with no observable user-facing benefit. Worth re-testing on iOS Safari once the next round of mobile-device testing happens; if it reads off, the fix is to add `touch-action: none` to the body during the dragging phase only.
 
 
+## Tunnel-based mobile dev access (HTTPS)
 **Type:** Bolt-On | **Area:** Dev tooling | **Shipped:** 2026-05-05
 
 Real-device mobile testing previously required the phone to share Wi-Fi with the dev machine and hit the laptop's LAN IP over plain HTTP — which blocks every browser secure-context behavior (PWA service-worker registration, "Add to Home Screen", `navigator.geolocation` on iOS Safari, Web Share, clipboard writes) and excludes any reviewer not on the home network. A new tunnel orchestrator gives a public HTTPS URL for a session with no manual env wiring.
@@ -292,7 +592,9 @@ The fuzzy-match step in `resolve_location()` is now guarded by an explicit regre
 ## Cache + back off on Google Maps 429s
 **Type:** Bolt-On | **Area:** Backend + Frontend | **Shipped:** 2026-05-05
 
-A circuit breaker now fronts the Google Geocoding API. When Google returns HTTP 429 or API status `OVER_QUERY_LIMIT`, the breaker opens for an exponentially-increasing cool-off (60s → 120s → 240s, capped at 300s). During the cool-off, `geocode_google()` raises `GeocoderDegradedError` without making a network call; `main.py` converts that to HTTP 503 with `{"message": "The geocoding service is overloaded — try a Chicago neighborhood name (e.g., 'Wrigleyville') instead."}`. The first call after cool-off is a probe — success closes the breaker and resets the backoff; another 429 doubles it.
+> **Update (2026-05-12):** The hosted geocoder is now LocationIQ rather than Google Maps — see chunk 3 of the "Local-First Geocoding + LocationIQ Fallback" plan in [`FEATURE_PLANS.md`](FEATURE_PLANS.md). The circuit-breaker scaffolding described below was preserved verbatim during the cutover and now trips on LocationIQ 429s instead. `geocode_google` was renamed to `geocode_external`; the in-memory JSON cache (`_geocode_cache` + `geocode_cache.json`) was retired in favor of SQLite-backed `cached_forward` / `cached_reverse` reads + writes.
+
+A circuit breaker now fronts the hosted geocoder. When it returns HTTP 429 (or, originally, Google's API status `OVER_QUERY_LIMIT`), the breaker opens for an exponentially-increasing cool-off (60s → 120s → 240s, capped at 300s). During the cool-off, `geocode_external()` (originally `geocode_google()`) raises `GeocoderDegradedError` without making a network call; `main.py` converts that to HTTP 503 with `{"message": "The geocoding service is overloaded — try a Chicago neighborhood name (e.g., 'Wrigleyville') instead."}`. The first call after cool-off is a probe — success closes the breaker and resets the backoff; another 429 doubles it.
 
 The first two layers from the spec (aggressive cache writes, in-memory dict fronting the file cache) were already in place — `_geocode_cache` is checked at the top of `geocode_google` before any network I/O, and disk writes are batched every 50 entries with an `atexit` flusher. No additional `lru_cache` was needed.
 

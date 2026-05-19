@@ -1,15 +1,462 @@
 # Resolved History
 
-A unified log of all resolved issues across three categories. New entries are appended here when work is completed:
+A unified log of all resolved issues across four categories. New entries are appended here when work is completed:
 - **Bugs** — moved here from an active bug-tracking file when fixed.
 - **Technical Debt** — moved here from [`Technical_Debt.md`](Technical_Debt.md) when the debt is paid off.
 - **Efficiency Improvements** — moved here from [`Efficiency_Improvements.md`](Efficiency_Improvements.md) when implemented.
+- **Security Issues** — moved here from [`SECURITY.md`](../SECURITY.md) when remediated.
 
 Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ---
 
+## Security Issues Resolved
+
+### 2026-05-13 · Pickle deserialization of the pedestrian street graph (SEC-001)
+
+**Files:** `backend/walking.py`, `backend/.env.example`
+
+**Severity:** 🟡 Medium · **OWASP:** A08 — Software & Data Integrity Failures
+
+**What the issue was:** `_load_graph()` called `pickle.load()` on `street_graph_igraph.pkl` unconditionally. Python's pickle format can execute arbitrary code on load via `__reduce__` / `__setstate__`, so anything that could replace the file (compromised GitHub release artifact, write-mounted filesystem under `backend/`, a future feature that writes there) gained RCE in the FastAPI worker — including read access to `LOCATIONIQ_API_KEY` and `CHICAGO_DATA_PORTAL_API_KEY_*` from the process environment.
+
+**How it was resolved:** Added an optional SHA-256 integrity check that runs before `pickle.load`. When the `STREET_GRAPH_SHA256` env var is set, [`walking.py`](../../backend/walking.py) hashes the pickle file with `_sha256_of_file()` and compares against the expected digest; a mismatch logs an error and fails closed (no fallback to graphml, so an attacker who replaces the pickle cannot induce a downgrade). When the var is unset, the backend logs a one-time warning and loads without verification — preserving backward compatibility for existing deploys while nudging operators to enable the check. The `STREET_GRAPH_SHA256` slot was added to [`backend/.env.example`](../../backend/.env.example) with the `shasum`/`Get-FileHash` invocation. **Full operator runbook** — when to rotate the hash, where to set it (local `.env` + Railway service variables), what to look for in startup logs, and the emergency-bypass procedure — lives in [`CLAUDE.md`](../../CLAUDE.md) under "Pickle integrity check (SEC-001)" inside the Greenest-routing graph release runbook section. **Rotation cadence:** the hash must be rotated every time `fetch_street_graph.py` rebuilds the `.pkl` (yearly heatmap refresh, any OSM refresh, any FEAT-4 formula change); step 2 of the runbook's Deploy checklist enforces this so Railway never boots into the "Refusing to load" branch. Long-term, migrating the v3 artifact away from pickle (GraphML + `.npz` sidecar) would close the surface entirely; the hash check is the immediate mitigation.
+
+---
+
+### 2026-05-13 · No rate limiting on routing / explore / autocomplete endpoints (SEC-002)
+
+**Files:** `backend/main.py`, `backend/requirements.txt`
+
+**Severity:** 🟡 Medium · **OWASP:** A04 — Insecure Design
+
+**What the issue was:** None of `/route`, `/explore`, `/autocomplete`, or `/reverse-geocode` had per-IP throttling. Three concrete abuses followed: CPU saturation on `/explore` (each call ran a full-graph bounded Dijkstra over ~50–80k vertices, and the `@lru_cache(maxsize=32)` was easy to evict with varied `max_minutes`); CPU saturation on `/route` (up to 7 leg-Dijkstras per 8-stop request, cache busted by sub-1e-5° lat/lon jitter); and LocationIQ quota drain via `/autocomplete` and `/route` falling through to the hosted fallback. The 429 circuit breaker only mitigated quota exhaustion after the fact, and degraded service for legitimate users during cool-off.
+
+**How it was resolved:** Added `slowapi>=0.1.9` to [`requirements.txt`](../../backend/requirements.txt) and wired a `Limiter(key_func=get_remote_address)` into [`main.py`](../../backend/main.py). The `RateLimitExceeded` handler is registered on the app so callers receive a 429 with a Retry-After hint. Per-endpoint limits, tuned to each operation's cost: `/explore` 10/minute, `/route` 30/minute, `/autocomplete` 60/minute (typeahead is bursty), `/reverse-geocode` 60/minute. The keying is by connection peer, so production deploys behind a trusted proxy (Railway, Cloudflare) should retain L7 rate limiting at the edge as defense-in-depth — direct exposure during dev-tunnel sessions still gets reasonable protection in-app.
+
+---
+
+### 2026-05-13 · Resolved user coordinates logged unredacted alongside hashed query (SEC-003)
+
+**Files:** `backend/geocoding.py`
+
+**Severity:** 🟢 Low · **OWASP:** A09 — Security Logging & Monitoring Failures
+
+**What the issue was:** `_redact()` correctly hashed user-supplied query strings before logging (`q#<sha256-prefix>`), but the resolved or candidate coordinates were then logged at full 5-decimal precision in the same line — defeating the redaction for the exact PII the helper existed to protect. Free-text geocoder queries commonly resolve to user homes / workplaces, so a reader of backend logs could extract a user's home location correlated to their session activity. Three sites were affected: `LocationIQ geocoded q#... -> (41.92480, -87.70120)` on success, the matching out-of-bbox warning, and `cached_reverse write failed for (41.92480, -87.70120): ...` on reverse-cache failures. A fourth call (`LocationIQ reverse failed for (lat, lon): ...`) had the same shape.
+
+**How it was resolved:** Added a `_redact_coord(lat, lon)` helper in [`geocoding.py`](../../backend/geocoding.py) alongside `_redact()` that quantizes coordinates to 2 decimal places (~1.1 km at Chicago latitude) before formatting. All four log call sites were updated to use it. Preserves the diagnostic value (is it in Chicago? lakefront vs. west side?) without pinning the user to an address.
+
+---
+
+### 2026-05-13 · CORS `allow_origin_regex` read from unvalidated env var (SEC-004)
+
+**Files:** `backend/main.py`, `backend/.env.example`, `scripts/dev-tunnel.mjs`
+
+**Severity:** 🟢 Low · **OWASP:** A05 — Security Misconfiguration
+
+**What the issue was:** `DEV_TUNNEL_ORIGIN_REGEX` was passed verbatim to `CORSMiddleware(allow_origin_regex=...)` with no validation. The dev-tunnel script set it correctly (anchored, narrow), but nothing stopped a misconfigured production deploy from shipping with `.*`, an unanchored pattern like `https://my-app\.com` (which matches `https://my-app.com.evil.tld`), or just a stray dev `.env` copied into a prod environment. Combined with SEC-002 (no rate limits), a malicious cross-origin page could weaponize visitors' browsers to drain LocationIQ quota or saturate `/explore`. The `.env.example` warning was the only control.
+
+**How it was resolved:** Added a two-layer guard in [`main.py`](../../backend/main.py): (1) the regex is only honored when `APP_ENV` is one of `{"dev", "development", "local"}` — any other value (including unset) makes the backend log an error and discard the regex; (2) the regex must start with `^` and end with `$` or it is refused with a log error. [`scripts/dev-tunnel.mjs`](../../scripts/dev-tunnel.mjs) now sets `APP_ENV=development` in the spawned uvicorn's environment so the dev flow continues to work without manual config. [`.env.example`](../../backend/.env.example) was updated to document both env vars and the dev-only constraint.
+
+---
+
 ## Resolved Bugs
+
+### 2026-05-14 · Fetch timeouts surfaced as silent failures (no error, no result) (BUG-001, third scan)
+
+**Files:** `frontend/src/lib/fetchWithTimeout.js`, `frontend/src/lib/fetchWithTimeout.test.js`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useRouteFetch.test.js`, `frontend/src/hooks/useExploreFetch.js`, `frontend/src/hooks/useExploreFetch.test.js`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `fetchWithTimeout` armed an internal `AbortController` (`timeoutCtrl`) and aborted the fetch via that controller when the timeout fired. The rejection that surfaced was a generic `AbortError` — indistinguishable from a user-initiated abort via the external signal. Both `useRouteFetch` and `useExploreFetch` caught the rejection with `if (err.name === "AbortError" || signal.aborted) return;`, where `signal` was the *external* abort signal. On a real timeout, `err.name === "AbortError"` was true but `signal.aborted` was false, so the catch returned silently. The `finally` block then cleared the loading flag (since `!signal.aborted`). End result: the loading state turned off, no error message was set, no result was shown — the user saw the spinner / skeleton vanish and nothing replace it. Exactly the failure mode the timeout was supposed to surface.
+
+**How it was resolved:** Added a distinct `TimeoutError` class to [`fetchWithTimeout.js`](../../frontend/src/lib/fetchWithTimeout.js). The wrapper now tracks a `timedOut` flag inside the timeout callback; on a fetch rejection, if the AbortError originated from the timeout AND the external signal wasn't aborted, the rejection is reclassified to `TimeoutError`. Genuine user aborts and other failures pass through unchanged. Both hooks now translate `err.name === "TimeoutError"` into a user-friendly message (`"The routing service didn't respond in time. Please try again."` / `"The explorer didn't respond in time. Please try again."`) so the error surface stays terse and consistent with the rest of the dispatch copy. Regression tests in [`fetchWithTimeout.test.js`](../../frontend/src/lib/fetchWithTimeout.test.js), [`useRouteFetch.test.js`](../../frontend/src/hooks/useRouteFetch.test.js), and [`useExploreFetch.test.js`](../../frontend/src/hooks/useExploreFetch.test.js) pin the new shape: timeouts now reject with `TimeoutError` and the hooks expose the friendly copy via `error` / `exploreError`.
+
+---
+
+### 2026-05-14 · `normalize_address` / `normalize_street_name` left trailing directionals in place (BUG-002, third scan)
+
+**Files:** `backend/geocode_text.py`, `backend/tests/test_geocode_text.py` (new)
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The normalizers in [`geocode_text.py`](../../backend/geocode_text.py) stripped a leading directional and a trailing street suffix, but a directional that followed the suffix was not stripped. Example: `normalize_address("1234 N Lake Shore Dr S")` returned `"1234 lake shore dr s"` (expected `"1234 lake shore"`); `normalize_street_name("Clark St N")` returned `"clark st n"` (expected `"clark"`). The `tokens[-1] in _SUFFIXES` check ran exactly once and short-circuited because the *directional* — not the suffix — was the last token. Because the same normalizer runs at ingest time (populating `addresses` and `intersections` in `chicago_geocode.db`) and at query time, the asymmetry only mattered when one side had the trailing directional and the other didn't, but the canonical form was wrong either way.
+
+**How it was resolved:** Replaced the single-pass `if tokens[-1] in _SUFFIXES: tokens = tokens[:-1]` strip in both helpers with a `while`-loop that strips trailing tokens belonging to *either* `_SUFFIXES` or `_DIRECTIONALS` until none remain. Handles the three real shapes in one pass: `"Clark St"` (suffix only), `"Clark St N"` (directional reveals suffix), and `"Lake Shore Dr S"` (directional hiding the suffix). Added [`backend/tests/test_geocode_text.py`](../../backend/tests/test_geocode_text.py) covering each shape plus the empty-input / single-token degenerate cases.
+
+---
+
+### 2026-05-13 · `pickMode` persisted across route ⇄ explore mode toggle (BUG-001, second scan)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🔴 High
+
+**What the bug was:** The "Set point on map" crosshair button only renders inside `buildRouteContents` (the route-mode sidebar), but the `pickMode` state survived a `setMode("explore")` call. A user who activated pick mode and switched to Explore mode found themselves stranded: the click-to-drop-pin handler in `MapPickLayer` stayed attached, tapping the map dropped a red preview pin and popped the Cancel/Confirm card on top of the isochrone, and the same map click also fired place-pin / cluster handlers in `MapExploreLayer`. No UI was visible to exit pick mode without first switching back to Route mode.
+
+**How it was resolved:** Added `if (next !== "route") setPickMode(null);` inside the `setMode` callback in [App.jsx](../../frontend/src/App.jsx). The existing `pickMode` → snap-restore effect runs automatically when the value flips to null, so the mobile sheet returns to its prior snap with no additional plumbing.
+
+---
+
+### 2026-05-13 · `/autocomplete` returned 500 when `chicago_geocode.db` was missing (BUG-002, second scan)
+
+**File:** `backend/local_search.py`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** When `backend/data/chicago_geocode.db` was absent, `_connect()` fell back to `sqlite3.connect(":memory:")` and logged a warning that said "local_search will only resolve neighborhoods." But the autocomplete cascade still called `_query_intersections_exact`, `_query_intersections_prefix`, and `_query_addresses_prefix` — and those raised `sqlite3.OperationalError: no such table` against the `:memory:` connection. The `/autocomplete` endpoint did not wrap the call, so the error propagated and FastAPI returned a 500. (`/route` was unaffected because `geocoding.py` wraps `local_search.forward` in `try/except`.)
+
+**How it was resolved:** Changed `_connect()` to return `None` when the DB artifact is missing (instead of opening a `:memory:` stub). Each `_query_*` helper now short-circuits to `[]` when `_connect()` returns `None`, and `nearest_address` uses the same pattern (replacing its separate `DB_PATH.exists()` guard). Autocomplete now degrades cleanly to neighborhood + POI tiers when the DB is absent.
+
+---
+
+### 2026-05-13 · `URL.revokeObjectURL` fired synchronously after `a.click()` on PNG download (BUG-003, second scan)
+
+**File:** `frontend/src/hooks/useShareCard.js`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** The Web Share fallback path created an `<a download>` link and immediately revoked the object URL on the same microtask: `a.click(); URL.revokeObjectURL(objectUrl);`. iOS Safari and some in-app webviews (Slack, Instagram, etc.) start the actual download asynchronously after `click()` returns; revoking too early intermittently left users with a 0-byte file. The affected browsers overlap exactly with the "Download PNG" fallback population (no `navigator.canShare({ files })` support).
+
+**How it was resolved:** Wrapped the revoke in `setTimeout(() => URL.revokeObjectURL(objectUrl), 0)`, deferring it to the next macrotask so the browser has time to capture the blob reference.
+
+---
+
+### 2026-05-13 · Explorer slider `onKeyUp` fired `onSubmit` on every arrow-key release (BUG-004, second scan)
+
+**File:** `frontend/src/components/ExploreForm.jsx`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The time-budget slider had `onPointerUp={handleSliderRelease}` AND `onKeyUp={handleSliderRelease}`. For mouse drag the intent worked — onChange fired per tick, onPointerUp fired once on release. But every keyup event (including arrow-key auto-repeats) committed and triggered a `/explore` fetch. A held arrow key produced N fetches per held second; the abort plumbing in `useExploreFetch` cancelled them but the backend still did real work until the AbortSignal landed.
+
+**How it was resolved:** Added a `sliderDirtyRef` that flips true inside `handleSliderChange` and resets to false in `handleSliderRelease`. The release handler now no-ops when the value hasn't changed since the last commit, so non-value-changing keyup events (Tab, modifiers, repeated keyup at the slider's min/max boundary) don't fire a fetch.
+
+---
+
+### 2026-05-13 · `reverseStops` regenerated all stop IDs, dropping focus mid-edit (BUG-005, second scan)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `reverseStops()` did `prev.slice().reverse().map(s => ({ ...s, id: makeStopId() }))` — generating a fresh `id` for every stop. Since `AddressAutocomplete` was keyed on stop id, all inputs unmounted and remounted on every Reverse click, losing keyboard focus, the open suggestions list, and any in-flight autocomplete request. Typing "wrig" in the destination input then clicking Reverse killed the dropdown.
+
+**How it was resolved:** Reverse in place: `prev.slice().reverse()`. The ids stay stable, React reconciles the reorder without remounting, and the suggestions popover / focus survive the swap.
+
+---
+
+### 2026-05-13 · Persona height range mismatched: frontend 4–7 ft vs backend 3–9 ft (BUG-006, second scan)
+
+**Files:** `frontend/src/lib/personaPrefs.js`, `frontend/src/components/PersonalizeModal.jsx`, `frontend/src/lib/urlParams.js`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The backend validator accepted 36–108 in (3–9 ft), but the frontend's `loadStoredHeightFt` rejected anything outside `[4, 7]`, the personalize-modal dropdown only offered `[4, 5, 6, 7]`, and `readUrlParams` stripped `hft` outside `[4, 7]`. Users at extremes (children below 4 ft, anyone above 7 ft) couldn't save or share their actual height; the system silently snapped to the default and produced an inaccurate step length for them.
+
+**How it was resolved:** Expanded `FT_OPTIONS` in [`PersonalizeModal.jsx`](../../frontend/src/components/PersonalizeModal.jsx) to `[3, 4, 5, 6, 7, 8]`, widened `loadStoredHeightFt`'s accepted range to `[3, 8]`, and widened the `readUrlParams` `hft` range to `[3, 8]`. The dropdown caps at 8 (9 is the backend's mathematical upper bound but isn't a realistic real-world value).
+
+---
+
+### 2026-05-13 · `loadStepLog` had a side effect (localStorage write) during read (BUG-007, second scan)
+
+**File:** `frontend/src/lib/stepLog.js`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `loadStepLog` pruned expired entries on every read and wrote the pruned list back to localStorage if any were dropped. Consumed by `useState(loadStepLog)` in App.jsx — React calls lazy state initializers exactly once in production, but in StrictMode dev builds it calls them twice to surface side-effect bugs. The implicit "load" contract is read-only; a future caller in a `useMemo` or render path would have emitted a write per render. The quota-exhausted-browser case would also have iterated the prune-then-fail-silently cycle every read.
+
+**How it was resolved:** Split the function in two. `loadStepLog` now only reads + prunes the returned list (no writeback). A new `pruneStoredStepLog` export does the read + prune + writeback. App.jsx calls `pruneStoredStepLog` once inside a mount-only `useEffect`; the lazy state initializer stays read-only.
+
+---
+
+### 2026-05-13 · Reverse geocode used 200 m radius for the address tier (BUG-001)
+
+**File:** `backend/geocoding.py`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `reverse_geocode_point` passed the neighborhood-tier threshold (`_REV_THRESHOLD_MI` ≈ 200 m) to `local_search.nearest_address`, even though both the function docstring and `CLAUDE.md` promised the address tier matched within ~50 m. A map click in any open area could be labeled with a street address up to 2 blocks away rather than falling through to the LocationIQ / coordinate-string tier.
+
+**How it was resolved:** Added a dedicated `_REV_ADDRESS_THRESHOLD_MI = 50.0 / METERS_PER_MILE` constant and passed it to `nearest_address`. The neighborhood tier still uses the 200 m `_REV_THRESHOLD_MI` constant.
+
+---
+
+### 2026-05-13 · `tree_canopy.py` module docstring listed wrong density-band thresholds (BUG-002)
+
+**File:** `backend/tree_canopy.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The module docstring claimed cells were grouped at `≥ 0.25, ≥ 0.5, ≥ 0.75`, but the live `DENSITY_BANDS` constant (and `CLAUDE.md` and the `/explore` API docs) used `low ≥ 0.05`, `mid ≥ 0.15`, `high ≥ 0.40`. Documentation-only mismatch.
+
+**How it was resolved:** Updated the docstring to match the live thresholds (`≥ 0.05 / ≥ 0.15 / ≥ 0.40`).
+
+---
+
+### 2026-05-13 · LocationIQ autocomplete supplement cached under a different key than the cascade (BUG-003)
+
+**File:** `backend/main.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `/autocomplete`'s supplement called `geocode_external(q.lower())` on the raw lowercased query, but `resolve_location` (used by `/route`) normalizes USPS street abbreviations before the same call. A user typing "100 N Main Ave" would cache under that exact string, then pay for a second LocationIQ call when they submitted the route — `resolve_location` looked up the normalized form "100 n main avenue" and saw a cache miss.
+
+**How it was resolved:** Imported `_normalize_street_abbr` from `geocoding` and applied it in the supplement branch of `autocomplete_endpoint` so both code paths write/read the same `cached_forward` key.
+
+---
+
+### 2026-05-13 · Stale `line-trim-offset` left route polyline half-drawn on next render (BUG-005)
+
+**File:** `frontend/src/map/MapRouteLayer.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** When the route render effect was re-entered after `stopAnim()` cancelled an in-flight draw-in animation, `line-trim-offset` was pinned at the prior interpolated value on the layer. A subsequent render that bailed before any `setTrim` ran (via `prefers-reduced-motion: reduce` or `path.length < 2`) left the new polyline persistently half-hidden. Even in the animated path, a one-frame mis-paint flashed before the first RAF.
+
+**How it was resolved:** Added an unconditional `map.setPaintProperty("walk-path-line", "line-trim-offset", null)` at the top of the `render` closure, immediately after `stopAnim()`. The new path now starts from a known-clean trim state regardless of which downstream branch runs.
+
+---
+
+### 2026-05-13 · `AddressAutocomplete` portaled listbox closed on Tab / VoiceOver focus (BUG-006)
+
+**File:** `frontend/src/components/AddressAutocomplete.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `handleBlur` kept the dropdown open only when focus moved to a descendant of `wrapperRef`. But the default `positioning === "portal"` mode renders the listbox into `document.body`, so it's never a DOM descendant of the wrapper. Mouse/touch users escaped the bug via `onMouseDown`/`onTouchStart` preventing blur, but keyboard Tab and VoiceOver navigation closed the dropdown the moment focus tried to enter it.
+
+**How it was resolved:** Extended `handleBlur` to also keep the dropdown open when `relatedTarget` is inside the portaled listbox (matched by id via `next.closest?.(\`#${escapedId}\`)`, with `CSS.escape` fallback for older browsers).
+
+---
+
+### 2026-05-13 · Persisted "My location" origin reloaded into a permanent error (BUG-007)
+
+**File:** `frontend/src/lib/explorePrefs.js`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `sanitize()` restored a persisted `kind:"current"` origin without `lat`/`lon` (coords are intentionally not persisted). The `useExploreFetch` auto-fetch then hit the `origin.lat == null` guard and surfaced "Allow location access to explore from where you are.", with no auto-re-locate. The user saw a stale error in place of an isochrone every reload until they manually re-clicked "📍 My location".
+
+**How it was resolved:** In `sanitize()`, restored `kind:"current"` is now downgraded to `kind:"community_area"` (preserving any prior community-area pick, or the default Loop). The user can re-tap the "📍 My location" tile to re-locate explicitly.
+
+---
+
+### 2026-05-13 · "Walk here" / neighborhood chip silently no-op'd when origin was "current" without coords (BUG-008)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `handlePlaceGoHere` and `handleNeighborhoodChip` both computed `originName` from the persisted explore origin, requiring coords when `kind === "current"`. When coords hadn't yet been resolved (BUG-007 reload scenario or first-load geolocation race), both handlers returned with no feedback at all — buttons appeared dead.
+
+**How it was resolved:** When `originName` is null, both handlers now call `showToast("Still reading your location — try again in a moment.")` instead of silently returning, so the UI fails loudly. BUG-007's fix reduces the trigger frequency; this toast closes the in-flight race.
+
+---
+
+### 2026-05-13 · Pin-to-pin click in the Explorer popup left the second popup empty (BUG-010)
+
+**File:** `frontend/src/map/MapExploreLayer.jsx`
+
+**Priority:** 🔴 High
+
+**What the bug was:** `onPinClick` called `popupRef.current.remove()` on the prior popup *before* assigning the new popup to `popupRef.current`. `.remove()` fires the `close` event synchronously, which ran the previous click's close handler — that handler's guard (`popupRef.current && popupRef.current.isOpen?.() === false`) was both true, so `teardownPopup()` nulled `popupElRef.current` / unmounted the React root. By the time the new popup was built with `.setDOMContent(popupElRef.current)`, that argument was `null`, and the second popup rendered with no body.
+
+**How it was resolved:** Captured the new popup in a local `me` and gated the close handler on `popupRef.current === me`, then dropped `popupRef.current` to `null` before calling `.remove()` on the stale popup so the prior handler's identity check fails fast.
+
+---
+
+### 2026-05-13 · Daily-step-goal custom input was overwritten by the seed effect on every keystroke (BUG-011)
+
+**File:** `frontend/src/components/PersonalizeModal.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `handleGoalNumber` clamped + committed the goal upward on every keystroke. The seed effect listed `dailyGoal` (and `weightKg`) in its deps, so as soon as the parent updated, the effect reseeded the local mirror — overwriting the user's in-progress digits ("1" → parent clamps to 1000 → input flips to "1000" before they can finish typing "15000").
+
+**How it was resolved:** Dropped `weightKg` and `dailyGoal` from the seed effect's deps. Reseeding now runs only on `open` and `unit` flips (the two cases where the displayed value must change irrespective of typing); parent-driven changes during typing no longer echo back into the input.
+
+---
+
+### 2026-05-13 · Autocomplete "Searching…" announcement cleared prematurely on rapid keystrokes (BUG-012)
+
+**File:** `frontend/src/components/AddressAutocomplete.jsx`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The fetch `finally` block guarded the `abortRef` reset but called `setLoading(false)` unconditionally — so an aborted (stale) fetch flipped loading off even while a fresher fetch was mid-flight. Sighted users saw no change, but the `role="status"` SR region announced an extra empty-then-"Searching…" cycle on every other keystroke.
+
+**How it was resolved:** Moved `setLoading(false)` inside the `abortRef.current === ctrl` guard so only the live fetch can transition the loading flag.
+
+---
+
+### 2026-05-13 · `useRouteFetch` wrote recents before the min-loading delay (BUG-009)
+
+**File:** `frontend/src/hooks/useRouteFetch.js`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** After a successful `fetch`, the hook called `saveRecentSearch(cleanStops)` *before* awaiting the 450 ms `ensureMinLoadingDuration`. A user who submitted a second route during the min-loading window aborted the first call, but its recent-search entry had already been persisted to `walkpath:recentSearches` — polluting the chip strip with routes the user never saw rendered.
+
+**How it was resolved:** Moved the `saveRecentSearch` + `setRecentSearches` calls to after the `await ensureMinLoadingDuration(loadStart); if (signal.aborted) return;` guard. The `history.replaceState` URL write stays where it was — share-link deep-state is genuinely safer to write early.
+
+---
+
+### 2026-05-12 · `EXPLORE_DEFAULTS` shared an `origin` reference with `DEFAULT_PREFS` (BUG-011)
+
+**File:** `frontend/src/lib/explorePrefs.js`
+
+**Priority:** 🟢 Low (defensive)
+
+**What the bug was:** `EXPLORE_DEFAULTS = { ...DEFAULT_PREFS }` was a shallow spread, so `EXPLORE_DEFAULTS.origin` aliased `DEFAULT_PREFS.origin`. Nothing in the codebase mutates either today, but any future write like `EXPLORE_DEFAULTS.origin.foo = ...` would silently corrupt the in-process default that `sanitize()` reads on every prefs load.
+
+**How it was resolved:** Switched the export to a deep copy: `export const EXPLORE_DEFAULTS = JSON.parse(JSON.stringify(DEFAULT_PREFS))`. The contents are JSON-safe (strings/numbers/booleans/arrays), so the structural clone is sufficient and the two constants no longer share any nested references.
+
+---
+
+### 2026-05-12 · `_normalize_edge_str` collapsed falsy first list elements to `""` (BUG-013)
+
+**File:** `backend/walking.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `_normalize_edge_str` used `(v[0] or "") if v else ""` to coerce a `[None]` igraph attribute list to `""`. The `or` pattern also collapsed any other falsy first element — `[0]`, `[""]`, `[False]` all became `""`. Current graph columns are strings so no live data was lost, but the same helper feeds future bulk-read columns (and the trailing `return v or ""` branch could silently drop a `0` length).
+
+**How it was resolved:** Replaced the `or` shortcut with an explicit `None` check on both branches and `str()`-coerced any non-None value, so only true `None` (or an empty list) becomes `""`.
+
+---
+
+### 2026-05-12 · `fetchWithTimeout` external-signal abort listener never detached on settle (BUG-012)
+
+**File:** `frontend/src/lib/fetchWithTimeout.js`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** When the caller passed an external `AbortSignal`, the helper attached an `abort` listener with `{ once: true }`. If the fetch completed normally, the listener was never removed — it stayed attached for the life of the external signal, retaining the per-call `timeoutCtrl` (and the surrounding closure) in memory. Today every call site creates a fresh `AbortController` per fetch, so the leak is bounded, but any future caller reusing a long-lived signal across many fetches would accumulate listeners.
+
+**How it was resolved:** Named the abort handler (`onAbort`) and removed it inside the `.finally()` alongside the existing `clearTimeout(timer)`, so the listener is always detached when the fetch settles.
+
+---
+
+### 2026-05-12 · `/explore` echoed the original `max_minutes` float while routing used the rounded value (BUG-006)
+
+**File:** `backend/main.py`, `backend/explore.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `explore()` quantized `max_minutes` via `round()` before keying the LRU cache and running Dijkstra, so a request for `max_minutes=20.7` computed the polygon for 21 minutes. The `/explore` endpoint then returned `"max_minutes": payload.max_minutes`, echoing the original `20.7`. The response was self-inconsistent (polygon for 21, echo of 20.7), and two callers requesting 20.4 and 20.6 both saw the 20-minute polygon without knowing it.
+
+**How it was resolved:** Moved the rounding to the pydantic boundary: `ExploreRequest.max_minutes` is now `int` with a `mode="before"` validator that rounds incoming floats. The response echo and the cache key + Dijkstra cutoff now always agree. The internal `explore.explore()` signature was updated to `int` (the inner `round()` is retained as a defensive coercion for legacy callers).
+
+---
+
+### 2026-05-12 · `loadStoredHeightFt` null-guard inconsistent with `loadStoredHeightIn` (BUG-010)
+
+**File:** `frontend/src/lib/personaPrefs.js`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `loadStoredHeightFt` used `if (!raw) return null`, treating an empty string the same as a missing value, while its sibling `loadStoredHeightIn` used `if (raw == null) return null`. The downstream range check (4–7) masked the discrepancy for the current valid range, but the inconsistency would flip real behavior the next time the valid range or default changed.
+
+**How it was resolved:** Aligned `loadStoredHeightFt` to the `raw == null` predicate so both loaders share the same null-guard.
+
+---
+
+### 2026-05-12 · Multi-stop URL params double-encoded user-typed labels (BUG-009)
+
+**File:** `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useShareCard.js`, `frontend/src/lib/urlParams.js`
+
+**Priority:** 🟢 Low (cosmetic)
+
+**What the bug was:** Both URL writers ran each stop through `encodeURIComponent` before joining with `|` and handing the result to `URLSearchParams.set`, which percent-encodes the value a second time. A 3-stop route through `Wrigley Field` ended up with `?stops=Wrigley%2520Field%7C...` in the address bar. `parseStopsParam` decoded once, so round-trips still worked, but the URL itself was noisy and the single-stop branch (`urlP.set("from", cleanStops[0])`) didn't pre-encode — leaving the two paths inconsistent.
+
+**How it was resolved:** Dropped the per-segment `encodeURIComponent` in both writers; `URLSearchParams.set` now handles encoding for the whole `A|B|C` value (the `|` separator is left literal, which is valid in a query string). `parseStopsParam` keeps its tolerant `decodeURIComponent` per segment so legacy double-encoded URLs from before the fix still resolve correctly — for new URLs the call is a no-op because the segments arrive already decoded.
+
+---
+
+### 2026-05-12 · `normalize_address` dropped the only token when input was `"<num> <suffix>"` (BUG-008)
+
+**File:** `backend/geocode_text.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** After splitting house number from street, `normalize_address` unconditionally stripped a trailing suffix token. For a single-token street like `"22 Way"`, this left `rest = []`, and the function returned `"22"` only — disagreeing with `normalize_street_name("Way")` which was guarded by `len(tokens) > 1`. Canonicals stored for such addresses could never match a search query.
+
+**How it was resolved:** Mirrored the `normalize_street_name` guard: the suffix-strip now requires `len(rest) > 1`, so single-token street names are preserved verbatim. One-line change at `geocode_text.py:93`.
+
+---
+
+### 2026-05-12 · `residential_heatmap` could emit `GeometryCollection` instead of `MultiPolygon` (BUG-007)
+
+**File:** `backend/places.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** After `unary_union(pieces)` in `clip_residential_to_polygon`, the code only wrapped a bare `Polygon` into a `MultiPolygon`. `unary_union` can return a `GeometryCollection` when input polygons touch along edges (the touch produces a `LineString` mixed in with the polygons), in which case `mapping()` emitted `{"type": "GeometryCollection", ...}` — violating the `GeoJSON MultiPolygon | null` API contract documented in `CLAUDE.md` and `docs/FEATURE_HISTORY.md`. The frontend's MapLibre `fill` source silently ignores non-polygon members.
+
+**How it was resolved:** After `unary_union`, detect `GeometryCollection` results, filter to `Polygon` / `MultiPolygon` members only, and re-union them. Empty filtered results return `None`; the existing `Polygon → MultiPolygon` wrap is preserved as the final step so the response always matches the contract.
+
+---
+
+### 2026-05-12 · LocationIQ ZIP-trim regex truncated 5-digit house numbers (BUG-005)
+
+**File:** `backend/geocoding.py`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `_reverse_geocode_external` trimmed `display_name` after the first `\b\d{5}\b` match to drop the ZIP + country tail. Chicago's south-side grid runs out to ~13800, so any address south of ~100th Street has a 5-digit house number — the regex matched on the house number, and `display = display[:m.end()]` left the label as just `"13700"` for `"13700 S Western Ave, Chicago, IL 60643, USA"`. Affected every pick-on-map lookup on the far south side that fell through to the LocationIQ fallback (i.e. beyond the local 200 m neighborhood/address tiers).
+
+**How it was resolved:** Anchored the regex to a leading comma and optional ZIP+4 suffix (`r",\s*(\d{5})(?:-\d{4})?\b"`) so only the genuine `, 60643` segment matches. House numbers are never preceded by `", "` in LocationIQ's `display_name` format. Added two `_reverse_geocode_external` unit tests covering the south-side 5-digit case and the existing happy path.
+
+---
+
+### 2026-05-12 · Multi-font symbol layers contradicted the documented "single-font only" workaround (BUG-004)
+
+**File:** `frontend/src/mapHelpers.js`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `walk-stops-label` used `"text-font": ["Noto Sans Bold"]` with a comment warning that OpenFreeMap 404s on comma-joined font fallbacks and would error the whole glyph bucket. But two layers below — `explore-places-cluster-count` and `explore-places-glyph` — used the forbidden multi-font array `["Noto Sans Bold", "Open Sans Bold", "Arial Unicode MS Bold"]`, so either the comment was wrong or the explorer's cluster counts and category glyphs silently 404'd.
+
+**How it was resolved:** Normalised both explorer symbol layers to the single-font form `["Noto Sans Bold"]` to match the documented workaround, and rewrote the comment on `walk-stops-label` so it covers the whole file instead of singling out one layer.
+
+---
+
+### 2026-05-12 · `nearest_address` bounding-box prefilter narrower than `max_miles` in longitude (BUG-003)
+
+**File:** `backend/local_search.py`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `nearest_address` widened the SQL bbox with `span = max_miles / 60.0` for both lat and lon. At Chicago's latitude (~42°), 1° lon ≈ 51.4 mi, so `/60` made the longitude box narrower than `max_miles` — at the actual `_REV_THRESHOLD_MI ≈ 0.124 mi` (~200 m) caller, the bbox covered only ~172 m east/west, silently excluding in-range candidates 172–200 m due east or west of the query point and forcing those reverse-geocodes to fall through to LocationIQ.
+
+**How it was resolved:** Split the prefilter into per-axis spans: `span_lat = max_miles / 69.0` and `span_lon = max_miles / (69.0 * cos(radians(lat)))`. Added `import math` at the top of the module. The Haversine post-filter is unchanged, so candidates beyond `max_miles` are still rejected — the box is now slightly conservative (admits a few more candidates) rather than too narrow.
+
+---
+
+### 2026-05-12 · `VALID_GROUP_KEYS` missing `public_services` strips expansion state (BUG-002)
+
+**File:** `frontend/src/lib/explorePrefs.js`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `VALID_GROUP_KEYS` was a hand-maintained literal `Set(["daily_life", "food_drink", "outdoors", "culture", "living"])` that omitted the newer `public_services` group. Because `sanitize()` filters `expandedGroups` through that whitelist on every load and save, expansion of the Public services group never persisted across sessions — and the save-on-render effect in `App.jsx` actively rewrote storage to strip it.
+
+**How it was resolved:** Replaced the hand-maintained literal with `new Set(EXPLORE_GROUPS.map(g => g.key))`, derived from the single source of truth in `exploreCategories.js`. Adding a future group now requires only one edit. The 13 existing tests in `explorePrefs.test.js` still pass.
+
+---
+
+### 2026-05-12 · Explore-mode slider release races with `explorePrefsRef` sync (BUG-001)
+
+**File:** `frontend/src/App.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `handleExploreMaxMinutesChange` only called `setExplorePrefs` and relied on the ref-sync `useEffect` in `useExploreFetch.js` to update `explorePrefsRef.current`. Because that effect runs after commit, the `pointerup` → `handleExploreSubmit` → `fetchExploreResult` chain that fires on slider release can read the previous `maxMinutes` value off the ref, sending the old budget to `/explore` on every drag-release.
+
+**How it was resolved:** `handleExploreMaxMinutesChange` now synchronously writes `explorePrefsRef.current = { ...explorePrefsRef.current, maxMinutes: next }` right after the `setExplorePrefs` call, mirroring the belt-and-suspenders pattern already used in `handleExploreOriginChange`. The fetch fired on slider release now sees the latest value regardless of effect timing.
+
+---
 
 ### 2026-05-11 · "Walk here" and neighborhood chips failed when origin was current location (BUG-033)
 
@@ -533,6 +980,55 @@ Total test count after changes: **115 tests, all passing**.
 ---
 
 ## Technical Debt Paid Off
+
+### 2026-05-13 · Backend tech-debt batch — routing helpers, heatmap clipper, requirements (TD-035, TD-036, TD-037)
+
+**Files:** `backend/walking.py`, `backend/parks.py`, `backend/green_space.py`; new `backend/heatmap_clipper.py`; deleted `backend/requirements-test.txt`.
+
+**Priority:** 🟡🟢🟢 (Medium / Low / Low)
+
+**What the debt was:** Three backend items from the 2026-05-13 backend scan. **TD-035** — `walking.py` carried three helpers (`_path_coords_from_path`, `_directions_from_path`, `_build_path_and_directions`) that walked the same `(vpath, epath)` and produced overlapping outputs; the geometry-decode + run-merging blocks were line-for-line duplicates with concrete drift risk on any future tweak to cardinal-bearing or block-type logic. **TD-036** — the `STRtree → prep+intersect → group-and-union → emit FeatureCollection` pipeline was reimplemented in `places.py`, `parks.py`, `green_space.py`, and `tree_canopy.py` with ~80% identical surrounding boilerplate. **TD-037** — `requirements-dev.txt` and `requirements-test.txt` listed overlapping but conflicting pytest pins (`<10` vs `<9.0`), and the test-only file was missing `pytest-asyncio` and `freezegun`, so a fresh `pip install -r requirements-test.txt` produced a non-runnable test env.
+
+**How it was resolved:**
+- **TD-035:** Deleted `_path_coords_from_path` and `_directions_from_path` outright. Rewrote `_build_path` and `_build_directions` to call `_build_path_and_directions(vpath, epath)` and pick the half they need; the haversine-fallback branches in both helpers retained inline. Updated the `_build_path_and_directions` docstring to record that it is now the sole `(vpath, epath) → (coords, directions)` builder. ~150 lines removed from walking.py; `test_walking_path_alt_routes` and the route-endpoint integration tests cover the affected paths.
+- **TD-036:** Added `backend/heatmap_clipper.py` exposing two primitives — `load_polygon_rings(entries, ring_key="ring")` (lazy ring-parse with `buffer(0)` repair and dropped-degenerate filter, returning `(polys, valid_indices)` so callers can project parallel metadata) and `clip_polygons_to_feature_collection(polygon, *, polys, tree, group_key, properties_for)` (the full clip → group-by-key → union → strip-GeometryCollection → emit-FeatureCollection pipeline). `parks.py` and `green_space.py` rewrote to thin wrappers — each now owns only its JSON shape + grouping key. `places.residential_heatmap` and `tree_canopy.tree_canopy_in_polygon` were deliberately left as-is — residential returns a raw unioned MultiPolygon (different output shape) and tree canopy clips synthesized cell squares from point centroids (different geometry primitive); folding either through the shared helper would add more conditional plumbing than the duplication it removes.
+- **TD-037:** Deleted `backend/requirements-test.txt`. `requirements-dev.txt` is now the sole test-environment manifest. Confirmed no CI workflows (none exist), no `Dockerfile`, no `railway.toml`, and no scripts reference the deleted file. The `.dockerignore` line for `requirements-test.txt` was left in place — it's harmless and guards against a future re-creation accidentally being copied into the prod image.
+
+Verification: backend `python -m pytest -q` → **217 passed, 1 skipped** (no regression from the pre-batch baseline). All `test_parks.py`, `test_green_space.py`, `test_explore_endpoint.py` cases pass against the rewritten clip path; `test_walking_path_alt_routes` and `test_main` route-endpoint tests pass against the slimmed routing helpers.
+
+---
+
+### 2026-05-13 · Frontend lib/ tech-debt batch — coords, breakpoints, heatmap layers, API errors, tests, toast (TD-038, TD-039, TD-040, TD-041, TD-042, TD-043)
+
+**Files:** `frontend/src/App.jsx`, `frontend/src/map/MapPickLayer.jsx`, `frontend/src/components/PaceSelector.jsx`, `frontend/src/components/RouteFlavorTabs.jsx`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/lib/{useMediaQuery,exploreApi,explorePrefs}.js`; new `frontend/src/lib/{coordsFormat,apiErrorMessage}.js`; new tests `frontend/src/lib/{fetchWithTimeout,exploreApi,autocompleteApi}.test.js`.
+
+**Priority:** 🟢🟡🟡🟡🟡🟢 (mixed Low/Medium across the six items)
+
+**What the debt was:** Six items surfaced in the 2026-05-13 frontend scan. **TD-038** — the display literal `` `${lat.toFixed(5)}, ${lon.toFixed(5)}` `` was repeated at six sites with no shared formatter, and the 5-vs-6-decimal split (display vs reverse-geocode URL) wasn't documented. **TD-039** — `(max-width: 480px)` and the 481–1023 px tablet query were hardcoded string literals at four call sites. **TD-040** — `handleToggleHeatmap` was an `if/else if` chain over the four heatmap keys, and `handleSelectAllCategories` / `handleClearAllCategories` enumerated the four `showXHeatmap` prefs by hand. **TD-041** — `exploreApi.js` and `useRouteFetch.js` each parsed the FastAPI `{detail: {message}}` envelope independently and emitted divergent 429 copy ("explorer is rate-limited" vs "geocoding service is rate-limited") for what is the same LocationIQ breaker. **TD-042** — `fetchWithTimeout.js`, `exploreApi.js`, and `autocompleteApi.js` (the entire network boundary) had zero direct test coverage. **TD-043** — the 3500 ms toast dismissal duration was inlined at two `setTimeout` sites in `App.jsx`.
+
+**How it was resolved:**
+- **TD-038:** Added `frontend/src/lib/coordsFormat.js` exporting `formatLatLonLabel(lat, lon, decimals = 5)`. Routed all six display-label sites in `App.jsx` and the one site in `MapPickLayer.jsx` through it. The 6-decimal reverse-geocode URL site (`App.jsx:568`) is intentionally left as an inline template literal since it's a request payload, not a display string; the new module's docstring explains the precision distinction.
+- **TD-039:** Added `MQ_MOBILE`, `MQ_TABLET`, `MQ_DESKTOP` exports to `frontend/src/lib/useMediaQuery.js` (the canonical strings, with a comment cross-referencing the matching `App.css` media queries). `App.jsx`, `PaceSelector.jsx`, and `RouteFlavorTabs.jsx` now import the named constants.
+- **TD-040:** Added `HEATMAP_LAYERS` (`[{ key, prefKey } × 4]`) to `frontend/src/lib/explorePrefs.js`. `handleToggleHeatmap` now does a `find` + a single dynamic-key set; `handleSelectAllCategories` / `handleClearAllCategories` loop over the constant via a shared `setAllHeatmaps(next, value)` helper. Adding a fifth heatmap is now a one-line catalog edit plus matching default + sanitize() branch in the prefs module.
+- **TD-041:** Added `frontend/src/lib/apiErrorMessage.js` exporting `parseApiErrorMessage(response, serviceLabel?)`. Both `exploreApi.js` and `useRouteFetch.js` call it; both 429 fallbacks now route through the unified "Service is rate-limited — try again in a minute." copy (the optional `serviceLabel` parameter remains for callers that want to inject a service name, but neither current caller passes one, so the user-facing message is consistent across endpoints).
+- **TD-042:** Added three Vitest files mocking `globalThis.fetch`: `fetchWithTimeout.test.js` covers happy-path resolution, timeout-triggered abort with fake timers, external-signal abort propagation, pre-aborted external signal, and timer cleanup; `exploreApi.test.js` covers both origin shapes, optional `categories`, structured `detail.message` extraction, the unified 429 message, non-JSON 5xx survival, and abort-signal composition; `autocompleteApi.test.js` covers the empty-query short-circuit, query trimming + limit serialization, suggestions parsing (including non-array bodies), non-OK status surfacing, and abort composition.
+- **TD-043:** Hoisted `const TOAST_DURATION_MS = 3500` to module scope in `App.jsx` (with a comment explaining the two callers). Both `showToast` and the inline pick-on-map fallback toast now reference it.
+
+Verification: `npm test -- --run` → **288/288 passing** (up from 267 — three new test files added 21 cases). `npm run lint` is clean for the touched files; one pre-existing `react/no-unescaped-entities` error on an unrelated `App.jsx` JSX block (`That spot doesn't connect…`) was left in place and is not introduced by this batch.
+
+---
+
+### 2026-05-12 · Rate-limit docs scrubbed to match unenforced reality (TD-033)
+
+**Files:** `README.md`, `CLAUDE.md`, `docs/FEATURE_HISTORY.md`, `backend/tests/test_main.py`, `backend/tests/test_explore_endpoint.py`
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** Both `CLAUDE.md` and `README.md` claimed per-IP rate limits (`/health 60/min · /reverse-geocode 30/min · /route 10/min · /explore 10/min`) tunable via `RATE_LIMIT_*` env vars, but `backend/main.py` had zero slowapi / `Limiter` / `@limiter` wiring — the env vars were inert and the endpoints accepted unlimited traffic. The test suites carried a dead `app.state.limiter.reset()` fixture left over from when slowapi had been wired.
+
+**How it was resolved:** Scrubbed the doc claims rather than re-introducing slowapi (Railway's edge already meets the operator's threat model). Removed the "Rate limits (per IP, env-tunable)" line and the `RATE_LIMIT_*` env-var row from both README.md and CLAUDE.md, dropped the inaccurate "Rate-limited via `RATE_LIMIT_EXPLORE`" sentence from `docs/FEATURE_HISTORY.md`, and deleted the dead `_reset_rate_limiter` autouse fixtures from `backend/tests/test_main.py` and `backend/tests/test_explore_endpoint.py`. `.env.example` was already clean (no `RATE_LIMIT_*` entries). Confirmed `grep -rn "slowapi\|@limiter\|RATE_LIMIT_" backend/ CLAUDE.md README.md` returns zero matches; only historical references in `docs/archive/RESOLVED_HISTORY.md` remain, as expected.
+
+---
 
 ### 2026-05-11 · Transitive npm audit highs (`@babel/plugin-transform-modules-systemjs`, `fast-uri`) cleared (2026-05-11 TD-028, TD-029)
 
@@ -1179,6 +1675,230 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 ---
 
 ## Efficiency Improvements Implemented
+
+### 2026-05-13 · `autocomplete` linearly scanned the entire POI + neighborhood indexes on every keystroke (OPT-001, backend scan)
+
+**File:** [backend/local_search.py](../../backend/local_search.py)
+
+**Impact:** 🔴 High
+
+**Category:** Inefficient Data Structure
+
+**What was inefficient:** `autocomplete()` walked `_neighborhood_index` (~150 entries) and `_poi_index` (~5–10k entries) end-to-end on every keystroke, doing `name.startswith(q_lower)` per entry. Both indexes are sorted by lowercased name, but the ordering wasn't used — the `len(suggestions) >= limit * 4` cap only short-circuited when matches were dense, which is rare for short queries and never for sparse-match queries.
+
+**Implemented:** Added parallel `_neighborhood_keys` / `_poi_keys` arrays populated alongside the existing sorted tuple lists in `_ensure_in_mem_index`. New `_prefix_window(keys, q)` uses `bisect.bisect_left` to find the start of the prefix window and walks forward until the prefix stops matching, returning `(lo, hi)` in O(log N + k). The neighborhood and POI prefix loops in `autocomplete()` now iterate only `range(lo, hi)` instead of the full index. Per-keystroke work dropped from O(N) to O(log N + k). The capped-iteration safeguard for common short prefixes (e.g. "the") stayed in place inside the POI loop.
+
+---
+
+### 2026-05-13 · Tree-canopy cells held as list of dicts instead of parallel numpy columns (OPT-002, backend scan)
+
+**File:** [backend/tree_canopy.py](../../backend/tree_canopy.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Memory Bloat
+
+**What was inefficient:** Each canopy cell was a `dict` with three float values (`lat`, `lon`, `density`) — ~250 B/cell of PyDict + PyFloat overhead × the ~30k cells in the Chicago artifact added up to several MB of working-set memory for data that's intrinsically three parallel float columns. The runtime hot path read those values by index in a tight loop, never used dict semantics.
+
+**Implemented:** Replaced `_cells: list[dict]` with three contiguous `np.ndarray` float64 columns: `_cell_lats`, `_cell_lons`, `_cell_densities`. `_ensure_index` collects raw values into three temporary Python lists during the JSON parse, then materializes the numpy columns at the end. The centroid list stayed as `list[Point]` because STRtree needs individual geometries. `tree_canopy_in_polygon` reads `densities[i]`, `lats_col[i]`, `lons_col[i]` by integer index — cuts canopy index memory by ~3–5× and removes the per-cell dict lookup. `reset_index_for_tests` updated to clear the new globals.
+
+---
+
+### 2026-05-13 · `residential_heatmap` skipped the `prepared.intersects` prefilter (OPT-003, backend scan)
+
+**File:** [backend/places.py](../../backend/places.py)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** After `STRtree.query()` returned bbox-overlapping candidates, the loop unconditionally called the expensive `polys[i].intersection(polygon)` and then checked `clipped.is_empty`. The bbox-overlap-but-actually-disjoint case is real (long thin residential polygons that hug but don't cross the isochrone bbox edge), and `intersection()` is materially more expensive than `intersects()`. `parks.py` and `green_space.py` already used the prefilter — `places.py` was the outlier.
+
+**Implemented:** Added `prepared = prep(polygon)` once before the loop and `if not prepared.intersects(poly): continue` as a cheap guard before the `.intersection()` call — same pattern as `parks_in_polygon` and `green_space_in_polygon`.
+
+---
+
+### 2026-05-13 · `concave_hull` imported inside the explore hot path (OPT-004, backend scan)
+
+**File:** [backend/explore.py](../../backend/explore.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `from shapely import concave_hull` lived inside `_hull_polygon`, behind a `try/except ImportError`. The function ran once per uncached `/explore` request. Python's import cache makes the second-and-onward import cheap, but it was still a module-attribute lookup + try/except wrapper on every call, and shapely ≥ 2.0 is a hard requirement of the file (used elsewhere unconditionally), so the import-guard fallback was dead code.
+
+**Implemented:** Moved `from shapely import concave_hull` to the module-level imports alongside the other shapely imports. Dropped the inner `from shapely import` line; the outer `try / except Exception` around the `concave_hull(...)` call stays — it handles real shapely failures (e.g. degenerate point sets) and falls back to the convex hull as before.
+
+---
+
+### 2026-05-13 · `places._load_all_sources` called `quantize_coord` twice per OSM place (OPT-005, backend scan)
+
+**File:** [backend/places.py](../../backend/places.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** The dedupe step built `curated_keys` then iterated `osm` with a list comprehension that re-ran `quantize_coord(p["lat"], p["lon"])` for every OSM entry — even though the comprehension already computed the same tuple to test membership. Startup-only cost (the index build is one-shot per process), but gratuitous, and the pattern read as if it might run hot.
+
+**Implemented:** Replaced the list comprehension with an explicit `for` loop that calls `quantize_coord(p["lat"], p["lon"])` once per OSM entry, binds `(lat_q, lon_q)`, and uses the bound values in the membership test. Each OSM entry now incurs exactly one `quantize_coord` call during the dedupe pass.
+
+---
+
+### 2026-05-13 · Stop draft serialized + written to sessionStorage on every keystroke (OPT-006, frontend scan)
+
+**File:** [frontend/src/App.jsx](../../frontend/src/App.jsx)
+
+**Impact:** 🟡 Medium
+
+**Category:** Inefficient I/O
+
+**What was inefficient:** The `useEffect([stops])` ran on every keystroke in any stop input. Each run called `saveStoredStops(values)`, which built a `{values, savedAt}` envelope, `JSON.stringify`d it, and wrote to sessionStorage. Typing "Lincoln Park" (12 chars) fired 12 stringify+write cycles for a draft whose only job is to survive a reload; `addStop`/`removeStop`/`moveStop` also re-fired the effect.
+
+**Implemented:** Added a `stopDraftTimerRef` that holds the pending `setTimeout` handle and debounces the save by 250 ms. The empty-clear branch (every stop blank → `safeSessionRemove`) stays synchronous so removing all stops wipes the storage entry immediately rather than leaving a stale draft for the debounce window. The effect's cleanup function cancels any pending timer on unmount or re-run so dependency churn doesn't leak timers. Steady-state writes dropped from O(keystrokes) to O(quiet windows).
+
+---
+
+### 2026-05-13 · Active-turn flip rebuilt + re-uploaded the entire turn-points GeoJSON (OPT-007, frontend scan)
+
+**File:** [frontend/src/mapHelpers.js](../../frontend/src/mapHelpers.js), [frontend/src/map/MapRouteLayer.jsx](../../frontend/src/map/MapRouteLayer.jsx)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `buildTurnsGeoJson(turnCoords, activeTurnIndex)` reconstructed the full `walk-turns` FeatureCollection with `properties.active` baked per feature and called `setData` on the source whenever the user clicked a different direction step in `DirectionLedger`. For a 50-turn route, each click re-ran the dedup loop, allocated a fresh feature collection, and shipped the entire GeoJSON payload to MapLibre — all to flip a single boolean.
+
+**Implemented:** Dropped the `activeTurnIndex` argument from `buildTurnsGeoJson` (kept as a no-op positional in `renderWalkRoute` for backward compat). Features now carry stable `id = i` (matching the original `turnCoords` index) and no `active` property. The `walk-turns-circle` paint expression switched to `["coalesce", ["feature-state", "active"], false]` for radius/color/opacity. `MapRouteLayer`'s active-turn effect now reads a `prevActiveTurnRef` and calls `map.setFeatureState({source: "walk-turns", id}, {active})` to clear the previous feature and set the new one — zero GeoJSON allocation, zero GPU re-upload. `renderWalkRoute` calls `map.removeFeatureState({source: "walk-turns"})` after rebuilding the source so stale states from a previous route can't leak across route swaps. Updated `mapHelpers.test.js` assertions for the new signature.
+
+---
+
+### 2026-05-13 · `AddressAutocomplete` portal position recomputed + re-rendered on every scroll event (OPT-008, frontend scan)
+
+**File:** [frontend/src/components/AddressAutocomplete.jsx](../../frontend/src/components/AddressAutocomplete.jsx)
+
+**Impact:** 🟡 Medium
+
+**Category:** Rendering / Event Handling
+
+**What was inefficient:** The capture-phase `scroll` listener (plus `resize` + `visualViewport.resize` + `visualViewport.scroll`) called `update()` directly on every event, where `update` measured the input's bounding rect and called `setPos({...})`, triggering a React re-render of the listbox. During a WFSheet drag on mobile the chain could fire 60+ times/sec while the listbox was open — each event causing a full setState round trip.
+
+**Implemented:** Wrapped the listeners through a `scheduleUpdate` shim that schedules `update()` via `requestAnimationFrame` and short-circuits if a frame is already pending. The cleanup function cancels the pending rAF on teardown. Re-renders are now capped at one per frame regardless of scroll/resize event density, while the listbox still tracks the input precisely under sheet drags and iOS keyboard transitions.
+
+---
+
+### 2026-05-13 · `ExploreCategoryPanel` re-traversed nested categories on every render (OPT-009, frontend scan)
+
+**File:** [frontend/src/components/ExploreCategoryPanel.jsx](../../frontend/src/components/ExploreCategoryPanel.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** Inside the `.map(group => ...)` JSX, every group ran `group.categories.reduce(...)` plus a per-category `.filter(s => selectedSubSet.has(...))` — ~100 Set lookups per render across the 5 groups, with the panel re-rendering on any parent-state change (route loading flip, sheet drag) even when selection state hadn't moved.
+
+**Implemented:** Added a `groupSelectionCounts` `useMemo` that walks `EXPLORE_GROUPS` once and returns a `Map<groupKey, count>`. Keyed on the primitive heatmap booleans (`heatmapResidential`, `heatmapParks`, `heatmapTreeCanopy`, `heatmapGreenSpace`) plus the selection-set memos, so the parent's inline `heatmapStates` object reference (a new literal every render) doesn't invalidate the cache. JSX reads the count via `groupSelectionCounts.get(group.key) ?? 0`. The nested traversal now runs only when selection state actually changes.
+
+---
+
+### 2026-05-13 · `StepHero` re-formatted `dailyGoal` with `toLocaleString` twice (OPT-010, frontend scan)
+
+**File:** [frontend/src/components/StepHero.jsx](../../frontend/src/components/StepHero.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `const effectiveGoal = (dailyGoal ?? 10_000).toLocaleString();` produced the formatted string, then the JSX rendered `{effectiveGoal.toLocaleString()}` — calling `.toLocaleString()` on a string is a no-op that still routes through `Intl` lookups in some engines. Trivial per-render cost, but the pattern read as a bug because one of the two calls was clearly redundant.
+
+**Implemented:** Dropped the second `.toLocaleString()` from the JSX — `{effectiveGoal}` is the already-formatted string. Single format call per render, identical visible output.
+
+---
+
+### 2026-05-13 · `stopValues` array rebuilt every render in `App.jsx`, invalidating downstream memos (OPT-011, frontend scan)
+
+**File:** [frontend/src/App.jsx](../../frontend/src/App.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Rendering
+
+**What was inefficient:** `const stopValues = stops.map(s => s.value);` created a fresh array reference on every `App` render. It was passed into `useShareCard`, where `shareUrl` and the `handleShareCard` callback depended on it via `useMemo`/`useCallback`. Because the reference changed every render, those memos recomputed on unrelated re-renders (Personalize-modal open/close, loading-state flips, sheet drags) — defeating the point of memoizing `shareUrl` at all.
+
+**Implemented:** Wrapped the projection in `useMemo(() => stops.map(s => s.value), [stops])`. Since `setStops` returns a new `stops` reference only on real change, the memoized array now stays referentially stable across unrelated re-renders and the downstream `useShareCard` memos cache as intended.
+
+---
+
+### 2026-05-13 · Route and Explore sidebar JSX trees were both built on every App render (OPT-012, frontend scan)
+
+**File:** [frontend/src/App.jsx](../../frontend/src/App.jsx)
+
+**Impact:** 🔴 High
+
+**Category:** Rendering
+
+**What was inefficient:** `App` constructed both `exploreContents` and `routeContents` as inline JSX every render, then picked one (`mode === "explore" ? exploreContents : routeContents`). Only one tree was ever mounted, but both allocated the full React element graph each render — including the stops list with per-stop `AddressAutocomplete` + button cluster, plus the full results block (`StepHero`, `CompareDispatch`, `DirectionLedger`) when a route was loaded. Sheet drags, theme toggles, follow-position updates, and toast timers all re-ran `App` and paid the allocation twice.
+
+**Implemented:** Wrapped each tree in a `buildExploreContents = () =>` / `buildRouteContents = () =>` arrow function, then called only the active one: `mode === "explore" ? buildExploreContents() : buildRouteContents()`. JS ternary short-circuits, so the inactive tree's JSX is never constructed. The internal closures (`onClick={() => handlePickToggle(stop.id)}` etc.) still allocate on the active branch — that's by design — but the inactive branch's element graph is now skipped entirely. 288 frontend tests pass.
+
+---
+
+### 2026-05-13 · `MapExploreLayer.placeFeatures` rebuilt on every new `exploreResult` reference (OPT-013, frontend scan)
+
+**File:** [frontend/src/map/MapExploreLayer.jsx](../../frontend/src/map/MapExploreLayer.jsx)
+
+**Impact:** 🟡 Medium
+
+**Category:** Redundant Computation
+
+**What was inefficient:** The `placeFeatures` `useMemo` depended on the entire `exploreResult` object. Every `/explore` fetch returned a fresh top-level object reference even when the underlying `places` array was identical (re-submits, or a fresh wrapper from a category toggle). The dependency churn forced a full feature rebuild (filter + map allocation per place) and a supercluster `setData` re-index on the source — a 20-min isochrone in dense Chicago can carry several thousand places.
+
+**Implemented:** Narrowed the `useMemo` deps to `[exploreResult?.places, activeSubs]`. The `places` array reference now only changes when the backend returns new pin data, so identical results no longer trigger a feature rebuild + supercluster re-index. 288 frontend tests pass.
+
+---
+
+### 2026-05-13 · `logWalk` re-read and re-parsed the full step log from localStorage on every call (OPT-014, frontend scan)
+
+**File:** [frontend/src/lib/stepLog.js](../../frontend/src/lib/stepLog.js), [frontend/src/App.jsx](../../frontend/src/App.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation / I/O
+
+**What was inefficient:** `logWalk` called `loadStepLog()` internally, which `JSON.parse`d the entire stored log and pruned expired entries (potentially re-`stringify`/writing the pruned list). The caller in `App.jsx` already had the live log in state (`stepLog`) and prepended the returned entry back onto that same state — so the full read + parse round-trip duplicated work the caller already did at mount, running synchronously on the click event.
+
+**Implemented:** Added an optional `currentLog` parameter to `logWalk({ ... }, currentLog)`. When supplied, it skips the `loadStepLog()` read and uses the passed array directly; if absent, it falls back to disk (preserving the API for any future caller without the log in hand). `App.handleLogWalk` now passes its `stepLog` state. The localStorage write path is unchanged. Existing test calls in `App.test.jsx` that don't pass `currentLog` still hit the fallback path and pass.
+
+---
+
+### 2026-05-13 · `exploreCategoryStyles` `useMemo` with empty deps re-derived a module-level constant (OPT-015, frontend scan)
+
+**File:** [frontend/src/App.jsx](../../frontend/src/App.jsx)
+
+**Impact:** 🟢 Low
+
+**Category:** Redundant Computation
+
+**What was inefficient:** `App` held an `exploreCategoryStyles = useMemo(() => PIN_CATEGORIES.map(c => ({ key, color, glyph })), [])`. `PIN_CATEGORIES` is itself a frozen module-level export — the `useMemo` with `[]` deps just delayed the same `.map(...)` work to first render and reserved a per-instance memo cache cell for data fully known at module load.
+
+**Implemented:** Hoisted the projection out of `App` into a module-scope constant `EXPLORE_CATEGORY_STYLES` declared once next to the `PIN_CATEGORIES` import. The prop passed to `<MapView categoryStyles={...} />` now references the module constant directly; the `useMemo` is gone. 288 frontend tests pass.
+
+---
+
+### 2026-05-12 · Geocode cache rewritten in full every 50 entries (OPT-006, backend scan)
+
+**File:** [backend/geocoding.py](../../backend/geocoding.py)
+
+**Impact:** 🟢 Low
+
+**Category:** Inefficient I/O
+
+**What was inefficient:** `_save_geocode_cache` / `_flush_geocode_if_needed` serialised the entire JSON cache and atomically renamed `geocode_cache.json` on every 50th miss, blocking the request thread and scaling linearly with cache size.
+
+**Implemented:** Superseded by Feature 2 "Local-First Geocoding + LocationIQ Fallback" (chunk 3, shipped 2026-05-12 — see [FEATURE_HISTORY.md](../FEATURE_HISTORY.md)). The JSON cache and its flush helpers were retired entirely: `geocoding.py` now reads and writes the SQLite-backed `cached_forward` / `cached_reverse` tables in `backend/data/chicago_geocode.db`, which use per-row inserts (no whole-file rewrites). The legacy `geocode_cache.json` has been renamed to `.deprecated` via `scripts/migrate_geocode_cache.py`. Verified with `grep "_save_geocode_cache\|_flush_geocode_if_needed\|geocode_cache\.json" backend/geocoding.py` — no matches.
+
+---
 
 ### 2026-05-11 · `import math as _m` inside `_cardinal` closure on every directions build (OPT-007, backend scan)
 
@@ -1878,4 +2598,46 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 - **`useExploreFetch({ mode, explorePrefs })`** — explore fetch + `AbortController` lifecycle + `explorePrefsRef` sync + `requestCategories` memo + mode-entry initial-fetch effect + category-change re-fetch effect. Returns `{ exploreResult, exploreLoading, exploreError, setExploreError, fetchExploreResult, explorePrefsRef }`.
 
 `App.jsx` shrank from 1420 to ~840 lines. All 204 tests pass unchanged — the refactor is purely structural with no behavioral difference.
+
+---
+
+## Security Issues Resolved
+
+### 2026-05-13 · CSP `script-src 'unsafe-inline'` replaced with SHA-256 hash (SEC-005)
+
+**Files:** `frontend/index.html`, `frontend/vite.config.js`
+
+**Severity:** 🟡 Medium
+
+**What the issue was:** The meta CSP shipped in `frontend/index.html` allowed `script-src 'self' 'unsafe-inline'`. The allowance existed only to permit the single inline theme-boot script (which reads `walkpath:theme` from `localStorage` before React mounts to prevent a flash of the wrong theme), but it removed CSP's principal XSS defense for every other script. Any future DOM-XSS regression would not be blunted by the policy.
+
+**How it was resolved:** Added a custom `passage-csp` Vite plugin in [`frontend/vite.config.js`](../../frontend/vite.config.js) that emits a `<meta http-equiv="Content-Security-Policy">` via `transformIndexHtml` with `order: "post"`. In production builds the plugin scans the final HTML for inline `<script>` tags (the regex excludes any tag with a `src=` attribute), computes a base64 SHA-256 over each body, and embeds the hashes in `script-src`. The static CSP meta tag was removed from `index.html` — the plugin is now the single source of truth. Verified by building (`npm run build`) and inspecting `dist/index.html`: the emitted policy reads `script-src 'self' 'sha256-…'` with no `'unsafe-inline'`. All 288 tests pass.
+
+In dev (`vite serve`), the plugin emits a relaxed policy that keeps `'unsafe-inline' 'unsafe-eval'` because the Vite dev server + HMR runtime need them — the relaxed dev directives do NOT ship in production.
+
+---
+
+### 2026-05-13 · CSP `connect-src` no longer leaks dev origins into production HTML (SEC-006)
+
+**Files:** `frontend/index.html`, `frontend/vite.config.js`
+
+**Severity:** 🟢 Low
+
+**What the issue was:** The production CSP `connect-src` allow-listed both `http://localhost:8000` and a hardcoded private LAN address `http://192.168.1.191:8000` (a developer's home-network IP used for mobile-device testing via `npm run dev:tunnel`). Two effects: minor information disclosure (the LAN IP shipped in source for anyone to read) and slight attack-surface widening on networks where an attacker controls that LAN address.
+
+**How it was resolved:** The same `passage-csp` Vite plugin (see SEC-005) now emits a `connect-src` whose contents differ by mode. Production: `'self' https://*.up.railway.app https://*.openfreemap.org https://tiles.openfreemap.org`. Dev: adds back `http://localhost:8000`, `http://192.168.1.191:8000`, `https://*.trycloudflare.com`, plus `ws://localhost:5173` / `ws://192.168.1.191:5173` for HMR. The plugin also adds `upgrade-insecure-requests` in prod (newly possible because no dev origins remain to be upgraded). `frame-ancestors` was intentionally omitted — the CSP spec ignores it when delivered via `<meta>`, so it belongs on an HTTP response header at the hosting layer (Railway) when added.
+
+Verified by inspecting `dist/index.html` after `npm run build`: production `connect-src` reads `'self' https://*.up.railway.app https://*.openfreemap.org https://tiles.openfreemap.org` with the dev origins absent.
+
+---
+
+### 2026-05-13 · CSP `style-src 'unsafe-inline'` reclassified as accepted tech debt (SEC-007)
+
+**Files:** `docs/Technical_Debt.md`, `docs/SECURITY.md`
+
+**Severity:** 🟢 Low
+
+**What the issue was:** `style-src 'self' 'unsafe-inline'` permits inline `style={{ ... }}` attributes throughout the editorial design system (`ShareDispatch`, `ErrorDispatch`, the Wayfarer primitives). Inline-style XSS is much weaker than inline-script XSS — limited to selector-probe data exfiltration via CSS — and requires an attacker to already have a script-injection foothold (which SEC-005 now prevents).
+
+**How it was resolved:** Migrating every inline `style` attribute to CSS classes is a substantial refactor that is out of proportion to the theoretical risk while React's default text-escaping holds and SEC-005's hash-based `script-src` is in place. The finding was reclassified as accepted tech debt and logged in [`Technical_Debt.md`](../Technical_Debt.md) so that any future inline-style → CSS-class migration carries the security framing forward.
 

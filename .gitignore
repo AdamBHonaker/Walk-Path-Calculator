@@ -2,6 +2,17 @@
 backend/street_graph.graphml
 backend/street_graph_igraph.pkl
 
+# Geocoding SQLite cache + FTS5 indexes (~72 MB). Generated locally by
+# backend/scripts/build_address_points.py + build_intersections.py
+# (+ migrate_geocode_cache.py for the legacy JSON cache import).
+backend/data/chicago_geocode.db
+backend/data/chicago_geocode.db-shm
+backend/data/chicago_geocode.db-wal
+
+# Optional Chicago boundary polygon for Lake Michigan clipping in /explore.
+# Generated on demand by backend/scripts/build_chicago_boundary.py.
+backend/data/chicago_boundary.json
+
 # Environment / secrets
 .env
 backend/.env

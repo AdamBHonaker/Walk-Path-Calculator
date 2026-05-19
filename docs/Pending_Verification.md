@@ -1,0 +1,246 @@
+# Pending Manual Verification
+
+Code that has shipped to `main` but still needs a human in front of real
+hardware (or a paid API key / dashboard) before the feature can be
+considered fully verified. Items here block "feature complete" status
+without blocking the merge itself.
+
+> **Process:** When you complete a verification item, **delete it from
+> this file**. If a check fails, paste the failure into a new entry in
+> [`BUGS.md`](BUGS.md) and leave this item in place until the bug is
+> resolved and the check passes.
+
+---
+
+## PV-001 · Address autocomplete — real-device mobile parity
+**Shipped:** 2026-05-12 (Local-First Geocoding + LocationIQ Fallback, chunk 5).
+**Why pending:** [`AddressAutocomplete`](../frontend/src/components/AddressAutocomplete.jsx)
+portals its listbox into `document.body` with `position: fixed` so the
+`WFSheet` (`transform: translateY(...)` + `overflow-y: auto`) can't clip
+it. Unit tests prove the wiring (portal placement, `visualViewport`
+listener, opt-out via `positioning="absolute"`); the actual mobile UX
+on iPhone Safari + Android Chrome — keyboard sizing, sheet drag
+following, screen-reader behavior — needs a person to drive a phone.
+
+**Checklist:** the full per-device pass/fail list lives in
+[`MOBILE_TESTING.md`](MOBILE_TESTING.md#address-autocomplete--chunk-5-mobile-sign-off-checklist)
+("Address autocomplete — Chunk 5 mobile sign-off checklist"). Run via
+`npm run dev:tunnel` from `frontend/`.
+
+**Quick summary of what to check:**
+- iPhone Safari portrait + landscape: keyboard doesn't hide bottom of
+  dropdown; tap selects; sheet-drag follows the listbox; z-index above
+  the sheet handle; route stop *and* Explorer combobox both work.
+- Android Chrome portrait + landscape: same list + TalkBack reads each
+  highlighted row via `aria-activedescendant`.
+
+**When to delete this entry:** when every checkbox in the
+MOBILE_TESTING.md checklist passes on at least one iPhone and one
+Android. Any failure → paste into BUGS.md, keep this entry.
+
+---
+
+## PV-002 · LocationIQ fallback live behavior
+**Shipped:** 2026-05-12 (Local-First Geocoding + LocationIQ Fallback,
+chunks 3 + 5).
+**Why pending:** the LocationIQ Tier-3 fallback is fully implemented
+([`geocode_external`](../backend/geocoding.py), [`_reverse_geocode_external`](../backend/geocoding.py))
+and unit-tested with mocked HTTP, but it's never been hit against a
+real key. The circuit breaker, viewbox biasing, and SQLite negative-cache
+all work in tests; the production behaviors below require a live key
+plus a few minutes at the LocationIQ dashboard.
+
+**Quick summary of what to check** (set `LOCATIONIQ_API_KEY` in
+`backend/.env`, restart uvicorn, then probe):
+
+- [ ] **Tail query end-to-end.** Hit `/autocomplete` (or `/route`) with
+  a Chicago street that is *not* in the OSM address-point set — e.g.,
+  a brand-new construction address. Expect: response includes a
+  `source: "locationiq"` row with sensible coords inside the Chicago
+  bbox.
+- [ ] **Cache persists.** Re-issue the same query. Expect: identical
+  result, but the LocationIQ dashboard shows **only the first call**,
+  not the second (the `cached_forward` row served the repeat). Verify
+  by inspecting `backend/data/chicago_geocode.db`:
+  `SELECT * FROM cached_forward WHERE source='locationiq';` shows the
+  row.
+- [ ] **Negative cache works.** Issue an intentionally-bad address
+  ("zzzzz nonexistent xyzzy"). Expect: HTTP 200 with empty / fallback
+  result; a `cached_forward` row exists with `lat IS NULL AND lon IS NULL`.
+  Re-issue — no second LocationIQ call on the dashboard.
+- [ ] **Bbox rejection.** Force an out-of-bbox result by querying
+  something LocationIQ would resolve outside Chicago — e.g., set the
+  viewbox loosely and ask for "Times Square". Expect: the response is
+  treated as a miss (out-of-bbox guard in [`geocode_external`](../backend/geocoding.py)),
+  not a poisoned cache row.
+- [ ] **Budget verification.** After a normal browsing session, the
+  LocationIQ dashboard should show usage only on deliberately tail
+  queries. If autocomplete keystrokes (`wri`, `wrig`, `wrigl`…) are
+  burning quota, the supplement-gate heuristic
+  ([`_looks_like_free_text_address`](../backend/main.py)) is letting
+  too much through — file a bug.
+- [ ] **Reverse-geocode coverage.** Pick-on-map at a random non-curated
+  intersection. Expect: response has `source: "address"` (Tier-2
+  nearest OSM address) OR `source: "locationiq"` (fallback) with a
+  legible label — never a raw `"coordinates"` fallback for points
+  inside Chicago.
+
+**When to delete this entry:** when all six probes have passed against
+a real key with the LocationIQ dashboard open. Failures → BUGS.md.
+
+---
+
+## PV-003 · Cross-street suggestion → /route round-trip
+**Shipped:** 2026-05-12 (chunk 2 — `local_search.parse_cross_street`).
+**Why pending:** the `intersections` table stores coords lifted from
+geometric crossings of named OSM centerlines. The plan claims those
+coords are "guaranteed to land on routable graph nodes (strictly better
+than any geocoder for the routing use case — no snap step needed)."
+Local tests confirm `parse_cross_street` returns the right canonical
+pair and the right coord, but there's no end-to-end integration test
+proving the coord routes cleanly via `/route` without the snap-to-nearest
+fallback ever firing.
+
+**Check** (no external key needed — pure backend):
+- [ ] In the running frontend, type "Clark and Belmont" into the Origin
+  field, accept the autocomplete suggestion, type "Logan Square" into
+  Destination, submit. Expect: a route renders with no error toast.
+- [ ] Repeat for 3–4 different famous Chicago intersections (State &
+  Madison, Halsted & Fullerton, Ashland & Division, Damen & Milwaukee).
+  All should route cleanly.
+- [ ] If any intersection produces a "could not snap" error or a route
+  that visibly starts/ends several meters away from the actual corner,
+  the cross-street geometric crossing isn't landing on a graph node —
+  open a bug. Likely fix is a graph-node snap inside
+  `build_intersections.py`.
+
+**When to delete this entry:** after 4+ Chicago intersections route
+cleanly through `/route` end-to-end.
+
+---
+
+## PV-004 · Parks + green-space heatmap — real-device mobile parity
+**Shipped:** 2026-05-12 (FEAT-3 chunks 1–3 + the green-space extension
+chunks 3a–3c). Chunk 4 (mobile parity + tests + docs) shipped 2026-05-14.
+**Why pending:** chunk 4 ships the mobile-sheet plumbing and the
+persistence tests. The wiring is structurally correct — both toggles
+are the same `WFCheck` row used on desktop, rendered inside
+`ExploreCategoryPanel` under the **Outdoors** group, and
+[`WFSheet`](../frontend/src/wayfarer/primitives.jsx)'s body-drag state
+machine has an 8 px deadzone so a tap on the toggle should never
+collapse or resnap the sheet. Unit tests prove persistence
+(`showParksHeatmap` + `showGreenSpaceHeatmap` round-trip + wrong-type
+fallback in [`explorePrefs.test.js`](../frontend/src/lib/explorePrefs.test.js)).
+The actual mobile UX — toggle taps not interfering with snap, layers
+recoloring on theme swap, performance with all heatmaps on — needs a
+person to drive a phone.
+
+**Checklist:** the full per-device pass/fail list lives in
+[`MOBILE_TESTING.md`](MOBILE_TESTING.md#parks--green-space-heatmaps--chunk-4-mobile-sign-off-checklist)
+("Parks + Green-Space heatmaps — Chunk 4 mobile sign-off checklist").
+Run via `npm run dev:tunnel` from `frontend/`.
+
+**Quick summary of what to check:**
+- iPhone Safari portrait + landscape (7 items): each toggle paints /
+  unpaints with no map re-fetch, sheet stays at half through both
+  toggles, dual-layer visual distinction (parks saturated, green-space
+  softer wash), z-order (CPD parks above green-space on overlap),
+  toggle states persist across page reload, Cream ↔ Dusk theme
+  recolor, fills clip cleanly to the isochrone polygon.
+- Android Chrome portrait + landscape: same list + a long-press tap
+  test (~600 ms hold) confirming the `WFCheck` `<label>` doesn't
+  compete with the body-drag state machine.
+
+**When to delete this entry:** every checkbox in the
+MOBILE_TESTING.md checklist passes on at least one iPhone and one
+Android. Any failure → paste into BUGS.md, keep this entry.
+
+---
+
+## PV-005 · Tree Canopy heatmap — real-device mobile parity + share-card footer
+**Shipped:** 2026-05-14 (FEAT-2 chunks 1–4 — Tree Canopy Heatmap).
+**Why pending:** chunk 4 ships the mobile-sheet plumbing and the
+share-card `Data: …` attribution mirror. The wiring is structurally
+correct — the toggle is the same `WFCheck` row used on desktop, the
+[`WFSheet`](../frontend/src/wayfarer/primitives.jsx) body-drag state
+machine has an 8 px deadzone before any pointer move is treated as a
+sheet drag (so a tap on the toggle should never collapse or resnap the
+sheet), and `handleToggleHeatmap` does not re-fetch. Unit tests prove
+the persistence wiring (`showTreeCanopyHeatmap` round-trip + wrong-type
+fallback in [`explorePrefs.test.js`](../frontend/src/lib/explorePrefs.test.js)).
+The actual mobile UX — toggle taps not interfering with snap, layers
+recoloring on theme swap, share-card PNG capturing the new attribution
+subline cleanly — needs a person to drive a phone.
+
+**Checklist:** the full per-device pass/fail list lives in
+[`MOBILE_TESTING.md`](MOBILE_TESTING.md#tree-canopy-heatmap--chunk-4-mobile-sign-off-checklist)
+("Tree Canopy heatmap — Chunk 4 mobile sign-off checklist"). Run via
+`npm run dev:tunnel` from `frontend/`.
+
+**Quick summary of what to check:**
+- iPhone Safari portrait + landscape (6 items): sheet auto-promote,
+  toggle on/off without snap interference, no re-fetch on toggle,
+  persistence across reload, visual distinction from Parks layer when
+  both are on, Cream ↔ Dusk theme recolor.
+- Android Chrome portrait + landscape: same list + a long-press tap
+  test (~600 ms hold) confirming the WFCheck `<label>` doesn't
+  compete with the body-drag state machine.
+- Share-card footer: open the share modal, confirm the new
+  `Data: City of Chicago Open Data Portal · OpenStreetMap · LocationIQ`
+  subline renders below the colophon and survives PNG capture (no
+  text clipping, fonts loaded, doesn't push the visit strip off the
+  bottom of the card).
+
+**When to delete this entry:** every checkbox in the
+MOBILE_TESTING.md checklist passes on at least one iPhone and one
+Android. Any failure → paste into BUGS.md, keep this entry.
+
+---
+
+## PV-006 · Greenest routing (FEAT-4) — production deploy verification
+**Shipped:** 2026-05-14 (FEAT-4 chunks 1–3 — Greenest Routing edge weights).
+**Why pending:** chunks 1–3 land in code: the bake step in
+[`fetch_street_graph.py`](../backend/fetch_street_graph.py) computes
+`tree_canopy_score` + `park_proximity_score` for every undirected edge,
+[`walking.py`](../backend/walking.py)'s `_build_flavor_weights` consumes
+both in the greenest weight formula, and a fail-fast guard refuses to
+boot on a v2-shaped pickle. The risk window — "Railway rebuilds, the
+in-container bake produces a v3 `.pkl`, the new guard does not trip,
+and prod traffic gets a meaningfully-different greenest route" — has
+only been exercised locally so far. Until a real Railway deploy
+confirms it, the feature isn't verified end-to-end.
+
+**Quick summary of what to check** (procedure mirrors the "Deploy
+checklist" in [`CLAUDE.md`](../CLAUDE.md) "Greenest-routing graph
+release runbook"):
+
+- [ ] **Bake runs in the container.** Tail the Railway build log for
+  `[3/9 ...] Baking tree_canopy_score + park_proximity_score per edge...`
+  and the histogram block showing non-zero counts for both columns.
+  Pickle line should end `format_version: 3, 28.x MB`.
+- [ ] **walking.py loads cleanly.** Boot log shows
+  `igraph loaded: 208,008 vertices, 232,759 edges` and **no**
+  `Refusing to load ... greenest routing requires per-edge ...`
+  error. `/route` should succeed end-to-end (not haversine fallback).
+- [ ] **Greenest diverges from fastest on the marquee fixture.**
+  `POST /route` with origin coords `(41.9405, -87.6420)` and dest
+  coords `(41.9210, -87.6500)` — Lakeview East → Lincoln Park. Expect
+  `routes[greenest].path` differs from `routes[fastest].path`, with
+  greenest's path passing through a footway segment (look for a
+  direction step with `path_type: "footway"`) and total miles within
+  ~5 % of fastest's.
+- [ ] **Fastest is unchanged on a baseline route.** `POST /route` with
+  `Wrigleyville` → `Logan Square` and compare `routes[fastest]` mile
+  count + step count to a prior-deploy snapshot. They should match
+  exactly — fastest's weight vector is unaffected by FEAT-4.
+- [ ] **`prefer_pedestrian` custom flavor still routes.**
+  `POST /route` with the same Wrigleyville → Logan Square stops and
+  `"prefer_pedestrian": true` returns a `routes[0].flavor == "custom"`
+  payload. The `custom` flavor inherits the greenest weight function,
+  so this implicitly exercises the FEAT-4 formula.
+
+**When to delete this entry:** all five checkboxes pass on a Railway
+deploy. Any failure → paste into BUGS.md, keep this entry. The
+fail-fast guard's "refuse to boot on stale pickle" path will surface
+loudly if it trips, so the most likely failure mode is "deploy never
+gets healthy" rather than "deploy succeeds but routes look wrong."

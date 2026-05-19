@@ -6,6 +6,28 @@ Known technical debt catalogued for future resolution. Priority: 🔴 High · �
 
 ---
 
+### TD-035 · Inline `style={{ ... }}` → CSS-class migration (carries SEC-007)
+- **File**: [frontend/src/components/ShareDispatch.jsx](frontend/src/components/ShareDispatch.jsx), [frontend/src/components/ErrorDispatch.jsx](frontend/src/components/ErrorDispatch.jsx), [frontend/src/wayfarer/primitives.jsx](frontend/src/wayfarer/primitives.jsx), and others throughout `frontend/src/components/` and `frontend/src/wayfarer/`.
+- **Category**: Code Quality / Defense-in-Depth Security
+- **Priority**: 🟢 Low
+- **Description**: The editorial design system uses inline `style={{ ... }}` attributes pervasively. The production CSP therefore still includes `style-src 'self' 'unsafe-inline'` (see the `passage-csp` plugin in [vite.config.js](../frontend/vite.config.js)). This was originally logged as security finding SEC-007 on 2026-05-13. It was reclassified as tech debt because the practical risk is low: inline-style XSS is limited to CSS-selector data exfiltration and requires an attacker to first land a script-injection foothold, which the SHA-256-hashed `script-src` (SEC-005 fix) now prevents.
+- **Resolution path**: Migrate inline `style` objects to CSS classes (Wayfarer tokens already exist in `src/wayfarer/tokens.css`; the migration is mostly moving literal numeric values into named class rules). Once no JSX file declares `style={{` outside of dynamically-computed properties (animation transforms, MapLibre paint hex values), drop `'unsafe-inline'` from `style-src` in the `passage-csp` plugin's `directives` array. Verify by building and confirming `style-src 'self'` appears in `dist/index.html`.
+- **Acceptance**: `grep -r "style={{" frontend/src` returns no matches in static-styling contexts, and the production CSP `style-src` reads `'self'` (no `'unsafe-inline'`).
+- **Out of scope when this entry was opened**: ShareDispatch's editorial card has ~30 inline-style blocks that drive precise visual layout for PNG export; moving those to CSS classes risks visual regression and needs a tight visual-diff loop. Not blocking; the share card renders fine today.
+
+---
+
+### TD-033 · Tree canopy data source — OSM → NLCD raster pivot
+- **File**: [backend/scripts/build_tree_canopy.py](backend/scripts/build_tree_canopy.py), [backend/tree_canopy.py](backend/tree_canopy.py)
+- **Category**: Data Quality / External Source
+- **Priority**: 🟢 Low
+- **Description**: Feature 2 (Tree Canopy Heatmap) ships against OSM `natural=tree` nodes via Overpass. The original FEATURE_PLANS scope assumed the Chicago Data Portal's "Street Tree Inventory" — which doesn't actually exist on CDP (only 311 trim/debris service requests). The OSM pivot works but produces an uneven signal: ~30k mapped trees citywide cluster heavily in Grant/Millennium Park where mappers are most active; large residential neighborhoods (Lincoln Park, Logan Square, Pullman) read sparse despite having dense canopy in reality. Density bands were retuned to 0.05 / 0.15 / 0.40 (from the originally scoped 0.25 / 0.5 / 0.75) to make the signal visible citywide, but the underlying coverage gap remains.
+- **Resolution path**: Pivot the ingest to NLCD Tree Canopy Cover (a national 30 m raster of canopy fraction, published by USGS). Pre-smoothed — no KDE needed; resample onto the existing 50 m grid and emit the same sparse-cells JSON. Runtime (`tree_canopy.py`), response field, and frontend layer stay as-is; only `build_tree_canopy.py` changes substantively. **Post-FEAT-4 consideration**: a canopy-data refresh now also requires rebuilding `street_graph_igraph.pkl` so the per-edge `tree_canopy_score` baked by `_bake_green_signals` reflects the new values — this is automatic via the in-container bake (or `python fetch_street_graph.py` locally). FEAT-4's greenest flavor inherits whatever the canopy signal looks like, so an NLCD pivot lifts both the explorer overlay AND the routing signal in one move. Acceptance: Lincoln Park reads dense, Pullman reads sparse, Grant Park stays dense.
+- **Effort**: Medium (~1 chunk of work, no code touched outside the ingest script).
+- **Out of scope here**: actually pulling NLCD requires a download flow (USGS doesn't have a SODA-style API). Add when someone wants tree canopy to be the layer's whole point rather than a "where have OSM mappers been" proxy.
+
+---
+
 ### TD-032 · React 18 → 19 upgrade
 *(Renumbered from TD-009c on 2026-05-11 — the TD-009 ID was reused twice in earlier scans; this preserves uniqueness across history. The two companion items in the same omnibus split landed as TD-030 (maplibre v4 → v5) and TD-031 (html-to-image → modern-screenshot) — see [RESOLVED_HISTORY.md](archive/RESOLVED_HISTORY.md).)*
 - **File**: [frontend/package.json:18-19](frontend/package.json#L18-L19)
@@ -36,11 +58,11 @@ Known technical debt catalogued for future resolution. Priority: 🔴 High · �
 
 - **Chunked execution plan** (each chunk pauses for go/no-go before the next):
 
-  **Chunk 1 — Pre-flight & branch (no code changes).** Create a worktree or feature branch so main stays clean while TD-030 / TD-031 sit ready to merge. Snapshot the current baseline: test count (204), build output sizes (maplibre chunk 1,055 KB / 285 KB gz; index chunk 238 KB / 75.74 KB gz), eslint warning count. Re-run `npm view react@19 dist-tags` to confirm the latest `^19` minor.
-  *Go signal:* baseline numbers captured, branch created.
+  **Chunk 1 — Pre-flight & branch (no code changes).** Create a worktree or feature branch so main stays clean while TD-030 / TD-031 sit ready to merge. **Re-snapshot the current baseline before starting** — the figures originally captured here (204 tests; maplibre chunk 1,055 KB / 285 KB gz; index chunk 238 KB / 75.74 KB gz) predate the Neighborhood Explorer and Mobility-profile ships and are stale. The most recent published count is 247/247 (per the Mobility-profile entry in [FEATURE_HISTORY.md](FEATURE_HISTORY.md)); confirm against `npm test` at start-of-chunk before locking in the baseline. Re-run `npm view react@19 dist-tags` to confirm the latest `^19` minor.
+  *Go signal:* baseline numbers captured **at chunk-1 start**, branch created.
 
-  **Chunk 2 — Bump + green tests.** `npm install react@^19 react-dom@^19`. Run `npm test` (expect 204/204 still passing — the suite is mostly logic + mocked maplibre, not effect-timing-sensitive). Run `npm run build`. Note any new console warnings during test runs.
-  *Go signal:* 204/204 tests pass, build succeeds, no new errors. *Rollback:* `git restore frontend/package.json frontend/package-lock.json && npm install`.
+  **Chunk 2 — Bump + green tests.** `npm install react@^19 react-dom@^19`. Run `npm test` (expect the chunk-1 baseline count still passing — the suite is mostly logic + mocked maplibre, not effect-timing-sensitive). Run `npm run build`. Note any new console warnings during test runs.
+  *Go signal:* chunk-1 baseline count still passing (247/247 expected as of 2026-05-12 — confirm against the count locked in at chunk-1 start), build succeeds, no new errors. *Rollback:* `git restore frontend/package.json frontend/package-lock.json && npm install`.
 
   **Chunk 3 — Lint sweep.** Run `npm run lint`. Triage any new React 19 deprecation warnings (the `forwardRef` warning on [ShareDispatch.jsx:28](frontend/src/components/ShareDispatch.jsx#L28) is the expected one). For each warning: fix in place if trivial, or log as a TD-032-followup item if non-trivial.
   *Go signal:* lint passes or every warning is triaged with a decision (fix-now / defer-with-ticket).
@@ -65,6 +87,27 @@ Known technical debt catalogued for future resolution. Priority: 🔴 High · �
   *Go signal:* docs match the actual delivered scope.
 
 - **Suggested Improvement**: Run the eight chunks above sequentially, pausing for explicit go/no-go between each. Chunks 1–6 are doable in one session; Chunks 7–8 require user device access and a separate sitting. No need to bump `@vitejs/plugin-react`, `vite`, or `@testing-library/react`.
+
+- **Decisions locked 2026-05-12 (pre-Chunk-2 pause — Chunk 1 ran, work paused before bump):**
+  - **Version pin:** `^19.2.0` (latest minor as of 2026-05-12 is `19.2.6`). Mirrors the current `^18.3.1` pinning style. Chunk 2 install command becomes `npm install react@^19.2.0 react-dom@^19.2.0`.
+  - **Isolation:** Work straight on `main`, no branch/worktree. Rollback via `git restore frontend/package.json frontend/package-lock.json && npm install` if needed.
+  - **`forwardRef` refactor (Chunk 4):** **Skip** in this PR regardless of whether Chunk 3 surfaces the deprecation warning. If the warning lands, open a separate TD entry for the [ShareDispatch.jsx:28](frontend/src/components/ShareDispatch.jsx#L28) refactor rather than bundling here. Keep the upgrade PR focused on the version bump.
+  - **React Compiler:** **Defer.** Tracked separately as TD-034 below. Stay opt-out for this upgrade.
+  - **StrictMode posture:** If Chunks 5–6 surface noisy double-effects, fix the offending effects to be idempotent — do **not** drop `<StrictMode>` from [main.jsx](frontend/src/main.jsx).
+  - **Ownership of remaining chunks:** User drives Chunk 7 (mobile device testing via `npm run dev:tunnel`). Assistant handles Chunk 8 (docs + PR) after Chunk 7 sign-off.
+  - **Baseline re-snapshot (locked at Chunk-1 start, 2026-05-12):** `npm test` → **268 / 268** passing across 20 files. `npm run build` → main `index` chunk 251.48 KB (79.85 KB gz); `maplibre` chunk 1,055.26 KB (285.09 KB gz); CSS index 53.05 KB; maplibre CSS 69.94 KB. **Confirm against these figures (not the stale 247) at Chunk 2 go signal; re-baseline if more tests land before work resumes.**
+
+---
+
+### TD-034 · Evaluate React Compiler opt-in
+- **File**: [frontend/vite.config.js](frontend/vite.config.js), [frontend/package.json](frontend/package.json)
+- **Category**: Forward-looking optimization
+- **Priority**: 🟢 Low
+- **Description**: React 19 ships the React Compiler (`babel-plugin-react-compiler`) as an opt-in feature that auto-memoizes components and hooks, potentially eliminating most hand-written `useMemo` / `useCallback` / `React.memo` calls. Decision deferred from TD-032 (2026-05-12) — the React 18 → 19 upgrade is staying compiler-opt-out to keep its blast radius small.
+
+  Opt-in requires: install `babel-plugin-react-compiler`, wire it into `@vitejs/plugin-react`'s `babel.plugins`, decide on `compilationMode` (`"infer"` is the default), run the suite, then audit for behavior changes around `useEffect` deps and ref identity. The compiler has known edge cases with non-idiomatic patterns; the audit is not trivial.
+
+- **Verification when resolved**: Compiler enabled in `vite.config.js`, full test suite green, no behavioral regressions in the surfaces listed in TD-032's risk assessment (route draw-in, map layer effects, share PNG export, sheet drag). Note any bundle-size or runtime wins in the resolution entry.
 
 ---
 
