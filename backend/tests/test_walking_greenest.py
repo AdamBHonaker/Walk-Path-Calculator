@@ -33,13 +33,11 @@ import walking  # noqa: E402
 def _graph_loaded():
     """Ensure the street graph is loaded once for the whole module.
 
-    Skips the module when no pickle is present (e.g. fresh checkout in CI
-    without the release asset). Without this guard every test would log a
-    "graph unavailable" fallback and silently pass against haversine.
+    The @requires_artifact mark on each consumer class handles the
+    skip-locally / fail-in-CI gate before this fixture ever runs.
     """
     g = walking._load_graph()
-    if g is None:
-        pytest.skip("street graph artifact not present — skipping greenest fixtures")
+    assert g is not None, "graph should be loaded when artifact is present"
     return g
 
 
@@ -48,6 +46,7 @@ def _graph_loaded():
 # require the actual graph, just the populated edge cache columns.
 # ---------------------------------------------------------------------------
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestGreenestWeightVector:
     def test_v3_pickle_populates_canopy_and_park_columns(self, _graph_loaded):
         assert walking._edge_tree_canopy is not None, "v3 pickle should populate canopy column"
@@ -171,6 +170,7 @@ def edge_lookup(_graph_loaded):
     return _build_edge_lookup()
 
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestGreenestFixtureRoutes:
     @pytest.mark.parametrize("label,olat,olon,dlat,dlon", FIXTURE_ROUTES,
                              ids=[r[0] for r in FIXTURE_ROUTES])
@@ -231,6 +231,7 @@ class TestGreenestFixtureRoutes:
 # discount. Production deploys must surface the rebuild requirement.
 # ---------------------------------------------------------------------------
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestV3FailFast:
     def test_v2_shaped_pickle_refuses_to_load(self, _graph_loaded, tmp_path, monkeypatch, caplog):
         """A pickle that lacks the v3 canopy + park columns must trip the
@@ -283,6 +284,7 @@ class TestV3FailFast:
         walking._load_graph()
 
 
+@pytest.mark.requires_artifact("street_graph_igraph.pkl")
 class TestAvoidStairsStillWorks:
     def test_avoid_stairs_layers_on_greenest_weights(self, _graph_loaded):
         """`avoid_stairs=True` adds _AVOID_STAIRS_PENALTY_M on top of the

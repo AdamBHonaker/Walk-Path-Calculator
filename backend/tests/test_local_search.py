@@ -22,11 +22,7 @@ from local_search import (
     parse_cross_street,
 )
 
-DB_PRESENT = local_search.DB_PATH.exists()
-needs_db = pytest.mark.skipif(
-    not DB_PRESENT,
-    reason="chicago_geocode.db not built; run backend/scripts/build_*.py first",
-)
+needs_db = pytest.mark.requires_artifact("data/chicago_geocode.db")
 
 
 # ── Cross-street parser ──────────────────────────────────────────────────────
