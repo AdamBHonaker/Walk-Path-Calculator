@@ -354,18 +354,28 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
             ),
         )
 
-    # Materialize the GeoJSON polygon as a shapely geometry once so the
-    # place lookup and the residential clip share one parse. Place +
-    # heatmap work runs in the threadpool — both are CPU-bound and the
-    # event loop should not block on shapely's intersection calls for
+    # Place + heatmap work runs in the threadpool — both are CPU-bound and
+    # the event loop should not block on shapely's intersection calls for
     # large isochrones.
-    polygon_geom = _shape(result["polygon"])
+    #
+    # Each clip below runs on its own worker thread. A shapely geometry is
+    # NOT safe to share across threads: GEOS lazily computes and caches state
+    # (envelope, prepared index) onto the geometry the first time it is
+    # touched, so concurrent first-touch from multiple workers races and
+    # corrupts the GEOS heap (Windows access violation / segfault). Hand each
+    # worker the plain GeoJSON dict — read-only, safe to share — and let it
+    # parse its own private geometry, created and used on the same thread.
+    geojson_polygon = result["polygon"]
+
+    def _clip(fn, *args):
+        return fn(_shape(geojson_polygon), *args)
+
     places, heatmap, canopy, parks, green = await asyncio.gather(
-        loop.run_in_executor(None, places_in_polygon, polygon_geom, payload.categories),
-        loop.run_in_executor(None, residential_heatmap, polygon_geom),
-        loop.run_in_executor(None, tree_canopy_in_polygon, polygon_geom),
-        loop.run_in_executor(None, parks_in_polygon, polygon_geom),
-        loop.run_in_executor(None, green_space_in_polygon, polygon_geom),
+        loop.run_in_executor(None, _clip, places_in_polygon, payload.categories),
+        loop.run_in_executor(None, _clip, residential_heatmap),
+        loop.run_in_executor(None, _clip, tree_canopy_in_polygon),
+        loop.run_in_executor(None, _clip, parks_in_polygon),
+        loop.run_in_executor(None, _clip, green_space_in_polygon),
     )
 
     return {
