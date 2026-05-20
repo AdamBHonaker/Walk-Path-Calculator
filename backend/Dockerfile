@@ -56,16 +56,23 @@ ARG ARTIFACT_REV=2026-05-20
 # runtime degradation to haversine routing.
 ARG STREET_GRAPH_SHA256
 
+# `$base`, `$expected`, `$actual` are SHELL variables, expanded by /bin/sh at
+# run time — they must NOT be backslash-escaped. Docker only substitutes its
+# own ARG/ENV vars (`${ARTIFACT_REV}`, `${STREET_GRAPH_SHA256}` below); an
+# undeclared `$base` is passed through to the shell untouched. Writing `\$base`
+# instead makes Docker forward a literal backslash, and the shell then reads
+# `\$` as an escaped (literal) `$` — so the variable never expands and curl
+# gets the literal string "$base/..." as a hostname.
 RUN set -eu; \
     echo "Fetching street-graph release artifacts (ARTIFACT_REV=${ARTIFACT_REV})"; \
     base="https://github.com/AdamBHonaker/Passage/releases/download/street-graph"; \
-    curl -fL -o street_graph_igraph.pkl    "\$base/street_graph_igraph.pkl"; \
-    curl -fL -o data/chicago_geocode.db    "\$base/chicago_geocode.db"; \
-    curl -fL -o data/chicago_boundary.json "\$base/chicago_boundary.json"; \
-    expected="\$(printf '%s' "${STREET_GRAPH_SHA256}" | tr -d '[:space:]' | tr 'A-Z' 'a-z')"; \
-    if [ -n "\$expected" ]; then \
-        actual="\$(sha256sum street_graph_igraph.pkl | cut -d ' ' -f1)"; \
-        [ "\$actual" = "\$expected" ] || { echo "ERROR: street_graph_igraph.pkl SHA-256 mismatch (expected \$expected, got \$actual)" >&2; exit 1; }; \
+    curl -fL -o street_graph_igraph.pkl    "$base/street_graph_igraph.pkl"; \
+    curl -fL -o data/chicago_geocode.db    "$base/chicago_geocode.db"; \
+    curl -fL -o data/chicago_boundary.json "$base/chicago_boundary.json"; \
+    expected="$(printf '%s' "${STREET_GRAPH_SHA256}" | tr -d '[:space:]' | tr 'A-Z' 'a-z')"; \
+    if [ -n "$expected" ]; then \
+        actual="$(sha256sum street_graph_igraph.pkl | cut -d ' ' -f1)"; \
+        [ "$actual" = "$expected" ] || { echo "ERROR: street_graph_igraph.pkl SHA-256 mismatch (expected $expected, got $actual)" >&2; exit 1; }; \
         echo "street_graph_igraph.pkl SHA-256 verified at build time"; \
     else \
         echo "STREET_GRAPH_SHA256 not set - skipping build-time pickle verification"; \
