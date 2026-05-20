@@ -16,6 +16,13 @@ Chunked plans for upcoming major features, followed by ideas deferred until post
 | # | Feature | Type | Effort |
 |---|---------|------|--------|
 | 1 | Multi-City Support | Structural | High (was Very High before cross-city routing was deferred to a follow-on — see plan section) |
+| 2 | Ship `chicago_boundary.json` as a release artifact (lakefront `/explore` clipping) | Bolt-On | Low |
+| 3 | GCFD Food Banks & Pantries in the Neighborhood Explorer | Bolt-On | Medium |
+| 4 | Beaches as a subcategory of Public Parks (Explorer) | Bolt-On | Low |
+| 5 | Divvy Bike-Share Stations in the Neighborhood Explorer | Bolt-On | Low–Medium |
+| 6 | Chicago Landmark Designations in the Neighborhood Explorer | Bolt-On | Low |
+| 7 | Community Health Centers as a subcategory of Medical (Explorer) | Bolt-On | Low |
+| 8 | Refresh Stale Farmers-Market Data (source TBD — investigation pending) | Bolt-On | Low–Medium |
 
 **Unscoped notes** (need a scoping pass before they become chunked plans):
 
@@ -201,6 +208,453 @@ If a future smaller city is added and lacks footways entirely, add a `supported_
       - Coverage-error toasts in [frontend/src/App.jsx](frontend/src/App.jsx) lines 464, 658, 698 ("You're outside the Chicago coverage area") — read the active city's display name.
       - Motivation copy in [frontend/src/lib/routeFormat.js](frontend/src/lib/routeFormat.js) — sweep for Chicago-specific strings.
       - The `chicago-mark` icon name in [frontend/src/wayfarer/walkpath-icons.jsx](frontend/src/wayfarer/walkpath-icons.jsx) — generalize to `{slug}-mark` per city (each city contributes its own flag glyph alongside `flag.svg`).
+
+---
+
+## 2. Ship `chicago_boundary.json` as a release artifact
+
+**Type:** Bolt-On | **Effort:** Low | **Area:** Backend / deploy
+
+**Why.** [backend/explore.py](backend/explore.py) already supports clipping the `/explore` isochrone against `backend/data/chicago_boundary.json` so lakefront origins don't bleed polygons into Lake Michigan. The file is built on demand by [backend/scripts/build_chicago_boundary.py](backend/scripts/build_chicago_boundary.py), gitignored due to size, and currently absent from the Railway image — meaning waterfront isochrones in production render with the unclipped raw hull. Local-dev users who never ran the script see the same behavior. The code is graceful (missing file → skip clipping, no error), so this is a visible-only-on-waterfront quality regression rather than an outage.
+
+The same release-artifact + Dockerfile-curl pattern that landed for `street_graph_igraph.pkl` ([6eb8f5e](https://github.com/AdamBHonaker/Passage/commit/6eb8f5e)) and `chicago_geocode.db` ([397e469](https://github.com/AdamBHonaker/Passage/commit/397e469)) applies here verbatim.
+
+**Chunks.**
+
+1. **Build the artifact locally.** Confirm `backend/data/chicago_boundary.json` exists. If not, run `python backend/scripts/build_chicago_boundary.py` to produce it. Sanity-check the file with a quick GeoJSON viewer or `python -c "import json; print(json.load(open('backend/data/chicago_boundary.json'))['type'])"` — should be a `Polygon` or `MultiPolygon`.
+
+2. **Upload to the `street-graph` GitHub release tag.** Asset name must be exactly `chicago_boundary.json` (the Dockerfile curl in chunk 3 is hardcoded to that filename). Same release the `.pkl` and `.db` live on.
+
+3. **Add a Dockerfile curl step.** In [backend/Dockerfile](backend/Dockerfile), after the existing `chicago_geocode.db` curl block:
+   ```dockerfile
+   # Download the optional Chicago boundary polygon used by /explore to clip
+   # isochrones against Lake Michigan for lakefront origins. explore.py
+   # already handles the file being absent (skip clipping); we ship it so
+   # waterfront origins render correctly in prod.
+   RUN curl -fL -o data/chicago_boundary.json \
+       "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/chicago_boundary.json"
+   ```
+   No integrity check — same reasoning as `chicago_geocode.db`, this is data, not pickled code.
+
+4. **Update docs.** In [CLAUDE.md](../CLAUDE.md):
+   - The project-structure comment under `backend/data/` currently lists `chicago_boundary.json` as "Generated locally on demand (gitignored)" — update to flag it as a release artifact matching the surrounding entries.
+   - In the "Greenest-routing graph release runbook" intro, add a third artifact row to the bullet list (`chicago_boundary.json`, ~? KB, optional lakefront clipping, no integrity check).
+
+5. **Deploy verification.** After the next Railway rebuild, eyeball a lakefront origin (e.g., Streeterville, Lakeview East, South Shore) in the Neighborhood Explorer. The isochrone should hug the shoreline rather than overshooting into the lake. No new logs to grep — the change is purely visual.
+
+**Definition of done.** Lakefront isochrones in prod are clipped against the Chicago boundary; the project-structure note and the runbook intro both list `chicago_boundary.json` as a release artifact; this entry is deleted from `FEATURE_PLANS.md` and a short note lands in `FEATURE_HISTORY.md`.
+
+---
+
+## 3. GCFD Food Banks & Pantries in the Neighborhood Explorer
+
+**Type:** Bolt-On | **Effort:** Medium | **Area:** Backend + Frontend + Data ingestion
+**Depends on:** no other *planned* feature. **Hard-blocked by an external prerequisite** — a Vivery API key (Chunk 0). Every data + UI chunk stays parked until the key is in hand; the schema-only Chunk 1 is the lone exception (no Vivery dependency — it may run in parallel with the Chunk 0 outreach). One **internal** decision is also a blocker — see the "Open decision (BLOCKER)" subsection below — and must be settled before Chunk 2b begins.
+
+**Why.** Passage exists to get people walking to the essentials. Food pantries, soup kitchens, and mobile food distributions are exactly that, and the people who rely on them are often the least able to drive. Adding the food-assistance sites that the **Greater Chicago Food Depository (GCFD)** coordinates — with their **operating hours** — as an Explorer category turns "what's reachable on foot" into a real food-access tool.
+
+### Data source — the Vivery API
+
+GCFD's public [Find Food map](https://www.chicagosfoodbank.org/find-food-2/) is powered by **Vivery**, a nonprofit food-access tech network GCFD helped launch in 2021. Vivery exposes a documented, **read-only** REST API at `https://api.vivery.org/api/public`:
+
+- **Auth.** `GET /token` with an `api_key` header returns a JWT; the JWT goes in the `Authorization` header on every data call. Keys are **not self-service** — see Chunk 0.
+- **Endpoints.** `/location` (name, **latitude/longitude**, address) and `/locationservices` (program-level `CategoryName`, recurring `LocationServiceSchedules` — `Day` / `OpenTime` / `CloseTime` / frequency — special/holiday hours, `ContactPhone`, announcements). Joined on `LocationId`.
+- **Query model.** OData (`$select`, `$filter`, `$top`/`$skip`). In Vivery's model GCFD is a **Network**; registered pantries are Locations/Programs flagged `ApprovedInd` on that Network and `ActiveInd`. The ingestion filters to exactly those.
+- **Rate limit.** 200 requests/min/IP — ample for a periodic bulk pull.
+
+The API is the same pipeline Vivery documents for food banks syncing data into their own systems, so a baked-JSON snapshot refreshed on a cadence is a first-class use of it.
+
+### Why not OpenStreetMap
+
+OSM is the project's existing place source, so a `social_facility=food_bank` filter in [build_places_osm.py](backend/scripts/build_places_osm.py) would be trivial — but a live Overpass query against the Chicago bbox returned only **13** tagged food banks, of which **1** had opening hours. GCFD coordinates hundreds of sites. OSM captures a few percent with almost no hours, which defeats the feature's purpose. OSM is rejected as the source; Vivery is the only viable one.
+
+### Category model — placement and shape
+
+Per the decision to place this in **Public Services**: that group's members (`libraries`, `police_stations`, `fire_stations`) are all *top-level categories with no subcategories*, so there is no parent to nest a subcategory under. This therefore lands as a **new top-level category** in the Public Services group — but one that **carries its own subcategories** for program type, which is where the per-type checkboxes live (this reconciles the original "sub-category" framing: the sub-checkboxes are real, they just hang off a new category rather than an existing one).
+
+- **Category key:** `food_assistance` (backend `places.category`). Matches the compound-key style of `police_stations`, `gyms_fitness`.
+- **Label:** "Food banks & pantries" (user-facing; tunable).
+- **Subcategories** (`places.subcategory`, mapped from Vivery's *Food Program Category* field):
+  - `pantry` — "Food pantries" (Vivery *Food Distribution*)
+  - `meal_program` — "Soup kitchens & meal programs" (Vivery *Hot/Cold Meal Program*)
+  - `mobile` — "Mobile & pop-up distributions" (Vivery *Pop-Up/Mobile Resource*)
+  - Vivery's *Shelter* and *Online Market* program types are **excluded** from v1 — a shelter isn't a food destination and an online market has no walk-to value.
+- **Glyph + color** — a small open decision for Chunk 3. `F` already belongs to Fire stations *in the same group*, so pick a distinct single character; color should be a Wayfarer token (e.g. `var(--field)`, echoing the food/grocery green) — confirm against the Public Services palette so pins stay distinguishable.
+
+### Open decision (BLOCKER) — modelling a location with multiple food programs
+
+**Status: unresolved. Must be locked before Chunk 2b (the build) begins** — it sets the shape of every food-assistance place record and is not safe to settle mid-build. Chunk 2a's data-inspection pass can *inform* the choice (it measures how common multi-program sites are in GCFD's data), but the decision itself is a design call, not a data lookup.
+
+Vivery's docs are explicit that one **Location** can host more than one food **Program** — a church running both a pantry and a soup kitchen is stored as two Programs (`AP01-1`, `AP01-2`) at one address. The map cannot ignore this: [places.py](backend/places.py) does not dedup curated-vs-curated, so two programs at one building become two pins at *identical* coordinates; supercluster then merges identical-coordinate points into a cluster that never expands, and [MapExploreLayer.jsx](frontend/src/map/MapExploreLayer.jsx) `onPinClick` reads only `features[0]` — so the second program is unreachable.
+
+The two options:
+
+- **(a) One record per Location** *(recommended lean).* One pin per physical site. `subcategory` is the site's primary program type by precedence (`pantry` > `meal_program` > `mobile`); the popup lists every program type the site offers; `hours` is program-segmented (see "The hours problem" below). Cost: the subcategory checkbox filter is slightly lossy — a pantry-plus-kitchen site appears only under "Food pantries" — but its popup still tells the full story.
+- **(b) One record per Program.** Each program is its own record with its own `subcategory` and `hours` — clean, lossless filtering — but the identical-coordinate problem must be solved first: either teach the popup to page through multiple co-located `features`, or jitter co-located pins a few metres apart. Either adds real frontend work to Chunk 4.
+
+Whichever option wins, update the "Category model" and "The hours problem" sections to match before Chunk 2b.
+
+### The hours problem — place-record schema extension
+
+The whole value of this data is **hours**, and the place record has no field for them. Today every place — OSM or curated — is `{ category, subcategory, name, lat, lon, address, source }` (built in [places.py](backend/places.py) `_load_places_file`). This feature adds **`hours`** and **`phone`**.
+
+**This extension is low-risk and almost entirely additive.** Verified end-to-end:
+
+- **[places.py](backend/places.py) `_load_places_file`** — the record is built with explicit keys; adding `"hours": p.get("hours")` + `"phone": p.get("phone")` defaults both to `None` for every existing OSM/curated source. One-line-each change.
+- **`/explore` in [main.py](backend/main.py)** — returns `"places": places` as a **plain dict with no Pydantic response model**, so the new keys flow into the JSON response with zero serialization changes. Only the endpoint docstring's place-shape comment needs updating.
+- **Tests** — no test asserts an *exact* place-dict shape; `test_every_place_has_required_fields` in [test_places.py](backend/tests/test_places.py) checks a *subset* of keys are present, so a new key cannot break it. New assertions are *added*, never edited.
+- **Frontend [MapExploreLayer.jsx](frontend/src/map/MapExploreLayer.jsx)** — `placeFeatures` builds the pin `properties` from an explicit field pick, so unpicked fields are simply ignored; surfacing hours is a two-spot change (add to the pick + render in `renderPopupContent`).
+
+**Intended cross-feature behavior — route-form autocomplete.** [local_search.py](backend/local_search.py) builds its autocomplete POI index from `places.all_places()` — OSM **+ curated** — **unfiltered by category**. So once `build_food_banks.py` writes into `places_curated.json`, food banks also surface as typeahead suggestions in the **route form's** stop inputs (`source: "place"`). **This is intentional and settled (decided 2026-05-20):** food banks are valid walking destinations, so they *should* be routable — a user typing a pantry name into a route stop is using the app as intended, not hitting a leak. No category-exclusion filter is added, and no code is needed beyond what Chunk 2 already does. It is documented here so it reads as a deliberate inclusion rather than an accident.
+
+**Hours shape — baked display string, not structured.** Vivery returns *structured* recurring schedules (per-day open/close, frequency rules) plus special hours. v1 bakes these into a single human-readable **display string** at ingest time (e.g. `"Tue 9:30 AM–11:30 AM · Thu 1–3 PM"`) stored in `hours`. Rationale: the place record stays flat primitives (MapLibre feature properties can't hold nested objects without `JSON.stringify`), `places_curated.json` stays lean, and the popup just prints a line. A structured/machine-readable hours field — enabling an "open now" badge or day filter — is a deferred enhancement, not v1.
+
+Two cases the formatter must handle from day one:
+
+- **No hours.** Vivery schedules are an *optional* field — many programs simply say "Call for assistance." With no schedule the formatter yields `None` (never an empty string, never a fabricated default); the popup then shows "Hours not listed — call ahead" and leans on `phone`. The Chunk 5 test therefore asserts the `hours` *key is present*, not that it is non-empty.
+- **Multiple programs at one site.** If the Open decision above resolves to **one record per Location**, that single `hours` string covers 2–3 programs, so it is **program-segmented** rather than merged into one blob — each program's schedule is prefixed with its type, e.g. `"Pantry — Tue & Thu 9:30–11:30 AM; Soup kitchen — daily 12–1 PM"`; a hours-less program reads `"Pantry — call ahead"`. A single-program site gets a plain unprefixed string. If the decision resolves to one record per Program instead, each record carries only its own program's hours and no prefixing is needed — which is why the formatter's exact output shape is downstream of the Open decision.
+
+### Data freshness & attribution
+
+- **Refresh cadence.** A baked snapshot; re-run `build_food_banks.py` **monthly** (pantry hours and rosters drift faster than the annual cadence of the CPL / farmers-market feeds). `places_curated.json` is checked into the repo, so a refresh is a normal commit — no release-artifact step.
+- **Staleness caveat.** A baked snapshot cannot reflect *next week's* holiday closure. The popup must frame hours honestly — "Typical hours — call ahead to confirm" — and surface `phone` next to them. v1 deliberately does **not** ingest Vivery's one-off special-hours / announcement fields (they go stale fastest).
+- **Attribution & terms.** Confirm in Chunk 0 what Vivery / GCFD require for displaying this data in a third-party app. At minimum the popup's existing `source` line ("via …") should credit GCFD/Vivery; the `_source` key is `gcfd_vivery`.
+
+### Scoping to finalize once API access is granted (Chunk 2a)
+
+Several specifics genuinely cannot be pinned down without inspecting real Vivery responses. These are **deliberately deferred**, not loose ends — they are resolved in **Chunk 2a**, a data-inspection pass that is the first task of Chunk 2 (after Chunk 0 yields a key, before `build_food_banks.py` is written). Chunk 2a pulls a real GCFD response and locks down:
+
+- **Pagination.** Whether `/location` returns the full GCFD network in one call or caps the page size — if capped, `_vivery_client.py` must loop on `$skip`. Silently truncating to page one would drop sites.
+- **Hours formatter — real cases.** Which `FrequencyType` values actually occur in GCFD's data (`Every Week` / `Every Other Week` / `Week of Month` / `Day of Month`), how often, and how messy — and therefore exactly how the formatter renders each. "Every Other Week" is unresolvable even by Vivery (it cannot say which weeks — "clients must call"), so its rendering needs a real-data look.
+- **`name` field.** Display Vivery's `LocationName` or `OrganizationName`? They coincide for some sites and differ for others — pick what reads correctly against real records.
+- **Coordinate + data quality.** Vivery data is user-submitted with no validation; 2a measures how many records have missing/implausible coordinates so `build_food_banks.py` can drop them cleanly.
+- **Data volume.** Actual count of GCFD food programs inside the Chicago bbox, and the resulting size delta on `places_curated.json`.
+- **`source` display label.** `_source="gcfd_vivery"` renders in the popup today as a raw de-underscored string ("via gcfd vivery"). Decide a friendly label and where it is mapped.
+- **Default selection state.** Whether `food_assistance` ships pre-checked in `walkpath:explorePrefs` or off by default like the other categories.
+
+Chunk 2a's deliverable is this list answered, plus the "Open decision (BLOCKER)" above settled — both folded back into the plan before any ingestion code is written.
+
+### Chunks
+
+Chunks are numbered in dependency order, and each chunk states its dependencies explicitly below. **Chunk 0 (the outreach TODO) and Chunk 1 (the schema extension) have no dependency on each other — run them in parallel.** Chunks 2 → 6 are strictly sequential. Every one is transitively gated by the Chunk 0 API key, and **Chunk 2 splits into 2a (data-inspection + scoping) and 2b (build) — 2b additionally cannot start until the "Open decision (BLOCKER)" above is settled.**
+
+**0. [BLOCKER — external] Obtain Vivery API access.** *This is the standing TODO for this feature.* Nothing downstream (Chunks 2–6) can start without an API key. The schema-only Chunk 1 may proceed in parallel.
+
+  *Contacts:*
+
+  | Org | Why | How to reach |
+  | --- | --- | --- |
+  | **Vivery** — owns the API + issues keys | API key request, access scope, terms of use | `support@vivery.org` · 312-373-9322 · [support.vivery.org](https://support.vivery.org) |
+  | **GCFD** — owns the data + the Network relationship | May need to authorize / vouch for access to *their* network's data | (773) 247-3663 · [chicagosfoodbank.org/contact](https://www.chicagosfoodbank.org/contact/) · 4100 W Ann Lurie Pl, Chicago IL 60632 |
+
+  Start with Vivery (they run the API); loop GCFD in if Vivery needs the Network's sign-off. Draft outreach note:
+
+  ```
+  Subject: API access for a non-commercial Chicago walking app — GCFD food pantries
+
+  Hi Vivery team,
+
+  I'm the developer of Passage, a free, open-source, non-commercial walking-route
+  app for Chicago (github.com/AdamBHonaker/Passage). It shows people what they can
+  reach on foot — and I'd like to add Greater Chicago Food Depository food pantries,
+  soup kitchens, and mobile distributions, with their locations and hours, as a
+  category on the map.
+
+  I understand GCFD's Find Food map runs on Vivery and that your read-only API is
+  the supported way to access this data. A few questions to get started:
+
+    1. How does a small civic project request an API key?
+    2. Would a key let me read GCFD's network of food programs (locations, hours,
+       program type), or is API access scoped to a food bank syncing only its
+       own data?
+    3. Are there terms of use or attribution requirements for displaying this
+       data in a third-party app?
+
+  Passage has no ads and isn't monetized — the goal is purely to help people reach
+  food assistance and other essentials on foot. Glad to share more or hop on a call.
+
+  Thank you for the work you do,
+  [Your name] · [email] · [phone]
+  ```
+
+  **Open questions to resolve here** (carry the answers into Chunks 2–6): the exact `NetworkName` string for GCFD in Vivery; whether the issued key returns the full GCFD network or only a single org's data; attribution / ToS requirements; whether redistributing a baked snapshot (vs. live calls) is permitted. **If access cannot be obtained, this feature is parked** — do not ship the 13-site OSM set as a consolation; it isn't worth it.
+
+  *Dependencies: none — Chunk 0 is the root external blocker. It has no code-chunk prerequisite, and it gates Chunks 2–6.*
+
+**1. Place-record schema extension.** Add `hours: str | None` and `phone: str | None` to the record built in [places.py](backend/places.py) `_load_places_file` (both default `None` via `.get()`). Update the `/explore` place-shape docstring in [main.py](backend/main.py). No behavior change yet — pure groundwork, and **no Vivery dependency**, so it can land while Chunk 0 is in flight. Add a `test_places.py` assertion that every record carries the keys (value may be `None`).
+
+*Dependencies: none — Chunk 1 has no prior-chunk prerequisite and is explicitly **not** gated by the Chunk 0 API key (it touches no Vivery code). Start it immediately, in parallel with the Chunk 0 outreach.*
+
+**2. Vivery API client + `build_food_banks.py` ingestion.** Split into a scoping pass and a build:
+
+  **2a. Data-inspection + scoping.** Before any ingestion code, pull a real GCFD response and resolve every item in "Scoping to finalize once API access is granted" above; settle the "Open decision (BLOCKER)" (multi-program modelling). Fold both back into the plan. Gated on Chunk 0 (the key). Treat the 2a → 2b boundary as a checkpoint.
+
+  **2b. Build the client + ingestion script.** New `backend/scripts/_vivery_client.py` — `api_key` → JWT exchange, bearer-auth GET helper, OData query params, a 200/min rate-limit courtesy throttle, and pagination per the 2a finding. New `backend/scripts/build_food_banks.py` (model it on [build_farmers_markets.py](backend/scripts/build_farmers_markets.py), the closest non-CDP curated precedent): pull from `/location` + `/locationservices` on the call pattern confirmed in 2a; filter to GCFD-network + `ActiveInd` + `ApprovedInd` food programs; drop records with missing/implausible coordinates; **bbox-filter to the Chicago street-graph bounds** (skip Cook County sites outside coverage); log per-subcategory counts and refuse to overwrite on a suspiciously low total (mirrors [build_places_osm.py](backend/scripts/build_places_osm.py)); write into `places_curated.json` via [_curated_common.py](backend/scripts/_curated_common.py) `merge_and_write` under `_source="gcfd_vivery"`, `category="food_assistance"`, subcategory per the Open-decision model. Add `VIVERY_API_KEY` to `backend/.env.example` (ingestion-only — runtime never reads it, mirroring the CDP key pattern). After the first run, spot-check ~5 ingested sites (name, address, hours) against GCFD's public Find Food map before committing the JSON.
+
+  **The schedule→`hours` formatter is the highest-risk code in the feature** — give it its own tested function. It must handle every `FrequencyType`, multiple open/close windows per day, the no-hours case (→ `None`), and program-segmented output under the one-record-per-Location model (see "The hours problem" above).
+
+*Dependencies: Chunk 1 (the ingestion writes the `hours` / `phone` fields the extended schema must carry). **Blocked by the Chunk 0 TODO** (a live API key) for all of Chunk 2, and **2b is additionally blocked by the "Open decision (BLOCKER)"** — the multi-program model must be settled before the record shape is fixed.*
+
+**3. Category catalog wiring.** Add the `food_assistance` category (with the three subcategories) to the **Public Services** group in [exploreCategories.js](frontend/src/lib/exploreCategories.js) — key, label, color, glyph, `subs`. It becomes a pin category and a requestable key automatically (`PIN_CATEGORIES` / `REQUESTABLE_CATEGORY_KEYS` derive from the catalog). The `/explore` category filter and the frontend sub-filter already handle any new `category` + `category/subcategory` pair — no backend code change. Food banks also surfacing in the route-form autocomplete (see "Intended cross-feature behavior — route-form autocomplete" above) is a **settled, intentional inclusion** — no exclusion filter is added; this chunk makes no `local_search.py` change.
+
+*Dependencies: Chunk 2 (the catalog's `category` + `subcategory` keys must match exactly what the ingestion writes, and pins need ingested data to render). Transitively blocked by the Chunk 0 TODO.*
+
+**4. Map popup — surface hours + phone.** In [MapExploreLayer.jsx](frontend/src/map/MapExploreLayer.jsx): carry `hours` + `phone` into the `placeFeatures` GeoJSON `properties`, and render them in `renderPopupContent` — an hours block with the "Typical hours — call ahead to confirm" framing and a tappable `tel:` phone link. Add the popup-card CSS (`.explore-popup-card-hours` etc.) to the Wayfarer `components.css`. **Mobile parity is required, not a follow-up** — the place-pin tap already drops the bottom sheet to peek so the popup isn't clipped; verify the taller card (now with hours) still fits in both Cream/Dusk themes and portrait/landscape.
+
+*Dependencies: Chunk 1 (the `hours` / `phone` fields must be present in the `/explore` payload) and Chunk 3 (the category must be wired before there are food-bank pins to tap). Transitively blocked by the Chunk 0 TODO.*
+
+**5. Tests.** Backend: smoke tests against the checked-in `places_curated.json` — the `gcfd_vivery` source is present in metadata, `food_assistance` places load into the index, and each carries the `hours` key — value may be `None`, since Vivery schedules are optional (mirroring `TestCuratedSources` in [test_places.py](backend/tests/test_places.py)); a `food_assistance` category-filter test in [test_explore_endpoint.py](backend/tests/test_explore_endpoint.py). A unit test for `build_food_banks.py`'s schedule→string formatter and the GCFD / active / approved filter, with the HTTP layer mocked — **no live Vivery calls in the suite**. Frontend: a `MapExploreLayer` test that a place with `hours` renders the hours block in the popup.
+
+*Dependencies: Chunks 1–4 — the suite covers the schema field (Chunk 1), the ingestion (Chunk 2), the category filter (Chunk 3), and the popup (Chunk 4). Transitively blocked by the Chunk 0 TODO.*
+
+**6. Docs, refresh runbook, mobile sign-off.** Update [CLAUDE.md](CLAUDE.md):
+  - **Project structure** — add `build_food_banks.py` + `_vivery_client.py` to the `backend/scripts/` list; note the new `gcfd_vivery` source in the `places_curated.json` description.
+  - **`POST /explore` API section** — add `hours` + `phone` to the documented place-object example, and add `food_assistance` to the "Place categories (top-level keys…)" list (with `food_assistance/pantry` etc. shown alongside the existing subcategory examples).
+  - **Key Design Decisions** — a new entry for the food-assistance category: Vivery as the source, the baked-snapshot + monthly-refresh model, the typical-hours / call-ahead framing.
+  - **Running Locally** — note the `VIVERY_API_KEY` slot in `.env.example` is ingestion-only (runtime never reads it).
+  - A short **"GCFD food-bank data refresh runbook"** — monthly `build_food_banks.py` re-run, the key in `.env`, commit the regenerated `places_curated.json`.
+
+  Add a real-device mobile sign-off item to [Pending_Verification.md](Pending_Verification.md) (next free `PV-0NN`). Per the process note at the top of this file, **delete this entry** and add a summary to [FEATURE_HISTORY.md](FEATURE_HISTORY.md) when done.
+
+*Dependencies: Chunks 1–5 — Chunk 6 documents and verifies the finished feature. Transitively blocked by the Chunk 0 TODO.*
+
+### Definition of done
+
+A `food_assistance` category sits in the Explorer's Public Services group with `pantry` / `meal_program` / `mobile` sub-checkboxes; selecting it drops pins for GCFD-registered food-assistance sites inside the isochrone; tapping a pin shows the site's name, address, **typical hours** (or "Hours not listed" where Vivery has none), a call-to-confirm phone link, and a GCFD/Vivery credit; the popup is verified on a real mobile device; `places_curated.json` carries the `gcfd_vivery` source and is refreshable via `build_food_banks.py`; tests cover the new source, the schema field, and the popup; CLAUDE.md documents the script + refresh runbook; this entry is moved to `FEATURE_HISTORY.md`.
+
+---
+
+## 4. Beaches as a Subcategory of Public Parks
+
+**Type:** Bolt-On | **Effort:** Low | **Area:** Backend + Frontend + Data ingestion
+**Depends on:** none.
+
+**Why.** The Explorer's `parks` category drops a pin for every OSM `leisure=park`, but Chicago's lakefront beaches are the signature outdoor destination the city is known for — and a beach is a meaningfully different "what's reachable on foot" answer than a neighborhood playlot. A `beach` subcategory under `parks` lets a user filter the isochrone to just the beaches in their walkshed. Chicago's ~25 public beaches are all Chicago Park District land, so an authoritative City of Chicago Data Portal (CDP) feed exists; the data is small, static, and free.
+
+### Data source
+
+**Resolved 2026-05-20 — derive beaches from the CPD parks dataset.** The Chicago Park District facility dataset `ejsh-fztr` ("CPD_Parks") carries a per-park `beach` facility column alongside `park` (name), `park_class`, and the `the_geom` polygon geometry. `build_beaches.py` queries `ejsh-fztr` via the existing [`_cdp_client.py`](../backend/scripts/_cdp_client.py) helper, keeps rows whose `beach` column flags a beach, and emits one place point per such park at the polygon's representative point. ~20–30 rows. This is a fresh query against CPD — *not* a reuse of the baked `parks_polygons.json`, which keeps only name/acres/ring and drops the facility columns.
+
+> **Note on the parks dataset ID.** CLAUDE.md describes `parks_polygons.json` as baked from `ejsh-fztr`, but [`build_parks.py`](../backend/scripts/build_parks.py)'s docstring names `ej32-qgdr` ("Parks - Chicago Park District Park Boundaries (current)"). These are two different CPD park datasets. Beaches must source from `ejsh-fztr` specifically — it is the one carrying the `beach` facility column. (The CLAUDE.md vs. `build_parks.py` discrepancy is a pre-existing doc inconsistency, flagged here so the implementer picks `ejsh-fztr` deliberately; reconciling that inconsistency is out of scope for this feature.)
+
+### Category model
+
+No new top-level category — `beach` joins `dog_park` and `playground` as a third entry in the `parks` category's `subs` list in [`exploreCategories.js`](../frontend/src/lib/exploreCategories.js). Ingested records carry `category="parks"`, `subcategory="beach"`. Pins inherit the existing `parks` color (`var(--field)`) and glyph (`P`); subcategories carry no glyph of their own. **No backend code change** — [`places.py`](../backend/places.py) filters by top-level category and the frontend post-filters by subcategory, exactly as every existing sub already works.
+
+### Chunks
+
+1. **Env wiring.** Add `CDP_API_ENDPOINT_BEACHES` to [`backend/.env.example`](../backend/.env.example) pointing at the `ejsh-fztr` **`.geojson`** URL (`ejsh-fztr` is a geospatial asset — `build_parks.py` documents that the classic `.json` SODA endpoint returns empty column maps for these, so the `.geojson` variant is required), and to the endpoint list in `_cdp_client.py`'s docstring.
+2. **`build_beaches.py` ingestion.** New `backend/scripts/build_beaches.py` modeled on [`build_parks.py`](../backend/scripts/build_parks.py) (the closest precedent — it already fetches `ejsh-fztr`-shaped GeoJSON and parses geometry) — fetch the FeatureCollection, keep features whose `beach` property flags a beach, compute each kept park's representative point, normalize to the place schema with `category="parks"`, `subcategory="beach"`, `_source="cdp_beaches"`, write via [`_curated_common.merge_and_write`](../backend/scripts/_curated_common.py). Commit the regenerated `places_curated.json`.
+3. **Catalog wiring.** Add `{ key: "beach", label: "Beaches" }` to the `parks` category's `subs` array in `exploreCategories.js`.
+4. **Tests + docs.** Add a `TestCuratedSources`-style assertion in [`test_places.py`](../backend/tests/test_places.py) that the `cdp_beaches` source loads and its records are `parks/beach`. Update CLAUDE.md: the `places_curated.json` description (new curated source), the `backend/scripts/` list, the `/explore` `source` enum (new `cdp_beaches` value), the Explorer category list. Per the process note at the top of this file, **delete this entry** and add a summary to `FEATURE_HISTORY.md` when done.
+
+### Files likely touched
+
+`backend/scripts/build_beaches.py` (new), `backend/scripts/_cdp_client.py` (docstring), `backend/.env.example`, `backend/data/places_curated.json` (regenerated), `frontend/src/lib/exploreCategories.js`, `backend/tests/test_places.py`, `CLAUDE.md`.
+
+### Open questions
+
+- **Pin placement.** A park flagged with a `beach` is pinned at the *park's* representative point, which for a large lakefront park may sit inland rather than on the sand. This is acceptable for "is a beach reachable in my walkshed"; if precise placement is wanted later, cross-reference the city's beach water-quality sensor dataset (named beaches + true beach coordinates). Out of scope for v1 unless the inland offset proves visibly wrong.
+- **`beach` column semantics.** Confirm in chunk 2 whether `ejsh-fztr`'s `beach` column is a count, a boolean, or a name string, and filter accordingly (a park with multiple beaches still yields one pin in v1).
+- **Curated-vs-OSM dedupe.** `_load_all_sources` dedupes on `(category, lat_q, lon_q)` at ~1 m precision — a CDP beach point that coincides with an OSM `leisure=park` point in the same cell would collapse. Beaches and parks rarely share a representative point, so this is expected to be a non-issue; confirm after the first ingest.
+- **Multi-City Support.** CDP feeds are Chicago-only per that plan's data-availability matrix; if Multi-City Support lands first, the build script writes into `places_curated_chicago.json`.
+
+### Definition of done
+
+The Explorer's Public parks category shows a "Beaches" sub-checkbox; selecting it filters isochrone pins to Chicago beaches; `places_curated.json` carries the beach source; tests + CLAUDE.md updated; this entry is moved to `FEATURE_HISTORY.md`.
+
+---
+
+## 5. Divvy Bike-Share Stations in the Neighborhood Explorer
+
+**Type:** Bolt-On | **Effort:** Low–Medium | **Area:** Backend + Frontend + Data ingestion
+**Depends on:** none.
+
+**Why.** The Explorer answers "what can I reach on foot." Divvy docks are the natural extension of that — they turn a walk into a longer car-free trip, and a user planning errands wants to know which docks sit inside their walkshed. Chicago's Divvy system has ~800+ stations with an authoritative, frequently-updated CDP feed.
+
+**Mission fit (settled 2026-05-20).** Passage's voice is "walk instead of *other transportation*," but bike-share is active transport that *extends* a walk rather than competing with it — and `train_stations` already establishes that getting-around amenities belong in the Explorer. Including Divvy is a deliberate, settled decision; a future reader should not relitigate it.
+
+### Data source
+
+The CDP "Divvy Bicycle Stations" classic-SODA resource, fetched via `_cdp_client.py`. Each row carries a station name and lat/lon. ~800+ rows. Confirm the exact 4×4 resource ID in chunk 1.
+
+### Category model
+
+New **top-level category** in the **Daily life** group. Proposed key `bike_share` (system-neutral, so a future multi-city port to a non-Divvy city reuses the key cleanly); label "Divvy bike share". It auto-joins `PIN_CATEGORIES` and `REQUESTABLE_CATEGORY_KEYS` from the catalog — **no backend code change**; `places.py`'s category filter and the `/explore` filter handle any new category key. Needs a Wayfarer color token + a single-character glyph (small open decision below).
+
+### Chunks
+
+1. **CDP dataset confirmation + env wiring.** Identify the resource; add `CDP_API_ENDPOINT_DIVVY` to `.env.example` + the `_cdp_client.py` docstring.
+2. **`build_divvy.py` ingestion.** New script modeled on `build_libraries.py`; `category="bike_share"`, `subcategory=None`, `_source="cdp_divvy"`; `merge_and_write`; commit the regenerated `places_curated.json`.
+3. **Catalog wiring.** Add the `bike_share` category object (key/label/color/glyph) to the Daily life group in `exploreCategories.js`.
+4. **Pin-density check.** ~800 pins is materially more than any current category. Eyeball a large (45-minute) isochrone on desktop *and* mobile and confirm [`MapExploreLayer.jsx`](../frontend/src/map/MapExploreLayer.jsx)'s existing pin clustering keeps it legible. Flag only if a denser cluster radius is needed for this category (likely not — clustering is already in place).
+5. **Tests + docs.** `test_places` assertion for the `cdp_divvy` source; CLAUDE.md updates (scripts list, curated-source description, `/explore` `source` enum, category list); delete this entry and summarize in `FEATURE_HISTORY.md`.
+
+### Files likely touched
+
+`backend/scripts/build_divvy.py` (new), `backend/scripts/_cdp_client.py` (docstring), `backend/.env.example`, `backend/data/places_curated.json`, `frontend/src/lib/exploreCategories.js`, `backend/tests/test_places.py`, `CLAUDE.md`.
+
+### Open questions
+
+- **Category key:** `bike_share` (system-neutral, recommended) vs. `divvy` (literal). Pick before chunk 2 — it is the backend `places.category` value and must match the catalog exactly.
+- **Glyph + color.** Daily life already uses glyphs G / + / T / F and tokens `var(--field|--ember|--ink|--harbor)`. Pick a non-colliding glyph (e.g. `D`) and a token.
+- **CDP roster vs. Lyft's live GBFS feed.** GBFS carries real-time dock/bike counts; the CDP feed is a static roster. v1 uses the static CDP roster — it matches every other curated category (a baked snapshot, no live runtime calls). Recorded for the record; not a blocker.
+- **Multi-City Support.** Chicago-only CDP feed; the build script targets `places_curated_chicago.json` if Multi-City Support lands first.
+
+### Definition of done
+
+A "Divvy bike share" category appears in the Explorer's Daily life group; selecting it drops a pin per Divvy dock inside the isochrone; `places_curated.json` carries the source; pin density verified legible on mobile; tests + CLAUDE.md updated; this entry is moved to `FEATURE_HISTORY.md`.
+
+---
+
+## 6. Chicago Landmark Designations in the Neighborhood Explorer
+
+**Type:** Bolt-On | **Effort:** Low | **Area:** Backend + Frontend + Data ingestion
+**Depends on:** none.
+
+**Why.** Passage speaks in an editorial broadsheet voice and exists to make walking rewarding. Officially designated Chicago Landmarks — the buildings and sites the Commission on Chicago Landmarks has recognized for architectural or historical significance — are exactly the "worth walking to and looking at" content that suits that voice. The `art_museums` category absorbs OSM `tourism=artwork`, but designated landmarks are a distinct, authoritative, well-bounded set the Explorer does not surface today.
+
+### Data source
+
+**Confirmed 2026-05-20.** CDP resource `uct4-hrvh` ("Individual Landmarks") — the Commission on Chicago Landmarks designation list, **last refreshed 2026-05-08** (current, not a stale snapshot). Fetched via `_cdp_client.py`. Columns: `name`, `id`, `address`, `date_built`, `architect`, `landmark` (designation date), `the_geom`, `valid_date`. ~400 designations.
+
+`the_geom` is a **MultiPolygon building footprint**, not a point — so the pin is the polygon's **representative point**, computed at build time with shapely (already a backend dependency). **No geocoding step is needed** — the geometry is authoritative and present. `uct4-hrvh` is a geospatial asset, so the ingestion must hit the dataset's **`.geojson`** endpoint (the classic `.json` SODA endpoint returns empty column maps for these — the same handling `build_parks.py` documents for `ejsh-fztr`).
+
+**Scope — individual landmarks only.** The Commission also designates Landmark *Districts* (CDP `zidz-sdfj`), but those are polygon areas rather than points and do not fit the Explorer's pin model. Excluded. (A deprecated pre-2024 Individual Landmarks dataset, `tdab-kixi`, also exists — do **not** use it; `uct4-hrvh` is the current one.)
+
+### Category model
+
+New **top-level `landmarks` category** in the **Culture** group. Auto-joins `PIN_CATEGORIES` / `REQUESTABLE_CATEGORY_KEYS`; **no backend code change**. Needs a Wayfarer token + glyph (Culture uses A / T / B today).
+
+### Chunks
+
+1. **Env wiring.** Add `CDP_API_ENDPOINT_LANDMARKS` to `.env.example` pointing at the `uct4-hrvh` **`.geojson`** URL, and to the `_cdp_client.py` docstring.
+2. **`build_landmarks.py` ingestion.** New script modeled on [`build_parks.py`](../backend/scripts/build_parks.py) (closest precedent — it already fetches geospatial GeoJSON and parses geometry): fetch the FeatureCollection, compute each landmark's representative point from `the_geom`, normalize to the place schema with `category="landmarks"`, `subcategory=None`, `_source="cdp_landmarks"`, `address` from the `address` column. `merge_and_write`; commit the regenerated `places_curated.json`.
+3. **Catalog wiring.** Add the `landmarks` category object to the Culture group in `exploreCategories.js`.
+4. **Tests + docs.** `test_places` assertion for `cdp_landmarks`; CLAUDE.md updates; delete this entry and summarize in `FEATURE_HISTORY.md`.
+
+### Files likely touched
+
+`backend/scripts/build_landmarks.py` (new), `backend/scripts/_cdp_client.py` (docstring), `backend/.env.example`, `backend/data/places_curated.json`, `frontend/src/lib/exploreCategories.js`, `backend/tests/test_places.py`, `CLAUDE.md`.
+
+### Open questions
+
+- **Glyph + color** within Culture (A / T / B already taken) — small decision for chunk 3.
+- **Popup enrichment (optional, deferred).** `uct4-hrvh` carries `date_built` and `architect` — "built 1886 · Cobb & Frost" would be a strong editorial-voice popup line. The place record is flat primitives today (`{category, subcategory, name, lat, lon, address, source}`); surfacing these would need a schema extension like the one the GCFD Food Banks & Pantries feature adds for `hours`/`phone`. Out of scope for v1 — noted as a natural follow-on, ideally folded in if that schema extension lands first.
+- **Multi-City Support.** Chicago-only CDP feed; the build script targets `places_curated_chicago.json` if Multi-City Support lands first.
+
+### Definition of done
+
+A "Landmarks" category appears in the Explorer's Culture group; selecting it drops a pin per designated Chicago Landmark inside the isochrone; `places_curated.json` carries the source; tests + CLAUDE.md updated; this entry is moved to `FEATURE_HISTORY.md`.
+
+---
+
+## 7. Community Health Centers as a Subcategory of Medical
+
+**Type:** Bolt-On | **Effort:** Low | **Area:** Backend + Frontend + Data ingestion
+**Depends on:** none.
+
+**Why.** The `medical` category's subcategories — `pharmacy`, `urgent_care`, `hospital` — are all OSM-derived and miss the safety-net tier: community health centers, which provide comprehensive primary and preventive care regardless of ability to pay, and matter most to the residents least able to drive. The City of Chicago publishes an authoritative location list, so a `community_health` subcategory turns the Explorer into a real care-access tool — the same equity rationale behind the planned GCFD Food Banks & Pantries feature.
+
+### What counts as a "community health center" — the City's own definition
+
+The request raised a fair concern: "community health center" is a term different people define differently. **Passage does not have to define it — the City of Chicago already has.** The Chicago Department of Public Health publishes the dataset *"Public Health Services - Chicago Primary Care Community Health Centers"* (CDP resource `cjg8-dbka`) and states its working definition plainly: the list comprises **all federally qualified health centers (FQHCs) and similar community health centers that provide primary care and are open to the general community.** Each row is even tagged `FQHC` / `Look-alike` / `neither` in the `fqhc_look_alike_or_neither_special_notes` field. Adopting `cjg8-dbka` as the source means Passage adopts the City's definition wholesale — the subcategory is exactly "the facilities CDPH calls primary-care community health centers," nothing the project has to adjudicate.
+
+This deliberately **excludes** standalone mental-health clinics: the City's "community health center" definition is primary-care-centric, and CDPH's mental-health clinics are a separate concept under a different program. Folding them in would reintroduce the definitional ambiguity the City's dataset otherwise resolves. If mental-health clinics are wanted later, they belong in their own subcategory, not merged here.
+
+### Data source
+
+CDP resource `cjg8-dbka` ("Public Health Services - Chicago Primary Care Community Health Centers"), fetched via `_cdp_client.py`. Columns: `facility` (name), `community_area`, `phone`, `fqhc_look_alike_or_neither_special_notes`, and `location_1` — a SODA location carrying `latitude` / `longitude` plus a `human_address` street address. **Coordinates are present**, so no build-time geocoding is needed.
+
+**Staleness caveat (researched 2026-05-20).** `cjg8-dbka` was last refreshed by the City in **April 2014** — it is a ~12-year-old snapshot, the same pattern as the 2013 farmers-market feed. FQHC rosters drift far slower than farmers markets (federally funded health centers are relatively stable), so a 2014 baseline is materially better than nothing — but it is not current. See Open questions for the fresher alternative (HRSA's national health-center dataset).
+
+### Available metadata — and whether to subdivide (investigated 2026-05-20)
+
+`cjg8-dbka` is a **sparse** dataset: **120 facilities**, five columns only — `facility` (name), `community_area`, `phone`, `fqhc_look_alike_or_neither_special_notes`, and `location_1` (coordinates + street address). No services field, no hours field, no specialty taxonomy. That bounds what any subcategory split could key off:
+
+- **Split by FQHC classification — possible from the data, but not user-meaningful.** The leading token of `fqhc_look_alike_or_neither_special_notes` classifies each row: **~96 FQHC**, **6 FQHC Look-alike**, **~18 "neither"**. It is a clean three-way split — but "FQHC" vs "FQHC Look-alike" is a federal-funding / administrative distinction a walker choosing map filters will not understand. Recommendation: do **not** expose it as Explorer subcategories; at most it is popup metadata, not a filter.
+- **Mental-health clinics — NOT in this dataset.** `cjg8-dbka` is primary-care only and contains zero mental-health clinics. The City publishes those separately as `wust-ytyg` ("CDPH Mental Health Resources", last updated 2025-07-03). A `mental_health` subcategory is therefore a **second, separate dataset ingest** — its own build script — not a split of `cjg8-dbka`. A reasonable follow-on, but distinct work.
+- **The "special notes" free text** carries real flavor — school-based health centers (~14), refugee-health and homeless-health specializations, county-government clinics (~9), volunteer-based free clinics — but it is an unstructured, human-written string (some rows even embed opening hours mid-sentence). Not reliable as subcategory keys; at most fuzzy popup text.
+
+**No decision yet on subdivision.** The baseline scope below is a single `community_health` sub. Whether to instead (a) keep it single, (b) also ingest `wust-ytyg` as a sibling `mental_health` subcategory, or (c) split some other way is an **open decision for the user** — see Open questions.
+
+### Category model
+
+No new top-level category — in the **baseline scope**, a single `community_health` sub joins `pharmacy` / `urgent_care` / `hospital` in the `medical` category's `subs` list (the subdivision open question above may revise this). Records carry `category="medical"`, `subcategory="community_health"`. Pins inherit `medical`'s color (`var(--ember)`) and glyph (`+`). **No backend code change.**
+
+### Chunks
+
+1. **Env wiring.** Add `CDP_API_ENDPOINT_HEALTH_CENTERS` to `.env.example` (the classic-SODA `cjg8-dbka.json` URL) + the `_cdp_client.py` docstring.
+2. **`build_health_centers.py` ingestion.** New script modeled on [`build_libraries.py`](../backend/scripts/build_libraries.py); read `facility` → name, `location_1.latitude`/`longitude` → coords, the `human_address` → address; `category="medical"`, `subcategory="community_health"`, `_source="cdp_health_centers"`; `merge_and_write`; commit the regenerated `places_curated.json`.
+3. **Catalog wiring.** Add `{ key: "community_health", label: "Community health centers" }` to the `medical` category's `subs` in `exploreCategories.js`.
+4. **Tests + docs.** `test_places` assertion for the `cdp_health_centers` source; CLAUDE.md updates; delete this entry and summarize in `FEATURE_HISTORY.md`.
+
+### Files likely touched
+
+`backend/scripts/build_health_centers.py` (new), `backend/scripts/_cdp_client.py` (docstring), `backend/.env.example`, `backend/data/places_curated.json`, `frontend/src/lib/exploreCategories.js`, `backend/tests/test_places.py`, `CLAUDE.md`.
+
+### Open questions
+
+- **Subcategory structure — open decision.** Per "Available metadata" above: keep a single `community_health` sub, or also ingest the separate `wust-ytyg` mental-health dataset as a sibling `mental_health` sub? The FQHC / Look-alike / neither split is available in the data but is not recommended as user-facing filters. No decision recorded yet — needs the user's call.
+- **2014 staleness vs. a current source.** `cjg8-dbka` is authoritative for the *definition* but is a 2014 snapshot. The fresher alternative is **HRSA's Health Center Program data** (data.hrsa.gov) — the federal authoritative FQHC site list, kept current, with coordinates. Trade-off: HRSA is current but national (needs a Chicago-bbox filter) and uses HRSA's FQHC definition rather than CDPH's curated city list. Recommendation: ship v1 on `cjg8-dbka` (it directly answers the definition question and FQHC rosters are stable), and note HRSA as the refresh path if the 2014 data proves visibly wrong.
+- **Curated-vs-OSM dedupe.** An FQHC also tagged `amenity=clinic` in OSM (ingested as `medical/urgent_care`) sits under a different subcategory but the same top-level `medical` category — `_load_all_sources` dedupes on `(category, lat_q, lon_q)`, so a co-located OSM clinic would be dropped in favor of the curated entry. This is the intended precedence (curated wins); confirm after the first ingest.
+- **Multi-City Support.** Chicago-only CDP feed; the build script targets `places_curated_chicago.json` if Multi-City Support lands first.
+
+### Definition of done
+
+The Explorer's Medical category shows a "Community health centers" sub-checkbox; selecting it filters isochrone pins to the CDPH-listed primary-care community health centers; `places_curated.json` carries the source; tests + CLAUDE.md updated; this entry is moved to `FEATURE_HISTORY.md`.
+
+---
+
+## 8. Refresh Stale Farmers-Market Data
+
+**Type:** Bolt-On | **Effort:** Low–Medium (depends on the source chosen) | **Area:** Backend + Data ingestion
+**Depends on:** none.
+
+**Why.** The Explorer's `grocery/farmers_market` subcategory is built from the City's "Farmers Markets - 2013" dataset (`i8y3-ytj4`), surfaced in the `/explore` response under the source key `farmers_markets_2013`. It is a ~13-year-old snapshot and should be refreshed.
+
+### Research recorded (2026-05-20)
+
+A first investigation pass established:
+
+- **There is no current City of Chicago farmers-market dataset.** Every farmers-market feed on the Chicago Data Portal is stale — the newest, "Farmers Markets - 2015" (`x5xx-pszi`), was last updated May 2015; everything else is 2011–2013.
+- **The 2015 dataset *does* carry coordinates.** [`build_farmers_markets.py`](../backend/scripts/build_farmers_markets.py)'s docstring claims the 2015 dataset "has no lat/lon" — that is **wrong**; `x5xx-pszi` has populated `latitude` / `longitude` columns (verified against sample rows). A 2013→2015 swap would therefore be trivial and need no geocoding.
+- **The live 2025 schedule is not a structured feed.** The current DCASE Chicago Farmers Markets schedule is published only as a chicago.gov web page, with no stable scrapeable structure.
+- **A current structured source exists federally.** The USDA National Farmers Market Directory (USDA Local Food Portal) offers a REST API + bulk CSV, geocoded, ~7,800 national listings, refreshed as market managers update entries — but it requires a (free) API key, is self-reported, and mixes city-run and private markets.
+
+### No decision yet — more investigation needed
+
+**The data source for the refresh is NOT yet decided.** More investigation is required before committing. Candidate sources, none chosen:
+
+- **(a) CDP "Farmers Markets - 2015" (`x5xx-pszi`)** — trivial swap, coordinates present, but only a 2-year bump on an 11-year-old dataset; not actually current.
+- **(b) USDA National Farmers Market Directory** — genuinely current and structured, but self-reported coverage of unknown completeness for Chicago, and needs an API key + a redistribution-terms check.
+- **(c) Hand-curated annual list** — transcribe DCASE's published schedule into a checked-in JSON; most authoritative for city-run markets but needs manual yearly upkeep.
+- **(d) Contact DCASE directly** — ask the Department of Cultural Affairs and Special Events whether the current schedule is available in a structured / exportable form not surfaced on the data portal.
+
+### Investigation needed before a source is chosen
+
+1. **USDA directory — coverage audit.** Pull the USDA directory for the Chicago bbox and compare its market list against the known 2013/2015 sets and the live DCASE 2025 schedule. How many real Chicago markets does it actually carry, and how stale are its entries?
+2. **USDA directory — access + terms.** Confirm the API-key process and whether redistributing a baked snapshot in an open-source app is permitted.
+3. **DCASE structured data.** Check whether DCASE (or ChicagoFarmersMarkets.us, the site DCASE points to) exposes the current schedule in any structured form — CSV, JSON, an embedded map data layer.
+4. **Is 2015 worth it at all?** Decide whether a 2-year bump to an 11-year-old dataset is worth doing as an interim step, or whether the feature should wait for a genuinely current source.
+
+### Likely shape once a source is picked
+
+Regardless of source, the mechanical work is small and similar: update / extend [`build_farmers_markets.py`](../backend/scripts/build_farmers_markets.py) (swap `DATASET_URL` + `_extract_*`, or add a USDA client), keep `category="grocery"` / `subcategory="farmers_market"`, rename `SOURCE_KEY` away from `farmers_markets_2013` to a year-neutral `farmers_markets`, regenerate `places_curated.json`. Then update the `TestCuratedSources` assertion in `test_places.py` (line 130 references the literal `farmers_markets_2013`) and CLAUDE.md (the `places_curated.json` description + the `/explore` `source` enum, which documents `farmers_markets_2013`).
+
+### Files likely touched
+
+`backend/scripts/build_farmers_markets.py` (and possibly a new USDA client), `backend/data/places_curated.json` (regenerated), `backend/tests/test_places.py`, `CLAUDE.md`.
+
+### Open questions
+
+- **Source choice — open.** See "Investigation needed" above; no source is chosen yet. Nothing downstream should be built until this is settled.
+- **`SOURCE_KEY` rename.** Renaming away from `farmers_markets_2013` is a deliberate change to a documented `/explore` `source` value. A grep confirms no *frontend* code keys off the literal string — it appears only in `test_places.py:130` and CLAUDE.md — but re-confirm before renaming. Year-neutral `farmers_markets` is recommended so a future refresh needs no further rename.
+- **Multi-City Support.** If Multi-City Support lands first, the regenerated data lands in `places_curated_chicago.json`.
+
+### Definition of done
+
+A source has been chosen via the investigation above and recorded in this entry; `grocery/farmers_market` pins reflect that source instead of the 2013 snapshot; `build_farmers_markets.py` and its docstring are updated; the `SOURCE_KEY` / `/explore` `source` value is year-neutral; tests + CLAUDE.md updated; this entry is moved to `FEATURE_HISTORY.md`.
 
 ---
 
