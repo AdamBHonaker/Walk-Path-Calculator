@@ -422,6 +422,8 @@ The Dockerfile `curl`s all three at build time. The rest of this runbook focuses
 
 ### What this means for refreshes
 
+**Whenever you overwrite a release asset, also bump `ARTIFACT_REV` in [backend/Dockerfile](backend/Dockerfile)** (or set a Railway `ARTIFACT_REV` build variable). The Dockerfile fetches all three artifacts in one `RUN curl` layer, and BuildKit caches that layer on the command string alone — without a changed `ARTIFACT_REV`, a deploy after an in-place asset overwrite re-uses the cached layer and ships stale bytes. A `.pkl` refresh also rotates `STREET_GRAPH_SHA256` (interpolated into the same `RUN`, so it busts the cache on its own), but a geocode-DB or boundary refresh changes nothing else — there, `ARTIFACT_REV` is the only knob that forces a fresh download.
+
 - **Tree-canopy / parks data refresh** (yearly, per the heatmap ingest scripts): re-run `python fetch_street_graph.py` to rebuild the `.pkl`. **Upload the new `.pkl` to the `street-graph` release** (overwrite). **Rotate `STREET_GRAPH_SHA256`** in both `backend/.env` and the Railway service variable — see "Pickle integrity check" below.
 - **OSM street-network refresh**: re-run `fetch_street_graph.py --force` to redownload the `.graphml`, then `python fetch_street_graph.py` (no flag) to rebuild the `.pkl`. Upload the new `.pkl` to the release. **Rotate `STREET_GRAPH_SHA256`** as above.
 - **Algorithm change** (formula constants, etc.): code-only, no artifact action, no hash rotation.
@@ -488,7 +490,7 @@ Rollbacks (A)/(B)/(C) above are code-only — they don't require touching the re
 2. **Upload the new `.pkl` to the `street-graph` GitHub release tag** (https://github.com/AdamBHonaker/Passage/releases/tag/street-graph → Edit release → drag-replace `street_graph_igraph.pkl`). Asset name must remain exactly `street_graph_igraph.pkl` — the Dockerfile `curl` is hardcoded to that filename.
 3. **Recompute the pickle SHA-256** (`Get-FileHash -Algorithm SHA256 backend\street_graph_igraph.pkl` or `shasum -a 256 backend/street_graph_igraph.pkl`). Update `STREET_GRAPH_SHA256` in `backend/.env` locally **and** in the Railway service variables. Do steps 2–3 *before* pushing — if Railway rebuilds while the release asset is stale or the Railway hash doesn't match the uploaded bytes, the service will degrade to haversine until the gap is closed. Details: "Pickle integrity check (SEC-001)" above.
 4. `pytest tests/test_walking_greenest.py -v` — 14 should pass.
-5. Push to main. Railway rebuilds; tail the build for the `curl … street_graph_igraph.pkl` step and the boot for both `street_graph_igraph.pkl SHA-256 verified` and `igraph loaded:` (no "Refusing to load" error).
+5. Push to main. Railway rebuilds; tail the build for the `Fetching street-graph release artifacts` log line (plus `street_graph_igraph.pkl SHA-256 verified at build time`, when `STREET_GRAPH_SHA256` reaches the build args) and the boot for both `street_graph_igraph.pkl SHA-256 verified` and `igraph loaded:` (no "Refusing to load" error).
 6. Spot-check the Lakeview East → Lincoln Park fixture in prod (`POST /route` with `origin=41.9405,-87.6420`, `destination=41.9210,-87.6500`, compare `routes[fastest]` vs `routes[greenest]` — greenest should diverge to a footway-heavy path).
 
 ## Porting Notes

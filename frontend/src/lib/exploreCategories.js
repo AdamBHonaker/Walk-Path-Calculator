@@ -25,7 +25,14 @@ export const EXPLORE_GROUPS = [
         label: "Grocery stores",
         color: "var(--field)",
         glyph: "G",
+        // OSM shop tags split into per-type subs by build_places_osm.py;
+        // `farmers_market` is curated (build_farmers_markets.py). Ordered
+        // general → specialised, with the curated feed last.
         subs: [
+          { key: "supermarket",    label: "Supermarkets" },
+          { key: "greengrocer",    label: "Greengrocers & produce" },
+          { key: "convenience",    label: "Convenience stores" },
+          { key: "specialty",      label: "Specialty food" },
           { key: "farmers_market", label: "Farmers markets" },
         ],
       },
