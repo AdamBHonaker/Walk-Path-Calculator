@@ -408,7 +408,7 @@ How the production artifacts at the `street-graph` GitHub release tag are produc
 
 - **`street_graph_igraph.pkl`** (~28 MB) — the pedestrian routing graph with Feature 4 greenest-routing edge weights baked in. Loaded by `walking.py` at startup. SEC-001 SHA-256 integrity check enforced via `STREET_GRAPH_SHA256`.
 - **`chicago_geocode.db`** (~72 MB) — the SQLite + FTS5 geocoding indexes (~519k OSM addresses, ~45k intersections, curated POIs, LocationIQ response cache). Opened read-only by `local_search.py`. No integrity check — it's data, not pickled code; the threat surface is much smaller.
-- **`chicago_boundary.json`** (~? KB) — the Chicago administrative boundary polygon, used by `explore.py` to clip isochrones against Lake Michigan for lakefront origins. Built by `backend/scripts/build_chicago_boundary.py` from the Overpass API. Optional — missing file means `/explore` skips the clip (graceful, not an outage). No integrity check. Refresh cadence: ~once per decade (Chicago's boundary rarely changes).
+- **`chicago_boundary.json`** (~85 KB) — the Chicago administrative boundary polygon, used by `explore.py` to clip isochrones against Lake Michigan for lakefront origins. Built by `backend/scripts/build_chicago_boundary.py` from the Overpass API. Optional — missing file means `/explore` skips the clip (graceful, not an outage). No integrity check. Refresh cadence: ~once per decade (Chicago's boundary rarely changes).
 
 The Dockerfile `curl`s all three at build time. The rest of this runbook focuses on the `.pkl` (which has the more complex refresh + integrity story); the `.db` and `.json` show up where their refresh procedures differ.
 
