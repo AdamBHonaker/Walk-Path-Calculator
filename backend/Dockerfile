@@ -23,38 +23,53 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Download the prebuilt street-graph pickle directly from the GitHub release.
-# We ship the .pkl (not just the .graphml + an in-container bake) because the
-# bake in fetch_street_graph.py is not bit-identical across platforms — float
-# drift in the KDE / park-proximity steps diverges between Windows local and
-# the Linux container, and the SEC-001 SHA-256 check requires byte equality
-# with STREET_GRAPH_SHA256. Refresh procedure: rebuild locally with
-# `python fetch_street_graph.py`, upload the new .pkl to the `street-graph`
-# GitHub release (overwrite the asset), recompute STREET_GRAPH_SHA256, and
-# update it in both backend/.env and Railway *before* pushing the code change.
-RUN curl -fL -o street_graph_igraph.pkl \
-    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/street_graph_igraph.pkl"
+# ── Prebuilt release artifacts ──────────────────────────────────────────────
+# Fetch three assets from this repo's `street-graph` GitHub release tag, in a
+# single layer:
+#   street_graph_igraph.pkl   ~28 MB  pedestrian routing graph with greenest-
+#                                     routing edge weights. Loaded by walking.py.
+#                                     Shipped prebuilt (not baked in-container):
+#                                     the bake is not bit-identical across
+#                                     platforms and the SEC-001 hash check needs
+#                                     byte equality.
+#   data/chicago_geocode.db   ~72 MB  SQLite + FTS5 geocoding indexes, opened
+#                                     read-only by local_search.py. Absent →
+#                                     geocoding falls back to area centroids.
+#   data/chicago_boundary.json        Chicago boundary polygon; /explore clips
+#                                     lakefront isochrones against it. explore.py
+#                                     tolerates it being absent.
+# Build + refresh procedure for all three: CLAUDE.md "Greenest-routing graph
+# release runbook".
+#
+# Cache correctness: BuildKit keys a `RUN` layer on the command string alone,
+# so a plain `curl` is never re-run just because a release asset was overwritten
+# in place (which the runbook does on every refresh) — a warm cache would ship
+# stale bytes. ARTIFACT_REV is interpolated into the RUN below; bumping it (here
+# or via a Railway build variable) changes the command string and forces a
+# fresh download. Bump it whenever any asset above is re-uploaded.
+ARG ARTIFACT_REV=2026-05-20
 
-# Download the prebuilt geocoding SQLite + FTS5 indexes (~72 MB). Built locally
-# from backend/scripts/build_address_points.py + build_intersections.py +
-# migrate_geocode_cache.py; gitignored because of size. Without this file,
-# local_search collapses to the 77 community-area centroids and every street
-# address / intersection / curated POI query falls through to LocationIQ (or
-# returns None if LOCATIONIQ_API_KEY is unset). Refresh procedure: rebuild
-# locally with the scripts above, upload the new chicago_geocode.db to the
-# `street-graph` GitHub release (overwrite), push.
-RUN curl -fL -o data/chicago_geocode.db \
-    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/chicago_geocode.db"
+# STREET_GRAPH_SHA256 also gates the pickle at build time. Railway feeds this
+# ARG from the service variable of the same name; locally pass --build-arg or
+# leave it empty. Empty → verification is skipped (mirrors walking.py's runtime
+# "warn and load"). A mismatch fails the build — earlier and louder than the
+# runtime degradation to haversine routing.
+ARG STREET_GRAPH_SHA256
 
-# Download the optional Chicago boundary polygon used by /explore to clip
-# isochrones against Lake Michigan for lakefront origins. explore.py
-# already handles the file being absent (skip clipping); we ship it so
-# waterfront origins render correctly in prod. Built locally by
-# backend/scripts/build_chicago_boundary.py; no integrity check (data, not
-# pickled code). Refresh cadence: rarely — Chicago's boundary changes once
-# a decade at most.
-RUN curl -fL -o data/chicago_boundary.json \
-    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/chicago_boundary.json"
+RUN set -eu; \
+    echo "Fetching street-graph release artifacts (ARTIFACT_REV=${ARTIFACT_REV})"; \
+    base="https://github.com/AdamBHonaker/Passage/releases/download/street-graph"; \
+    curl -fL -o street_graph_igraph.pkl    "\$base/street_graph_igraph.pkl"; \
+    curl -fL -o data/chicago_geocode.db    "\$base/chicago_geocode.db"; \
+    curl -fL -o data/chicago_boundary.json "\$base/chicago_boundary.json"; \
+    expected="\$(printf '%s' "${STREET_GRAPH_SHA256}" | tr -d '[:space:]' | tr 'A-Z' 'a-z')"; \
+    if [ -n "\$expected" ]; then \
+        actual="\$(sha256sum street_graph_igraph.pkl | cut -d ' ' -f1)"; \
+        [ "\$actual" = "\$expected" ] || { echo "ERROR: street_graph_igraph.pkl SHA-256 mismatch (expected \$expected, got \$actual)" >&2; exit 1; }; \
+        echo "street_graph_igraph.pkl SHA-256 verified at build time"; \
+    else \
+        echo "STREET_GRAPH_SHA256 not set - skipping build-time pickle verification"; \
+    fi
 
 # Expose the port FastAPI will run on
 EXPOSE 8000
