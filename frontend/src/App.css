@@ -21,85 +21,6 @@
  * on desktop/tablet the same approach keeps the input from being squeezed
  * by a side label and the crosshair button. */
 
-/* Mobile map-unlock-btn lives at top-right (under the floating masthead)
- * because the bottom-right corner is owned by the sheet at every snap.
- * Desktop keeps the editorial bottom-right placement. */
-@media (max-width: 768px) {
-  .map-unlock-btn {
-    bottom: auto;
-    top: max(72px, calc(var(--safe-top) + 64px));
-    right: max(12px, var(--safe-right));
-    gap: 0;
-    padding: 0;
-    width: 44px;
-    height: 44px;
-    justify-content: center;
-  }
-  .map-unlock-btn__label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  /* Locate button collapses to a 44×44 icon and sits directly under the
-   * floating masthead, top-right. When the unlock button is also visible
-   * (route loaded, gestures still locked) it stacks just below the locate
-   * button so both stay within thumb reach without overlapping. */
-  .map-locate-btn {
-    top: max(72px, calc(var(--safe-top) + 64px));
-    right: max(12px, var(--safe-right));
-    gap: 0;
-    padding: 0;
-    width: 44px;
-    height: 44px;
-    justify-content: center;
-  }
-  .map-locate-btn__label,
-  .map-follow-btn__label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  /* Follow button mirrors the 44×44 icon-only treatment and stacks directly
-   * under .map-locate-btn (44 px + 8 px gap = 52 px). When locate is hidden
-   * (explore mode), follow takes the locate-btn's slot. */
-  .map-follow-btn {
-    top: max(124px, calc(var(--safe-top) + 116px));
-    right: max(12px, var(--safe-right));
-    gap: 0;
-    padding: 0;
-    width: 44px;
-    height: 44px;
-    justify-content: center;
-  }
-  .map-view:not(:has(.map-locate-btn)) .map-follow-btn {
-    top: max(72px, calc(var(--safe-top) + 64px));
-  }
-  /* When both buttons are visible, push the unlock-btn below the locate-btn
-   * (44 px tall + 8 px gap). Selector relies on adjacent-sibling order in
-   * the JSX: locate-btn renders after unlock-btn, so we cannot use ~ from
-   * unlock to locate; instead re-anchor unlock when the locate sibling
-   * exists. The JSX renders unlock BEFORE locate, so :has(+ .map-locate-btn)
-   * lets us shift the unlock button down. */
-  .map-view:has(.map-locate-btn) .map-unlock-btn {
-    top: max(124px, calc(var(--safe-top) + 116px));
-  }
-  .map-view:has(.map-follow-btn) .map-unlock-btn {
-    top: max(176px, calc(var(--safe-top) + 168px));
-  }
-}
-
 @media (pointer: coarse) {
   .map-locate-btn,
   .map-follow-btn {
@@ -1137,6 +1058,93 @@
 .map-follow-btn--active:hover {
   background: var(--ink);
   color: var(--paper);
+}
+
+/* Mobile map-button placement. This @media block MUST stay AFTER the base
+ * .map-unlock-btn / .map-locate-btn / .map-follow-btn rules above: media
+ * queries contribute no specificity, so on a specificity tie the rule that
+ * comes later in source order wins. While this block sat near the top of
+ * the file the desktop `top` values below it overrode it on mobile — the
+ * locate/follow buttons rendered at their desktop offsets, jammed under the
+ * floating masthead (which paints above them), and couldn't be tapped.
+ *
+ * Mobile map-unlock-btn lives at top-right (under the floating masthead)
+ * because the bottom-right corner is owned by the sheet at every snap.
+ * Desktop keeps the editorial bottom-right placement. */
+@media (max-width: 768px) {
+  .map-unlock-btn {
+    bottom: auto;
+    top: max(72px, calc(var(--safe-top) + 64px));
+    right: max(12px, var(--safe-right));
+    gap: 0;
+    padding: 0;
+    width: 44px;
+    height: 44px;
+    justify-content: center;
+  }
+  .map-unlock-btn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* Locate button collapses to a 44×44 icon and sits directly under the
+   * floating masthead, top-right. When the unlock button is also visible
+   * (route loaded, gestures still locked) it stacks just below the locate
+   * button so both stay within thumb reach without overlapping. */
+  .map-locate-btn {
+    top: max(72px, calc(var(--safe-top) + 64px));
+    right: max(12px, var(--safe-right));
+    gap: 0;
+    padding: 0;
+    width: 44px;
+    height: 44px;
+    justify-content: center;
+  }
+  .map-locate-btn__label,
+  .map-follow-btn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  /* Follow button mirrors the 44×44 icon-only treatment and stacks directly
+   * under .map-locate-btn (44 px + 8 px gap = 52 px). When locate is hidden
+   * (explore mode), follow takes the locate-btn's slot. */
+  .map-follow-btn {
+    top: max(124px, calc(var(--safe-top) + 116px));
+    right: max(12px, var(--safe-right));
+    gap: 0;
+    padding: 0;
+    width: 44px;
+    height: 44px;
+    justify-content: center;
+  }
+  .map-view:not(:has(.map-locate-btn)) .map-follow-btn {
+    top: max(72px, calc(var(--safe-top) + 64px));
+  }
+  /* When both buttons are visible, push the unlock-btn below the locate-btn
+   * (44 px tall + 8 px gap). Selector relies on adjacent-sibling order in
+   * the JSX: locate-btn renders after unlock-btn, so we cannot use ~ from
+   * unlock to locate; instead re-anchor unlock when the locate sibling
+   * exists. The JSX renders unlock BEFORE locate, so :has(+ .map-locate-btn)
+   * lets us shift the unlock button down. */
+  .map-view:has(.map-locate-btn) .map-unlock-btn {
+    top: max(124px, calc(var(--safe-top) + 116px));
+  }
+  .map-view:has(.map-follow-btn) .map-unlock-btn {
+    top: max(176px, calc(var(--safe-top) + 168px));
+  }
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
