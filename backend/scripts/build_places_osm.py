@@ -12,7 +12,8 @@ without spamming the public Overpass instance.
 
 Categories (matches the table in docs/FEATURE_PLANS.md FEAT #1):
 
-    grocery, medical{pharmacy|urgent_care|hospital},
+    grocery{supermarket|greengrocer|convenience|specialty},
+    medical{pharmacy|urgent_care|hospital},
     train_stations, gyms_fitness, coffee_bakery, restaurants,
     bars_nightlife, parks{playground|dog_park},
     art_museums, theaters{movie|live}, bookstores,
@@ -68,9 +69,16 @@ logger = logging.getLogger("build_places_osm")
 # single representative coordinate for ways/relations, so all elements have
 # (lat, lon).
 _QUERIES: list[tuple[str, str, str | None]] = [
-    # Daily life — Grocery
-    ('shop=supermarket',                    "grocery",            None),
-    ('shop=greengrocer',                    "grocery",            None),
+    # Daily life — Grocery. Subcategory splits the OSM shop tags into the
+    # Explorer's per-type checkboxes; `farmers_market` is the fifth sub but
+    # comes from the curated city feed (build_farmers_markets.py), not here.
+    ('shop=supermarket',                    "grocery",            "supermarket"),
+    ('shop=greengrocer',                    "grocery",            "greengrocer"),
+    ('shop=convenience',                    "grocery",            "convenience"),
+    ('shop=butcher',                        "grocery",            "specialty"),
+    ('shop=deli',                           "grocery",            "specialty"),
+    ('shop=cheese',                         "grocery",            "specialty"),
+    ('shop=health_food',                    "grocery",            "specialty"),
     # Medical
     ('amenity=pharmacy',                    "medical",            "pharmacy"),
     ('amenity=clinic',                      "medical",            "urgent_care"),
