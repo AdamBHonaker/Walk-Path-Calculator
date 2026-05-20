@@ -46,6 +46,16 @@ RUN curl -fL -o street_graph_igraph.pkl \
 RUN curl -fL -o data/chicago_geocode.db \
     "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/chicago_geocode.db"
 
+# Download the optional Chicago boundary polygon used by /explore to clip
+# isochrones against Lake Michigan for lakefront origins. explore.py
+# already handles the file being absent (skip clipping); we ship it so
+# waterfront origins render correctly in prod. Built locally by
+# backend/scripts/build_chicago_boundary.py; no integrity check (data, not
+# pickled code). Refresh cadence: rarely — Chicago's boundary changes once
+# a decade at most.
+RUN curl -fL -o data/chicago_boundary.json \
+    "https://github.com/AdamBHonaker/Passage/releases/download/street-graph/chicago_boundary.json"
+
 # Expose the port FastAPI will run on
 EXPOSE 8000
 
