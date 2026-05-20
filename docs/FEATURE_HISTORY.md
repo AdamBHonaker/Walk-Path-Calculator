@@ -53,6 +53,26 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Tree Canopy Heatmap (Neighborhood Explorer) | Bolt-On | 2026-05-14 |
 | Parks + Green-Space Heatmaps (Neighborhood Explorer) | Bolt-On | 2026-05-14 |
 | Greenest Routing — Tree + Park Edge Weights | Structural | 2026-05-14 |
+| `chicago_boundary.json` as Release Artifact | Bolt-On | 2026-05-19 |
+
+---
+
+## `chicago_boundary.json` as Release Artifact
+
+**Shipped:** 2026-05-19 | **Type:** Bolt-On | **Effort:** Low
+
+`explore.py` already clipped `/explore` isochrones against `backend/data/chicago_boundary.json` when the file was present, but the file was gitignored and never shipped to production — so lakefront origins (Streeterville, Lakeview East, South Shore, etc.) produced isochrone polygons that bled visibly into Lake Michigan.
+
+**What shipped:**
+
+- Added a `curl` step to `backend/Dockerfile` that downloads `chicago_boundary.json` from the `street-graph` GitHub release tag alongside the existing `.pkl` and `.db` downloads. The `--fail` flag (`-f`) keeps the build strict; no integrity check (data, not pickled code). Includes the same comment style as the surrounding curl blocks.
+- Updated `CLAUDE.md` in two places: the `backend/data/` project-structure comment now lists `chicago_boundary.json` as a release artifact (previously said "Generated locally on demand (gitignored)"); the Greenest-routing graph release runbook intro now lists it as a third artifact bullet and its "refreshes" section has a corresponding boundary-refresh note.
+
+**Outstanding user steps** (require local machine + GitHub access, cannot be done from this session):
+
+1. Run `python backend/scripts/build_chicago_boundary.py` locally to produce `backend/data/chicago_boundary.json`.
+2. Upload the file to the `street-graph` GitHub release tag as `chicago_boundary.json` (same release that holds `street_graph_igraph.pkl` and `chicago_geocode.db`).
+3. Trigger a Railway rebuild and eyeball a lakefront origin in the Neighborhood Explorer — the isochrone should hug the shoreline.
 
 ---
 
