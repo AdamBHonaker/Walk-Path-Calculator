@@ -131,18 +131,60 @@ async def lifespan(app: FastAPI):
     yield
 
 
-# Per-IP rate limiter. The handler keys on `request.client.host`; behind a
-# trusted reverse proxy that strips/normalizes X-Forwarded-For (Railway,
-# Cloudflare), `get_remote_address` returns the proxy's connection peer —
-# operators who care about per-client granularity should keep an L7 rate-limit
-# at the edge as defense-in-depth. Limits are tuned per endpoint cost; see
-# each route handler for its specific @limiter.limit decorator.
+# Per-IP rate limiter. Limits are tuned per endpoint cost; see each route
+# handler for its specific @limiter.limit decorator.
+#
+# Proxy-aware keying: behind a reverse-proxy chain (Railway, Cloudflare, ...)
+# the TCP peer is the proxy, so `request.client.host` collapses every user
+# into one bucket. TRUSTED_PROXY_HOPS declares how many proxies append to
+# X-Forwarded-For; `_client_ip` then reads the client IP that many entries
+# from the right of the header. Counting from the right is the spoof-resistant
+# part — a client can prepend bogus X-Forwarded-For values, but it cannot
+# forge the entries our own proxies append after it. TRUSTED_PROXY_HOPS=0
+# (default) ignores X-Forwarded-For entirely and keys on the connection peer,
+# the correct un-spoofable behavior for a directly-exposed instance.
 #
 # RATE_LIMIT_ENABLED=false disables the limiter (used by the pytest suite,
-# which would otherwise blow past the 10/min /explore limit inside a single
-# test module since the TestClient host is a single key).
+# which would otherwise blow past the per-endpoint limits inside a single test
+# run since the TestClient host is a single key).
 _RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").strip().lower() not in ("false", "0", "no")
-limiter = Limiter(key_func=get_remote_address, default_limits=[], enabled=_RATE_LIMIT_ENABLED)
+
+
+def _resolve_trusted_proxy_hops() -> int:
+    raw = os.getenv("TRUSTED_PROXY_HOPS", "0").strip()
+    try:
+        hops = int(raw)
+    except ValueError:
+        logger.error("TRUSTED_PROXY_HOPS=%r is not an integer — keying on the connection peer", raw)
+        return 0
+    if hops < 0:
+        logger.error("TRUSTED_PROXY_HOPS=%r is negative — keying on the connection peer", raw)
+        return 0
+    return hops
+
+
+_TRUSTED_PROXY_HOPS = _resolve_trusted_proxy_hops()
+
+
+def _client_ip(request: Request) -> str:
+    """Rate-limit key: the real client IP rather than the proxy connection peer.
+
+    With TRUSTED_PROXY_HOPS proxies in front of the app, the client IP is the
+    X-Forwarded-For entry that many positions from the end. Falls back to the
+    connection peer when X-Forwarded-For is absent or shorter than the declared
+    hop count, so the limiter always has a usable key."""
+    if _TRUSTED_PROXY_HOPS > 0:
+        parts = [
+            p.strip()
+            for p in request.headers.get("x-forwarded-for", "").split(",")
+            if p.strip()
+        ]
+        if len(parts) >= _TRUSTED_PROXY_HOPS:
+            return parts[-_TRUSTED_PROXY_HOPS]
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_client_ip, default_limits=[], enabled=_RATE_LIMIT_ENABLED)
 
 app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
@@ -305,7 +347,7 @@ async def health(request: Request):
 
 
 @app.post("/explore")
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def explore_endpoint(request: Request, payload: ExploreRequest):
     """Return the walkable isochrone polygon for an origin + time budget.
 

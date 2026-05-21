@@ -701,3 +701,79 @@ def _circuit_inflated_cooloff() -> float:
     the initial 60 s cool-off without hard-coding the constant."""
     import geocoding
     return geocoding._CIRCUIT_INITIAL_COOLOFF_S + 1.0
+
+
+def _fake_request(xff=None, peer="10.9.9.9"):
+    """Minimal ASGI scope for exercising `main._client_ip` directly."""
+    from fastapi import Request
+    headers = []
+    if xff is not None:
+        headers.append((b"x-forwarded-for", xff.encode()))
+    return Request({"type": "http", "headers": headers, "client": (peer, 54321)})
+
+
+class TestClientIpKeyFunc:
+    """`main._client_ip` — the rate-limiter key function. Verifies the
+    X-Forwarded-For hop-counting that keeps each client in its own bucket
+    behind a reverse proxy, and that it stays spoof-resistant."""
+
+    def test_zero_hops_ignores_forwarded_for(self, monkeypatch):
+        import main
+        monkeypatch.setattr(main, "_TRUSTED_PROXY_HOPS", 0)
+        req = _fake_request(xff="1.2.3.4", peer="10.9.9.9")
+        assert main._client_ip(req) == "10.9.9.9"
+
+    def test_one_hop_reads_last_forwarded_entry(self, monkeypatch):
+        import main
+        monkeypatch.setattr(main, "_TRUSTED_PROXY_HOPS", 1)
+        req = _fake_request(xff="203.0.113.7", peer="10.9.9.9")
+        assert main._client_ip(req) == "203.0.113.7"
+
+    def test_two_hops_reads_second_from_right(self, monkeypatch):
+        import main
+        monkeypatch.setattr(main, "_TRUSTED_PROXY_HOPS", 2)
+        # client -> Cloudflare -> Railway -> app
+        req = _fake_request(xff="203.0.113.7, 198.51.100.2", peer="10.9.9.9")
+        assert main._client_ip(req) == "203.0.113.7"
+
+    def test_spoofed_prefix_is_ignored(self, monkeypatch):
+        import main
+        monkeypatch.setattr(main, "_TRUSTED_PROXY_HOPS", 1)
+        # A malicious client prepends fake hops; the real client IP is still
+        # the rightmost entry our single trusted proxy appended.
+        req = _fake_request(xff="9.9.9.9, 8.8.8.8, 203.0.113.7", peer="10.9.9.9")
+        assert main._client_ip(req) == "203.0.113.7"
+
+    def test_missing_header_falls_back_to_peer(self, monkeypatch):
+        import main
+        monkeypatch.setattr(main, "_TRUSTED_PROXY_HOPS", 1)
+        req = _fake_request(xff=None, peer="10.9.9.9")
+        assert main._client_ip(req) == "10.9.9.9"
+
+    def test_short_header_falls_back_to_peer(self, monkeypatch):
+        import main
+        # Two hops declared but only one entry present — a misconfiguration;
+        # fall back to the peer rather than read a client-controlled value.
+        monkeypatch.setattr(main, "_TRUSTED_PROXY_HOPS", 2)
+        req = _fake_request(xff="203.0.113.7", peer="10.9.9.9")
+        assert main._client_ip(req) == "10.9.9.9"
+
+    def test_resolve_hops_parses_integer(self, monkeypatch):
+        import main
+        monkeypatch.setenv("TRUSTED_PROXY_HOPS", "2")
+        assert main._resolve_trusted_proxy_hops() == 2
+
+    def test_resolve_hops_default_is_zero(self, monkeypatch):
+        import main
+        monkeypatch.delenv("TRUSTED_PROXY_HOPS", raising=False)
+        assert main._resolve_trusted_proxy_hops() == 0
+
+    def test_resolve_hops_rejects_garbage(self, monkeypatch):
+        import main
+        monkeypatch.setenv("TRUSTED_PROXY_HOPS", "abc")
+        assert main._resolve_trusted_proxy_hops() == 0
+
+    def test_resolve_hops_rejects_negative(self, monkeypatch):
+        import main
+        monkeypatch.setenv("TRUSTED_PROXY_HOPS", "-1")
+        assert main._resolve_trusted_proxy_hops() == 0
