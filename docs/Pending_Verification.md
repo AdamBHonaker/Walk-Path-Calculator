@@ -294,3 +294,52 @@ until the source lands, then activate automatically.
 `places_curated.json` is committed, both `cdp_divvy` tests pass, and
 the pin-density check is legible on desktop + one phone. Any failure →
 paste into BUGS.md, keep this entry.
+
+---
+
+## PV-008 · Route turn segment differentiation — visual sign-off
+**Shipped:** 2026-05-21 (Route Turn Segment Differentiation).
+**Why pending:** the three new visual layers (alternating tone wash,
+numbered turn circles, ember glow casing) are driven by MapLibre paint
+expressions and feature-state updates. Unit tests verify the GeoJSON
+structure, layer presence/absence, font constraints, and radius values,
+but the actual visual result — opacity alternation, number legibility
+at various zoom levels, casing blur radius, animation swap timing — can
+only be confirmed in a real browser on a real device.
+
+**Quick summary of what to check** (run `npm run dev` from `frontend/`,
+or use `npm run dev:tunnel` for mobile):
+
+- [ ] **Alternating tone.** Route a 4+ step journey (e.g., Wrigleyville
+  → Logan Square). After the draw-in animation completes, confirm the
+  route line shows alternating opacity — some segments visibly dimmer
+  than their neighbours. The effect should be subtle, not jarring.
+- [ ] **Numbers on circles.** Turn circles show "1", "2", "3", …
+  matching the ledger step rows ("01", "02", "03", …) in numeric value.
+  Numbers are white, legible at the default zoom level (~13–14). At low
+  zoom (≤ 10), crowded numbers may hide (MapLibre collision default —
+  this is expected behaviour).
+- [ ] **Animation swap.** The draw-in pen completes → the scrim
+  (`walk-path-line`) disappears and the alternating segments appear.
+  The swap should be imperceptible at normal animation speeds (no flash
+  or visible blank frame).
+- [ ] **Ember glow casing.** Click a direction step in the ledger.
+  Confirm a soft blurred ember halo appears behind the full segment on
+  the map (in addition to the existing turn-circle ember and flyTo).
+  Click a different step — previous halo fades, new halo appears.
+- [ ] **Reduced-motion.** Enable "Reduce motion" in System Preferences
+  / Accessibility settings. Route again. The alternating segments should
+  appear immediately (no draw-in) at the correct opacity.
+- [ ] **Flavor swap.** On a 2-stop route, switch between Fastest /
+  Fewest turns / Greenest. Each flavor swap replays the animation and
+  reveals the new flavor's segments with the correct alternation.
+- [ ] **Dusk theme.** Toggle Dusk in PersonalizeModal. Alternating
+  segments, numbers, and ember casing should all remain legible against
+  the darker basemap.
+- [ ] **Mobile.** On a phone (portrait + landscape): numbers readable
+  at default zoom; tapping a ledger step fires the casing correctly
+  through the sheet.
+
+**When to delete this entry:** all eight checkboxes pass on at least
+one desktop browser + one mobile device. Any failure → paste into
+BUGS.md, keep this entry.

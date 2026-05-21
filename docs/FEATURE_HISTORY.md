@@ -55,6 +55,27 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Greenest Routing — Tree + Park Edge Weights | Structural | 2026-05-14 |
 | `chicago_boundary.json` as Release Artifact | Bolt-On | 2026-05-19 |
 | Divvy Bike-Share Stations (Neighborhood Explorer) | Bolt-On | 2026-05-21 |
+| Route Turn Segment Differentiation | Bolt-On | 2026-05-21 |
+
+---
+
+## Route Turn Segment Differentiation
+**Type:** Bolt-On | **Area:** Frontend (map + animation) | **Shipped:** 2026-05-21
+
+Three coordinated visual layers that make individual direction steps legible on the map.
+
+**A — Alternating tone wash (`walk-segments-line`).** `buildRouteSegments(path, directions)` — a new export from `mapHelpers.js` — slices the route path into N per-step LineString features using the same cumulative-distance algorithm as `useTurnCoords`. Each feature carries `segmentIndex` (0-based) for a data expression and `id` for `setFeatureState`. A `walk-segments` GeoJSON source holds the collection, and `walk-segments-line` (a new line layer below `walk-path-line`) renders it with `SEG_ALT_OPACITY_EXPR`: odd-indexed segments at 55% opacity, even at 100%, giving a soft perceptual break between steps. The layer starts hidden (`line-opacity: 0`) during the draw-in animation. When `clearTrim()` fires, it hides the scrim (`walk-path-line`, opacity 0) and reveals `walk-segments-line` at the expression. Reduced-motion and degenerate-path bail paths also reveal immediately. `SEG_ALT_OPACITY_EXPR` is exported for use in tests and `setPaintProperty` calls.
+
+**B — Numbered turn circles.** `walk-turns-circle` radius bumped from 5/8 → 11/13 (inactive/active) to host 1–2 digit numbers. A new `walk-turns-label` symbol layer sits on top, showing `["to-string", ["+", ["get", "index"], 1]]` (0-based → 1-based) in Noto Sans Bold 10 pt white — matching the ledger's "01", "02", … step numbers in numeric value. Single-font-only constraint (same as `walk-stops-label`) to avoid the OpenFreeMap glyph-bucket error.
+
+**C — Ember glow casing (`walk-segment-casing`).** A 9 px blurred ember-colored line layer behind the segments, invisible by default (`line-opacity: 0` from feature-state). The `activeTurnIndex` effect in `MapRouteLayer` now calls `setFeatureState` on `walk-segments` alongside `walk-turns`, so clicking a direction step in the ledger reveals a blurred ember halo behind the full segment in addition to the existing turn-circle ember highlight and flyTo.
+
+**Key implementation notes:**
+- Z-order: `walk-segment-casing` → `walk-segments-line` → `walk-path-line` (scrim) → `walk-turns-circle` → `walk-turns-label` → stop markers → endpoint dots.
+- Segment setup is gated on `directions?.length`; turn label on `turnCoords?.length`. Two independent if/else blocks — cleanup (`dropTracked`) runs in the else branches.
+- `_buildTurnPathInfo(path, directions)` and `_interp(path, pi, t)` are private helpers. The last segment anchors directly to `path[path.length-1]` (not via interpolation) to avoid index overrun at t=1.
+- Share card (`ShareDispatch.jsx`) calls `renderWalkRoute` with `turnCoords=null` — turns/labels are skipped. Segment layers are created but `walk-segments-line` stays at opacity 0 (no animation attached), so the share card renders the clean full ember route line as before.
+- 23 new tests in `mapHelpers.test.js`: `buildRouteSegments` edge cases (empty inputs, last-segment anchor, 2/3-step routes, GeoJSON coord order, stable ids), `SEG_ALT_OPACITY_EXPR` shape, new layer presence/absence, radius regression, and font regression for `walk-turns-label`.
 
 ---
 
