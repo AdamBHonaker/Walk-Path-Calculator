@@ -525,15 +525,7 @@ export default function App() {
       const subSet = new Set(p.selectedSubs);
       if (subSet.has(fullKey)) subSet.delete(fullKey);
       else subSet.add(fullKey);
-      // Promote the parent to checked the moment any sub is checked, so the
-      // request includes that category at all (the backend filters by parent).
-      const catSet = new Set(p.selectedCategories);
-      if (subSet.has(fullKey)) catSet.add(catKey);
-      return {
-        ...p,
-        selectedCategories: Array.from(catSet),
-        selectedSubs: Array.from(subSet),
-      };
+      return { ...p, selectedSubs: Array.from(subSet) };
     });
   }
 

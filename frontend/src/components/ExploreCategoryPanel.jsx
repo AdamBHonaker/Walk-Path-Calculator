@@ -9,9 +9,9 @@
 //
 // Behavior:
 //   - Toggling a parent category checkbox flips ALL of its sub-keys ON or OFF.
-//   - Toggling a sub-category leaves the parent state alone EXCEPT we promote
-//     the parent to checked when at least one sub is checked (so that the
-//     places query includes that category at all).
+//   - Toggling a sub-category only updates selectedSubs; the parent checkbox
+//     state is unchanged. The backend request derives parent keys from subs
+//     automatically, so the query still includes that category.
 //   - "Select all" / "Clear all" affordances at the panel level operate over
 //     every group and every sub.
 
