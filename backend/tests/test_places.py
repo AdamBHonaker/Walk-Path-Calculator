@@ -23,6 +23,30 @@ def _box(south: float, west: float, north: float, east: float) -> Polygon:
     return Polygon([(west, south), (east, south), (east, north), (west, north), (west, south)])
 
 
+def _curated_has_source(source: str) -> bool:
+    """True when places_curated.json's metadata lists the given source key."""
+    try:
+        data = json.loads(places.PLACES_CURATED_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return any(
+        s.get("name") == source
+        for s in data.get("metadata", {}).get("sources", [])
+    )
+
+
+# Divvy stations are ingested by build_divvy.py, which needs CDP credentials
+# + network. Until that ingest runs and the regenerated places_curated.json
+# is committed, the cdp_divvy assertions skip rather than redding the suite.
+# They activate automatically once the source lands. Tracked as PV-007.
+_DIVVY_DATA_PRESENT = _curated_has_source("cdp_divvy")
+_DIVVY_SKIP_REASON = (
+    "cdp_divvy not yet in places_curated.json — run "
+    "`python backend/scripts/build_divvy.py` with CDP credentials "
+    "(see PV-007 in docs/Pending_Verification.md)"
+)
+
+
 class TestPlacesInPolygon:
     @pytest.fixture
     def loop_box(self):
@@ -145,6 +169,23 @@ class TestCuratedSources:
         farmers = [p for p in results if p.get("subcategory") == "farmers_market"]
         # 2013 dataset has ~24 entries; expect at least a handful inside the city bbox.
         assert len(farmers) > 5
+
+    @pytest.mark.skipif(not _DIVVY_DATA_PRESENT, reason=_DIVVY_SKIP_REASON)
+    def test_curated_metadata_lists_divvy(self):
+        data = json.loads(places.PLACES_CURATED_PATH.read_text(encoding="utf-8"))
+        sources = {s["name"] for s in data["metadata"]["sources"]}
+        assert "cdp_divvy" in sources
+
+    @pytest.mark.skipif(not _DIVVY_DATA_PRESENT, reason=_DIVVY_SKIP_REASON)
+    def test_divvy_stations_loaded_into_index(self):
+        # Divvy dataset has ~800 stations city-wide; a full-city bbox should
+        # return well over 200 even accounting for inactive-status filtering.
+        bbox = _box(41.66, -87.94, 42.02, -87.52)
+        results = places.places_in_polygon(bbox, categories=["bike_share"])
+        assert len(results) > 200, f"expected many Divvy stations city-wide, got {len(results)}"
+        for p in results:
+            assert p["category"] == "bike_share"
+            assert p["source"] == "cdp_divvy"
 
 
 class TestResidentialHeatmap:

@@ -54,6 +54,7 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Parks + Green-Space Heatmaps (Neighborhood Explorer) | Bolt-On | 2026-05-14 |
 | Greenest Routing — Tree + Park Edge Weights | Structural | 2026-05-14 |
 | `chicago_boundary.json` as Release Artifact | Bolt-On | 2026-05-19 |
+| Divvy Bike-Share Stations (Neighborhood Explorer) | Bolt-On | 2026-05-21 |
 
 ---
 
@@ -848,3 +849,31 @@ Each stop input has a 📍 pin icon button. Clicking it enters a `pickMode` stat
 - [frontend/src/App.jsx](frontend/src/App.jsx): each stop row (origin, intermediate, destination) wraps its input in an `.input-with-pick` div with a `.pick-map-btn` toggle. `pickMode` state holds the active stop id (`null` when off). `resolveStopLabel(lat, lon)` is a stable `useCallback` passed to MapView for async reverse-geocoding. `handleMapPick(lat, lon, label)` is invoked only on Confirm — writes the resolved label, or falls back to `${lat}, ${lon}` plus a 3.5-s toast on null. `toastTimerRef` drives the toast.
 - [frontend/src/App.css](frontend/src/App.css): added `.input-with-pick`, `.pick-map-btn`, `.pick-map-btn--active`, `.map-pick-hint`, `.map-pick-confirm` (top-anchored card with label, sub-hint, and Cancel/Confirm buttons), `.map-pick-confirm-btn` variants, `.toast`, and `@keyframes toast-in`.
 - [frontend/src/main.jsx](frontend/src/main.jsx): added `import "maplibre-gl/dist/maplibre-gl.css"`. Without this, maplibre's marker / popup / control DOM has no positioning rules and renders invisibly. The polyline + turn dots had been masking this because they're drawn on the WebGL canvas. See [`archive/RESOLVED_HISTORY.md`](archive/RESOLVED_HISTORY.md) BUG-003.
+
+---
+
+## Divvy Bike-Share Stations (Neighborhood Explorer)
+**Type:** Bolt-On | **Area:** Backend + Frontend + Data ingestion | **Shipped:** 2026-05-21
+
+A "Divvy bike share" category in the Explorer's Daily life group. Selecting it drops a clustered pin per Divvy dock inside the isochrone — extending the Explorer's "what can I reach from here" answer into a longer car-free trip via bike-share. `train_stations` already established that getting-around amenities belong in the Explorer; Divvy is the bike-share parallel. Station data is a static CDP roster snapshot (matching every other curated category — no live runtime calls).
+
+**Pending data ingest (PV-007).** This feature shipped **code-only**. The `build_divvy.py` ingest needs CDP credentials + network, which the build session lacked, so `places_curated.json` does not yet carry the `cdp_divvy` source — the category renders but surfaces zero pins until the ingest runs. The data-ingest steps and the chunk-4 pin-density check are tracked as **PV-007** in [`docs/Pending_Verification.md`](Pending_Verification.md).
+
+**Data source:** CDP "Divvy Bicycle Stations" classic SODA resource (`bbyy-e7gq`). ~800+ rows; only "In Service" rows are included. Source key: `cdp_divvy`. Refresh cadence: annually.
+
+**Design decisions:**
+- Category key `bike_share` (system-neutral — a future multi-city port to a non-Divvy city reuses the key cleanly).
+- Glyph `"D"` (non-colliding with existing G / + / T / F / C / R / B / A / P glyphs across groups).
+- Color `var(--harbor)` (blue-adjacent, fits bike-share brand; color reuse across groups is intentional — colors are visual accents, not semantic identifiers).
+- No subcategories (all Divvy stations are equivalent at this granularity).
+- No new backend module: Divvy stations flow through the existing `places_in_polygon` + category-filter pipeline in `places.py` with zero additional wiring in `main.py`, `explore.py`, or `MapExploreLayer.jsx`.
+
+**What changed:**
+- [`backend/scripts/build_divvy.py`](backend/scripts/build_divvy.py) (new): ingestion script modeled on `build_libraries.py`. Fetches rows via `_cdp_client.fetch_rows`, extracts coords from top-level `latitude`/`longitude` fields with a nested `location` SODA Point fallback, filters inactive rows by `status` field, and writes `category="bike_share"` / `_source="cdp_divvy"` entries via `merge_and_write`.
+- [`backend/scripts/_cdp_client.py`](backend/scripts/_cdp_client.py): added `CDP_API_ENDPOINT_DIVVY` to the docstring's env-var list.
+- [`backend/.env.example`](backend/.env.example): added `CDP_API_ENDPOINT_DIVVY=` slot with a comment pointing at the SODA URL.
+- `backend/data/places_curated.json`: **not yet regenerated** — running `build_divvy.py` with CDP credentials adds a `cdp_divvy` metadata source entry and ~800 `bike_share` place entries. Pending as PV-007.
+- [`frontend/src/lib/exploreCategories.js`](frontend/src/lib/exploreCategories.js): added `{ key: "bike_share", label: "Divvy bike share", color: "var(--harbor)", glyph: "D" }` to the `daily_life` group after `gyms_fitness`. No other frontend changes — the category flows through `PIN_CATEGORIES` / `REQUESTABLE_CATEGORY_KEYS` and renders in `ExploreCategoryPanel` automatically.
+- [`backend/tests/test_places.py`](backend/tests/test_places.py): two new assertions in `TestCuratedSources` — `test_curated_metadata_lists_divvy` (source key present in metadata) and `test_divvy_stations_loaded_into_index` (city-wide query returns > 200 `bike_share` / `cdp_divvy` entries). Both `skipif`-skip until the `cdp_divvy` source lands in `places_curated.json`, then activate automatically.
+
+**Out of scope:** real-time dock/bike availability (GBFS feed — v1 uses the CDP static roster deliberately); multi-city generalization (part of FEAT-1); per-station amenity filtering (no subcategories needed at this granularity); routing integration (Divvy stations are not a routing graph input).

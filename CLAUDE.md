@@ -46,7 +46,8 @@ Passage/
 │   │                     #   geocoding cascade; opens chicago_geocode.db read-only via mmap.
 │   ├── data/             # Generated datasets. Checked in: community-area centroids,
 │   │                     #   places_osm.json, places_curated.json [CPL libraries + 2013 farmers
-│   │                     #   markets + CPS schools + CPD/CFD stations], residential_polygons.json,
+│   │                     #   markets + CPS schools + CPD/CFD stations + Divvy bike stations],
+│   │                     #   residential_polygons.json,
 │   │                     #   tree_canopy_kde.json [sparse 100 m NLCD canopy-fraction grid],
 │   │                     #   parks_polygons.json [CPD park boundaries — name + acres + outer ring],
 │   │                     #   green_space_polygons.json [OSM cemeteries/golf/nature_reserve/rec_ground].
@@ -61,7 +62,7 @@ Passage/
 │   ├── scripts/          # Ingestion scripts:
 │   │                     #   build_community_area_centroids, build_places_osm,
 │   │                     #   build_libraries / _farmers_markets / _schools_cps /
-│   │                     #     _police_stations / _fire_stations / _parks (share _cdp_client),
+│   │                     #     _police_stations / _fire_stations / _parks / _divvy (share _cdp_client),
 │   │                     #   build_residential, build_tree_canopy, build_green_space,
 │   │                     #   build_chicago_boundary,
 │   │                     #   build_address_points, build_intersections (share _geocode_db schema),
@@ -160,7 +161,8 @@ cp .env.example .env   # add LOCATIONIQ_API_KEY only if you want the hosted
                        # CDP_API_ENDPOINT_* URLs only if you intend to re-run the
                        # curated-data ingestion scripts (build_libraries.py,
                        # build_schools_cps.py, build_police_stations.py,
-                       # build_fire_stations.py, build_parks.py). Runtime does
+                       # build_fire_stations.py, build_parks.py,
+                       # build_divvy.py). Runtime does
                        # not read these.
                        # Set STREET_GRAPH_SHA256 to the SHA-256 of
                        # street_graph_igraph.pkl to enable the pickle integrity
@@ -248,7 +250,7 @@ Request — exactly one of the two origin modes:
 | `height_inches`          | number, 36–108, optional | Accepted but unused (reserved for future step-count enrichment). |
 
 Place categories (top-level keys, matched against `places.category`):
-`grocery`, `medical`, `train_stations`, `gyms_fitness`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories tagged on individual records (e.g., `medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`).
+`grocery`, `medical`, `train_stations`, `gyms_fitness`, `bike_share`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories tagged on individual records (e.g., `medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`).
 
 Response:
 ```json
@@ -272,7 +274,7 @@ Response:
   "residential_heatmap": { "type": "MultiPolygon", "coordinates": [...] }
 }
 ```
-`source` is one of `osm`, `cpl_locations`, `farmers_markets_2013` (curated source key). `residential_heatmap` is `null` for isochrones with no `landuse=residential` overlap.
+`source` is one of `osm`, `cpl_locations`, `farmers_markets_2013`, `cdp_divvy` (curated source keys). `residential_heatmap` is `null` for isochrones with no `landuse=residential` overlap.
 
 The response also carries `tree_canopy_heatmap`: a GeoJSON FeatureCollection of up to three density bands (`low` ≥ 0.05, `mid` ≥ 0.15, `high` ≥ 0.40 — true canopy fraction) baked from the NLCD Tree Canopy Cover 2021 raster (MRLC GeoServer WCS, 30 m native → 100 m output grid; see TD-033 in RESOLVED_HISTORY.md). Each band is a unioned MultiPolygon of 100 m cell squares clipped to the isochrone. `null` when the canopy artifact (`backend/data/tree_canopy_kde.json`) is missing or no cells overlap the isochrone. Shape:
 ```json

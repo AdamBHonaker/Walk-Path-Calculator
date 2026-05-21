@@ -244,3 +244,53 @@ deploy. Any failure → paste into BUGS.md, keep this entry. The
 fail-fast guard's "refuse to boot on stale pickle" path will surface
 loudly if it trips, so the most likely failure mode is "deploy never
 gets healthy" rather than "deploy succeeds but routes look wrong."
+
+---
+
+## PV-007 · Divvy bike-share stations — data ingest + pin-density check
+**Shipped:** 2026-05-21 (FEAT-5 — Divvy Bike-Share Stations in the
+Neighborhood Explorer). Code is complete; the data ingest is the
+pending step.
+**Why pending:** the feature shipped code-only. The new
+[`build_divvy.py`](../backend/scripts/build_divvy.py) ingest needs CDP
+credentials + network to run, which the build session did not have, so
+`backend/data/places_curated.json` does **not** yet carry the
+`cdp_divvy` source. Until the ingest runs and the regenerated file is
+committed, the "Divvy bike share" category renders in the Explorer's
+Daily life group but surfaces zero pins. The two `cdp_divvy` assertions
+in [`test_places.py`](../backend/tests/test_places.py) `skipif`-skip
+until the source lands, then activate automatically.
+
+**Step 1 — run the ingest** (one-time, needs CDP credentials):
+- [ ] Confirm the "Divvy Bicycle Stations" resource ID. The script
+  assumes `bbyy-e7gq`; verify at
+  `https://data.cityofchicago.org/resource/bbyy-e7gq.json` and that
+  rows carry `station_name` + `latitude`/`longitude` (or a nested
+  `location` SODA Point).
+- [ ] Set `CDP_API_ENDPOINT_DIVVY` (plus the existing
+  `CHICAGO_DATA_PORTAL_API_KEY_ID` / `_SECRET`) in `backend/.env`.
+- [ ] Run `python backend/scripts/build_divvy.py`. Expect the log to
+  report `Wrote ~800 Divvy stations` with low/zero skip counts. A
+  high `no-coords` or `no-name` skip count means the dataset's column
+  names differ from the script's assumptions — fix `_coords` /
+  `station_name` in `build_divvy.py` before committing.
+- [ ] Commit the regenerated `backend/data/places_curated.json`.
+- [ ] Run `pytest backend/tests/test_places.py -v` — the two
+  `cdp_divvy` tests should now run (not skip) and pass.
+
+**Step 2 — pin-density visual check** (FEAT-5 chunk 4):
+- [ ] In the running frontend, open the Explorer, expand **Daily life**,
+  enable "Divvy bike share". Run a large (45-minute) isochrone from the
+  Loop. Confirm the ~hundreds of station pins cluster legibly via
+  `MapExploreLayer.jsx`'s existing supercluster — no unreadable pin
+  pile-up.
+- [ ] Repeat on a real phone (`npm run dev:tunnel`). If clusters are
+  too dense to read, a tighter cluster radius for this category is
+  needed — file a bug.
+- [ ] Open a station pin popup: confirm the name renders and the
+  source reads `cdp_divvy`.
+
+**When to delete this entry:** the ingest has run, the regenerated
+`places_curated.json` is committed, both `cdp_divvy` tests pass, and
+the pin-density check is legible on desktop + one phone. Any failure →
+paste into BUGS.md, keep this entry.
