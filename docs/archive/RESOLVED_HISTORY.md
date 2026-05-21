@@ -62,6 +62,18 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
+### 2026-05-21 · Explorer subcategory selection still showed the whole parent category
+
+**Files:** `frontend/src/App.jsx`, `frontend/src/components/ExploreCategoryPanel.jsx`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** In the Neighborhood Explorer's category panel, selecting one or more subcategories under a parent (e.g. only "Convenience stores" under "Grocery stores") still painted every place in the parent category on the map, instead of narrowing to just the chosen subcategories. Two cooperating causes: (1) `handleToggleSub` in [App.jsx](../../frontend/src/App.jsx) auto-promoted the parent key into `selectedCategories` whenever any sub was checked; (2) `activeSubsSet` unioned `selectedCategories` and `selectedSubs` indiscriminately, so the bare parent key (`"grocery"`) landed in the set alongside the composite keys (`"grocery/convenience"`). `MapExploreLayer`'s place filter checks `activeSubs.has(p.category)` *before* the per-subcategory check, so the bare parent key matched every place under it and the subcategory filter was never reached. The auto-promotion was redundant regardless — `useExploreFetch` already derives the backend request's category list from the parent prefixes of `selectedSubs`, and the panel only reveals sub-checkboxes after the parent is checked, so the parent is always present in `selectedCategories` anyway.
+
+**How it was resolved:** Removed the parent auto-promotion from `handleToggleSub` (it now only mutates `selectedSubs`). Reworked `activeSubsSet` to omit the bare parent key for any category that has at least one subcategory selected: it first builds a `narrowed` set of parent keys appearing in `selectedSubs`, then adds a `selectedCategories` entry to the active set only when that category is *not* narrowed. A category with zero subs selected still contributes its bare key (shows everything under it); once any sub is selected, only the composite `category/subcategory` keys pass, so unselected subs — and places with no subcategory tag — drop out. `MapExploreLayer`'s filter and the `/explore` request shape were already correct and needed no change. The behavior comment block in [`ExploreCategoryPanel.jsx`](../../frontend/src/components/ExploreCategoryPanel.jsx) was corrected to match (the prior comment claimed checking a parent flipped all sub-keys, which it never did, and described the now-removed auto-promotion).
+
+---
+
 ### 2026-05-14 · Fetch timeouts surfaced as silent failures (no error, no result) (BUG-001, third scan)
 
 **Files:** `frontend/src/lib/fetchWithTimeout.js`, `frontend/src/lib/fetchWithTimeout.test.js`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useRouteFetch.test.js`, `frontend/src/hooks/useExploreFetch.js`, `frontend/src/hooks/useExploreFetch.test.js`

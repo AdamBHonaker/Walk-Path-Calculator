@@ -727,14 +727,20 @@ export default function App() {
 
   // ── Derived map data ───────────────────────────────────────────────────
 
-  // The set of keys visible on the map — the union of selected top-level
-  // category keys ("libraries") and selected "category/subcategory" composite
-  // keys ("medical/pharmacy"). MapExploreLayer's place filter accepts either
-  // form, so a parent-only check shows every place under it and a sub-only
-  // check narrows to that subcategory.
+  // The set of keys visible on the map — selected top-level category keys
+  // ("libraries") plus selected "category/subcategory" composite keys
+  // ("medical/pharmacy"). MapExploreLayer's place filter accepts either form.
+  // When a category has any subcategory selected, the bare parent key is
+  // omitted: the user has narrowed that category, so only the composite keys
+  // should pass and unselected subs (and untagged places) drop out.
   const activeSubsSet = useMemo(() => {
+    const narrowed = new Set(
+      explorePrefs.selectedSubs.map(s => s.slice(0, s.indexOf("/"))),
+    );
     const out = new Set();
-    for (const c of explorePrefs.selectedCategories) out.add(c);
+    for (const c of explorePrefs.selectedCategories) {
+      if (!narrowed.has(c)) out.add(c);
+    }
     for (const s of explorePrefs.selectedSubs) out.add(s);
     return out;
   }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
