@@ -3,10 +3,12 @@ import {
   haversineMeters,
   toGeo,
   buildTurnsGeoJson,
+  buildRouteSegments,
   clearLayers,
   renderWalkRoute,
   renderExplore,
   WALK_PATH_COLOR,
+  SEG_ALT_OPACITY_EXPR,
 } from "./mapHelpers.js";
 
 // ── toGeo ────────────────────────────────────────────────────────────────
@@ -97,6 +99,128 @@ describe("buildTurnsGeoJson", () => {
     const turns = [null, [41.88, -87.63], undefined];
     const { features } = buildTurnsGeoJson(turns);
     expect(features).toHaveLength(1);
+  });
+});
+
+// ── SEG_ALT_OPACITY_EXPR ─────────────────────────────────────────────────
+
+describe("SEG_ALT_OPACITY_EXPR", () => {
+  it("is a non-empty array (valid MapLibre expression)", () => {
+    expect(Array.isArray(SEG_ALT_OPACITY_EXPR)).toBe(true);
+    expect(SEG_ALT_OPACITY_EXPR.length).toBeGreaterThan(0);
+  });
+
+  it("starts with 'case' operator", () => {
+    expect(SEG_ALT_OPACITY_EXPR[0]).toBe("case");
+  });
+});
+
+// ── buildRouteSegments ───────────────────────────────────────────────────
+
+describe("buildRouteSegments", () => {
+  it("returns empty FeatureCollection for null directions", () => {
+    const fc = buildRouteSegments([[41.88, -87.63], [41.89, -87.64]], null);
+    expect(fc.type).toBe("FeatureCollection");
+    expect(fc.features).toHaveLength(0);
+  });
+
+  it("returns empty FeatureCollection for empty directions", () => {
+    const fc = buildRouteSegments([[41.88, -87.63], [41.89, -87.64]], []);
+    expect(fc.features).toHaveLength(0);
+  });
+
+  it("returns empty FeatureCollection for empty path", () => {
+    const fc = buildRouteSegments([], [{ distance_meters: 100 }]);
+    expect(fc.features).toHaveLength(0);
+  });
+
+  it("produces N segments for N direction steps", () => {
+    const path = [
+      [41.88, -87.63],
+      [41.885, -87.635],
+      [41.89, -87.64],
+    ];
+    // Two steps: step 0 covers the first edge, step 1 covers the second edge.
+    const directions = [
+      { distance_meters: haversineMeters(path[0], path[1]) },
+      { distance_meters: haversineMeters(path[1], path[2]) },
+    ];
+    const fc = buildRouteSegments(path, directions);
+    expect(fc.features).toHaveLength(2);
+  });
+
+  it("each feature has segmentIndex matching its position", () => {
+    const path = [
+      [41.88, -87.63],
+      [41.885, -87.635],
+      [41.89, -87.64],
+    ];
+    const directions = [
+      { distance_meters: haversineMeters(path[0], path[1]) },
+      { distance_meters: haversineMeters(path[1], path[2]) },
+    ];
+    const fc = buildRouteSegments(path, directions);
+    expect(fc.features[0].properties.segmentIndex).toBe(0);
+    expect(fc.features[1].properties.segmentIndex).toBe(1);
+  });
+
+  it("each feature has stable id matching segmentIndex", () => {
+    const path = [[41.88, -87.63], [41.885, -87.635], [41.89, -87.64]];
+    const d = haversineMeters(path[0], path[1]);
+    const fc = buildRouteSegments(path, [{ distance_meters: d }, { distance_meters: d }]);
+    expect(fc.features[0].id).toBe(0);
+    expect(fc.features[1].id).toBe(1);
+  });
+
+  it("last segment's final coord equals path[last] exactly", () => {
+    // Critical: ensures no index-overrun when anchoring the last segment end.
+    const path = [
+      [41.88, -87.63],
+      [41.885, -87.635],
+      [41.89, -87.64],
+    ];
+    const directions = [
+      { distance_meters: haversineMeters(path[0], path[1]) },
+      { distance_meters: haversineMeters(path[1], path[2]) },
+    ];
+    const fc = buildRouteSegments(path, directions);
+    const lastSeg = fc.features[fc.features.length - 1];
+    const lastCoord = lastSeg.geometry.coordinates[lastSeg.geometry.coordinates.length - 1];
+    // GeoJSON is [lon, lat]; path[last] is [lat, lon].
+    expect(lastCoord[0]).toBeCloseTo(path[path.length - 1][1], 6); // lon
+    expect(lastCoord[1]).toBeCloseTo(path[path.length - 1][0], 6); // lat
+  });
+
+  it("each segment has at least 2 coordinates", () => {
+    const path = [[41.88, -87.63], [41.885, -87.635], [41.89, -87.64]];
+    const d = haversineMeters(path[0], path[1]);
+    const fc = buildRouteSegments(path, [{ distance_meters: d }, { distance_meters: d }]);
+    for (const f of fc.features) {
+      expect(f.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("uses GeoJSON [lon, lat] coordinate order", () => {
+    const path = [[41.88, -87.63], [41.89, -87.63]];
+    const fc = buildRouteSegments(path, [{ distance_meters: haversineMeters(path[0], path[1]) }]);
+    // First coord of first segment should be path[0] as [lon, lat]
+    expect(fc.features[0].geometry.coordinates[0]).toEqual([-87.63, 41.88]);
+  });
+
+  it("3-step route produces 3 segments", () => {
+    const path = [
+      [41.88, -87.63],
+      [41.883, -87.633],
+      [41.886, -87.636],
+      [41.89,  -87.64],
+    ];
+    const directions = [
+      { distance_meters: haversineMeters(path[0], path[1]) },
+      { distance_meters: haversineMeters(path[1], path[2]) },
+      { distance_meters: haversineMeters(path[2], path[3]) },
+    ];
+    const fc = buildRouteSegments(path, directions);
+    expect(fc.features).toHaveLength(3);
   });
 });
 
@@ -246,6 +370,57 @@ describe("renderWalkRoute", () => {
     renderWalkRoute(map, result, null, null, layerIds, sourceIds);
     expect(sourceIds).not.toContain("walk-stops");
   });
+
+  it("adds walk-segment-casing and walk-segments-line when directions are provided", () => {
+    const path = [[41.88, -87.63], [41.89, -87.64]];
+    const result = {
+      path,
+      directions: [{ distance_meters: 1200 }, { distance_meters: 900 }],
+    };
+    renderWalkRoute(map, result, null, null, layerIds, sourceIds);
+    expect(sourceIds).toContain("walk-segments");
+    expect(layerIds).toContain("walk-segment-casing");
+    expect(layerIds).toContain("walk-segments-line");
+  });
+
+  it("omits segment layers when directions is absent", () => {
+    const result = { path: [[41.88, -87.63], [41.89, -87.64]] };
+    renderWalkRoute(map, result, null, null, layerIds, sourceIds);
+    expect(sourceIds).not.toContain("walk-segments");
+    expect(layerIds).not.toContain("walk-segment-casing");
+    expect(layerIds).not.toContain("walk-segments-line");
+  });
+
+  it("omits segment layers when directions is empty", () => {
+    const result = { path: [[41.88, -87.63], [41.89, -87.64]], directions: [] };
+    renderWalkRoute(map, result, null, null, layerIds, sourceIds);
+    expect(sourceIds).not.toContain("walk-segments");
+    expect(layerIds).not.toContain("walk-segments-line");
+  });
+
+  it("adds walk-turns-label when turnCoords are provided", () => {
+    const result = { path: [[41.88, -87.63], [41.89, -87.64]] };
+    const turnCoords = [[41.88, -87.63], [41.89, -87.64]];
+    renderWalkRoute(map, result, turnCoords, null, layerIds, sourceIds);
+    expect(layerIds).toContain("walk-turns-label");
+  });
+
+  it("omits walk-turns-label when turnCoords is null", () => {
+    const result = { path: [[41.88, -87.63], [41.89, -87.64]] };
+    renderWalkRoute(map, result, null, null, layerIds, sourceIds);
+    expect(layerIds).not.toContain("walk-turns-label");
+  });
+
+  it("walk-turns-circle uses bumped radius (11 inactive, 13 active)", () => {
+    const result = { path: [[41.88, -87.63], [41.89, -87.64]] };
+    const turnCoords = [[41.88, -87.63]];
+    renderWalkRoute(map, result, turnCoords, null, layerIds, sourceIds);
+    const circle = map.addLayer.mock.calls.find(c => c[0].id === "walk-turns-circle");
+    const radiusExpr = circle[0].paint["circle-radius"];
+    // Expression: ["case", [...active...], 13, 11]
+    expect(radiusExpr[radiusExpr.length - 1]).toBe(11);           // inactive (fallback)
+    expect(radiusExpr[radiusExpr.length - 2]).toBe(13);           // active
+  });
 });
 
 // ── Symbol layer text-font regression (commit 67c8c17 fix) ───────────────
@@ -283,6 +458,21 @@ describe("symbol layers use single Noto Sans Bold font (not a comma-joined list)
     expect(stopLabel).toBeDefined();
     expect(stopLabel.layout?.["text-font"]).toEqual(["Noto Sans Bold"]);
     const font = stopLabel.layout?.["text-font"];
+    expect(Array.isArray(font)).toBe(true);
+    expect(font).toHaveLength(1);
+    expect(font[0]).not.toContain(",");
+  });
+
+  it("walk-turns-label text-font is exactly [\"Noto Sans Bold\"]", () => {
+    const fakeResult = {
+      path: [[41.88, -87.63], [41.90, -87.65]],
+    };
+    const turnCoords = [[41.88, -87.63], [41.90, -87.65]];
+    renderWalkRoute(mockMap, fakeResult, turnCoords, null, [], []);
+    const turnsLabel = capturedLayers.find(l => l.id === "walk-turns-label");
+    expect(turnsLabel).toBeDefined();
+    expect(turnsLabel.layout?.["text-font"]).toEqual(["Noto Sans Bold"]);
+    const font = turnsLabel.layout?.["text-font"];
     expect(Array.isArray(font)).toBe(true);
     expect(font).toHaveLength(1);
     expect(font[0]).not.toContain(",");
