@@ -168,6 +168,13 @@ cp .env.example .env   # add LOCATIONIQ_API_KEY only if you want the hosted
                        # street_graph_igraph.pkl to enable the pickle integrity
                        # check (SEC-001). See "Pickle integrity check" under the
                        # Greenest-routing graph release runbook below.
+                       # Set TRUSTED_PROXY_HOPS to the number of trusted reverse
+                       # proxies in front of the app so the per-IP rate limiter
+                       # keys on the real client IP from X-Forwarded-For rather
+                       # than the proxy peer (which would collapse all users into
+                       # one bucket). Typical values: 0 (default, direct / local
+                       # dev), 1 (Railway), 2 (Cloudflare → Railway). See
+                       # .env.example for the full security note.
 uvicorn main:app --reload
 ```
 
