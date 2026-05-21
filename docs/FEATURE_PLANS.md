@@ -19,9 +19,8 @@ Chunked plans for upcoming major features, followed by ideas deferred until post
 | 2 | Ship `chicago_boundary.json` as a release artifact (lakefront `/explore` clipping) | Bolt-On | Low |
 | 3 | GCFD Food Banks & Pantries in the Neighborhood Explorer | Bolt-On | Medium |
 | 4 | Beaches as a subcategory of Public Parks (Explorer) | Bolt-On | Low |
-| 5 | Chicago Landmark Designations in the Neighborhood Explorer | Bolt-On | Low |
-| 6 | Community Health Centers as a subcategory of Medical (Explorer) | Bolt-On | Low |
-| 7 | Refresh Stale Farmers-Market Data (source TBD — investigation pending) | Bolt-On | Low–Medium |
+| 5 | Community Health Centers as a subcategory of Medical (Explorer) | Bolt-On | Low |
+| 6 | Refresh Stale Farmers-Market Data (source TBD — investigation pending) | Bolt-On | Low–Medium |
 
 **Unscoped notes** (need a scoping pass before they become chunked plans):
 
@@ -464,49 +463,10 @@ The Explorer's Public parks category shows a "Beaches" sub-checkbox; selecting i
 
 ---
 
-## 5. Chicago Landmark Designations in the Neighborhood Explorer
-
-**Type:** Bolt-On | **Effort:** Low | **Area:** Backend + Frontend + Data ingestion
-**Depends on:** none.
-
-**Why.** Passage speaks in an editorial broadsheet voice and exists to make walking rewarding. Officially designated Chicago Landmarks — the buildings and sites the Commission on Chicago Landmarks has recognized for architectural or historical significance — are exactly the "worth walking to and looking at" content that suits that voice. The `art_museums` category absorbs OSM `tourism=artwork`, but designated landmarks are a distinct, authoritative, well-bounded set the Explorer does not surface today.
-
-### Data source
-
-**Confirmed 2026-05-20.** CDP resource `uct4-hrvh` ("Individual Landmarks") — the Commission on Chicago Landmarks designation list, **last refreshed 2026-05-08** (current, not a stale snapshot). Fetched via `_cdp_client.py`. Columns: `name`, `id`, `address`, `date_built`, `architect`, `landmark` (designation date), `the_geom`, `valid_date`. ~400 designations.
-
-`the_geom` is a **MultiPolygon building footprint**, not a point — so the pin is the polygon's **representative point**, computed at build time with shapely (already a backend dependency). **No geocoding step is needed** — the geometry is authoritative and present. `uct4-hrvh` is a geospatial asset, so the ingestion must hit the dataset's **`.geojson`** endpoint (the classic `.json` SODA endpoint returns empty column maps for these — the same handling `build_parks.py` documents for `ejsh-fztr`).
-
-**Scope — individual landmarks only.** The Commission also designates Landmark *Districts* (CDP `zidz-sdfj`), but those are polygon areas rather than points and do not fit the Explorer's pin model. Excluded. (A deprecated pre-2024 Individual Landmarks dataset, `tdab-kixi`, also exists — do **not** use it; `uct4-hrvh` is the current one.)
-
-### Category model
-
-New **top-level `landmarks` category** in the **Culture** group. Auto-joins `PIN_CATEGORIES` / `REQUESTABLE_CATEGORY_KEYS`; **no backend code change**. Needs a Wayfarer token + glyph (Culture uses A / T / B today).
-
-### Chunks
-
-1. **Env wiring.** Add `CDP_API_ENDPOINT_LANDMARKS` to `.env.example` pointing at the `uct4-hrvh` **`.geojson`** URL, and to the `_cdp_client.py` docstring.
-2. **`build_landmarks.py` ingestion.** New script modeled on [`build_parks.py`](../backend/scripts/build_parks.py) (closest precedent — it already fetches geospatial GeoJSON and parses geometry): fetch the FeatureCollection, compute each landmark's representative point from `the_geom`, normalize to the place schema with `category="landmarks"`, `subcategory=None`, `_source="cdp_landmarks"`, `address` from the `address` column. `merge_and_write`; commit the regenerated `places_curated.json`.
-3. **Catalog wiring.** Add the `landmarks` category object to the Culture group in `exploreCategories.js`.
-4. **Tests + docs.** `test_places` assertion for `cdp_landmarks`; CLAUDE.md updates; delete this entry and summarize in `FEATURE_HISTORY.md`.
-
-### Files likely touched
-
-`backend/scripts/build_landmarks.py` (new), `backend/scripts/_cdp_client.py` (docstring), `backend/.env.example`, `backend/data/places_curated.json`, `frontend/src/lib/exploreCategories.js`, `backend/tests/test_places.py`, `CLAUDE.md`.
-
-### Open questions
-
-- **Glyph + color** within Culture (A / T / B already taken) — small decision for chunk 3.
-- **Popup enrichment (optional, deferred).** `uct4-hrvh` carries `date_built` and `architect` — "built 1886 · Cobb & Frost" would be a strong editorial-voice popup line. The place record is flat primitives today (`{category, subcategory, name, lat, lon, address, source}`); surfacing these would need a schema extension like the one the GCFD Food Banks & Pantries feature adds for `hours`/`phone`. Out of scope for v1 — noted as a natural follow-on, ideally folded in if that schema extension lands first.
-- **Multi-City Support.** Chicago-only CDP feed; the build script targets `places_curated_chicago.json` if Multi-City Support lands first.
-
-### Definition of done
-
-A "Landmarks" category appears in the Explorer's Culture group; selecting it drops a pin per designated Chicago Landmark inside the isochrone; `places_curated.json` carries the source; tests + CLAUDE.md updated; this entry is moved to `FEATURE_HISTORY.md`.
 
 ---
 
-## 6. Community Health Centers as a Subcategory of Medical
+## 5. Community Health Centers as a Subcategory of Medical
 
 **Type:** Bolt-On | **Effort:** Low | **Area:** Backend + Frontend + Data ingestion
 **Depends on:** none.
@@ -563,7 +523,7 @@ The Explorer's Medical category shows a "Community health centers" sub-checkbox;
 
 ---
 
-## 7. Refresh Stale Farmers-Market Data
+## 6. Refresh Stale Farmers-Market Data
 
 **Type:** Bolt-On | **Effort:** Low–Medium (depends on the source chosen) | **Area:** Backend + Data ingestion
 **Depends on:** none.

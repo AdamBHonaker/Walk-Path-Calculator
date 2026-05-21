@@ -187,6 +187,29 @@ class TestCuratedSources:
             assert p["category"] == "bike_share"
             assert p["source"] == "cdp_divvy"
 
+    @pytest.mark.skipif(not _curated_has_source("cdp_landmarks"), reason=(
+        "cdp_landmarks not yet in places_curated.json — run "
+        "`python backend/scripts/build_landmarks.py` with CDP credentials"
+    ))
+    def test_landmarks_source_in_curated(self):
+        data = json.loads(places.PLACES_CURATED_PATH.read_text(encoding="utf-8"))
+        sources = {s["name"] for s in data["metadata"]["sources"]}
+        assert "cdp_landmarks" in sources
+
+    @pytest.mark.skipif(not _curated_has_source("cdp_landmarks"), reason=(
+        "cdp_landmarks not yet in places_curated.json — run "
+        "`python backend/scripts/build_landmarks.py` with CDP credentials"
+    ))
+    def test_landmarks_loaded_into_index(self):
+        # ~400 landmarks distributed across Chicago's built history;
+        # a wide city bbox should capture the majority.
+        bbox = _box(41.66, -87.94, 42.02, -87.52)
+        results = places.places_in_polygon(bbox, categories=["landmarks"])
+        assert len(results) > 10, f"expected many landmarks city-wide, got {len(results)}"
+        for p in results:
+            assert p["category"] == "landmarks"
+            assert p["subcategory"] is None
+
 
 class TestResidentialHeatmap:
     """Tests for places.residential_heatmap — the single-unioned MultiPolygon
