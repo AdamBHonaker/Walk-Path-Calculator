@@ -8,10 +8,14 @@
 //   expandedGroups:     Set<string>      — group keys currently open
 //
 // Behavior:
-//   - Toggling a parent category checkbox flips ALL of its sub-keys ON or OFF.
-//   - Toggling a sub-category leaves the parent state alone EXCEPT we promote
-//     the parent to checked when at least one sub is checked (so that the
-//     places query includes that category at all).
+//   - Checking a parent category reveals its sub-checkboxes; unchecking it
+//     clears the category and drops every selected sub under it.
+//   - Toggling a sub-category only updates selectedSubs; the parent checkbox
+//     state is left alone. The backend request derives parent keys from subs
+//     automatically, so the query still includes that category.
+//   - Map display: a category with NO subs selected shows every place under
+//     it; once ANY sub is selected the category narrows to just those subs
+//     (see activeSubsSet in App.jsx).
 //   - "Select all" / "Clear all" affordances at the panel level operate over
 //     every group and every sub.
 
