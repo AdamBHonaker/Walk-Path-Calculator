@@ -53,6 +53,7 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Tree Canopy Heatmap (Neighborhood Explorer) | Bolt-On | 2026-05-14 |
 | Parks + Green-Space Heatmaps (Neighborhood Explorer) | Bolt-On | 2026-05-14 |
 | Greenest Routing — Tree + Park Edge Weights | Structural | 2026-05-14 |
+| Chicago Landmark Designations (Neighborhood Explorer) | Bolt-On | 2026-05-21 |
 | `chicago_boundary.json` as Release Artifact | Bolt-On | 2026-05-19 |
 | Divvy Bike-Share Stations (Neighborhood Explorer) | Bolt-On | 2026-05-21 |
 | Route Turn Segment Differentiation | Bolt-On | 2026-05-21 |
@@ -76,6 +77,29 @@ Three coordinated visual layers that make individual direction steps legible on 
 - `_buildTurnPathInfo(path, directions)` and `_interp(path, pi, t)` are private helpers. The last segment anchors directly to `path[path.length-1]` (not via interpolation) to avoid index overrun at t=1.
 - Share card (`ShareDispatch.jsx`) calls `renderWalkRoute` with `turnCoords=null` — turns/labels are skipped. Segment layers are created but `walk-segments-line` stays at opacity 0 (no animation attached), so the share card renders the clean full ember route line as before.
 - 23 new tests in `mapHelpers.test.js`: `buildRouteSegments` edge cases (empty inputs, last-segment anchor, 2/3-step routes, GeoJSON coord order, stable ids), `SEG_ALT_OPACITY_EXPR` shape, new layer presence/absence, radius regression, and font regression for `walk-turns-label`.
+
+---
+
+## Chicago Landmark Designations (Neighborhood Explorer)
+
+**Shipped:** 2026-05-21 | **Type:** Bolt-On | **Effort:** Low
+
+Adds a **Landmarks** category to the Culture group in the Neighborhood Explorer. Selecting it drops a pin for each of the ~400 officially designated Chicago Landmarks inside the walkshed isochrone — buildings and sites recognized by the Commission on Chicago Landmarks for architectural or historical significance.
+
+**What shipped:**
+
+- New `backend/scripts/build_landmarks.py` — fetches CDP resource `uct4-hrvh` ("Individual Landmarks", last refreshed 2026-05-08) via the `.geojson` endpoint (the classic `.json` SODA URL returns empty column maps for geospatial assets), computes each landmark's representative point from its `the_geom` MultiPolygon footprint using shapely, and writes into `places_curated.json` under `_source="cdp_landmarks"`.
+- `backend/.env.example` — added `CDP_API_ENDPOINT_LANDMARKS` (ingestion-only; runtime never reads it).
+- `backend/scripts/_cdp_client.py` — added `CDP_API_ENDPOINT_LANDMARKS` (and the missing `CDP_API_ENDPOINT_PARKS`) to the docstring env-var list.
+- `frontend/src/lib/exploreCategories.js` — added `landmarks` category to the Culture group with glyph `H`, color `var(--ink)`. Auto-joins `PIN_CATEGORIES` / `REQUESTABLE_CATEGORY_KEYS`; no other frontend or backend code change needed.
+- `backend/tests/test_places.py` — two new assertions in `TestCuratedSources`: checks `cdp_landmarks` is present in the curated metadata and that a wide-Chicago-bbox query returns landmarks with the correct category.
+- `CLAUDE.md` — updated: `backend/data/` structure comment (landmarks added to `places_curated.json` description), `backend/scripts/` comment (build_landmarks added), `/explore` Place categories list (added `landmarks`), `/explore` `source` enum (added `cdp_landmarks`).
+
+**Outstanding user step** (requires local machine with CDP credentials + internet):
+
+Run `python backend/scripts/build_landmarks.py` from the repo root with `CDP_API_ENDPOINT_LANDMARKS=https://data.cityofchicago.org/resource/uct4-hrvh.geojson` (and the existing `CHICAGO_DATA_PORTAL_API_KEY_ID`/`_SECRET`) in `backend/.env`. Spot-check ~5 ingested entries against the City's online landmark map, then commit the regenerated `backend/data/places_curated.json`. The two new `test_places.py` assertions will fail until the data lands.
+
+**Deferred:** popup enrichment with `date_built` / `architect` — noted in `FEATURE_PLANS.md` "GCFD Food Banks & Pantries" as a natural follow-on once the place-record schema extension for `hours`/`phone` lands (same flat-record extension needed for both).
 
 ---
 

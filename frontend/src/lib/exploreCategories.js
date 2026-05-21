@@ -169,6 +169,12 @@ export const EXPLORE_GROUPS = [
         color: "var(--harbor)",
         glyph: "B",
       },
+      {
+        key: "landmarks",
+        label: "Landmarks",
+        color: "var(--ink)",
+        glyph: "H",
+      },
     ],
   },
   {
