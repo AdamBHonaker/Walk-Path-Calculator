@@ -4,6 +4,7 @@ import maplibregl from "maplibre-gl";
 import { WFFromMark, WFToMark } from "../wayfarer/primitives.jsx";
 import {
   renderWalkRoute,
+  SEG_ALT_OPACITY_EXPR,
 } from "../mapHelpers.js";
 
 // Draw-in pacing: ~2 Chicago long blocks per second (long block ≈ 0.125 mi),
@@ -146,8 +147,20 @@ export function MapRouteLayer({
         ariaLabel: `Destination: ${destLabel}`,
       });
 
+      // Reset scrim/segment visibility for the new animation cycle.
+      // Placed here (after renderWalkRoute) so layers exist on first render
+      // — the layers are created by renderWalkRoute above, so try/catch
+      // silently skips first-render attempts on a fresh map.
+      try { map.setPaintProperty("walk-path-line",    "line-opacity", 1); } catch { /* layer not yet created */ }
+      try { map.setPaintProperty("walk-segments-line","line-opacity", 0); } catch { /* layer not yet created */ }
+
       const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
-      if (reducedMotion) return;
+      if (reducedMotion) {
+        // Reveal alternating segments immediately; skip draw-in.
+        try { map.setPaintProperty("walk-path-line",    "line-opacity", 0);                    } catch { /* layer removed */ }
+        try { map.setPaintProperty("walk-segments-line","line-opacity", SEG_ALT_OPACITY_EXPR); } catch { /* layer removed */ }
+        return;
+      }
 
       // Draw-in animation via MapLibre's `line-trim-offset` paint property —
       // visually trims the line without touching its source data. Two big wins:
@@ -156,7 +169,12 @@ export function MapRouteLayer({
       //   2. The trim is set INSIDE the first RAF callback, not synchronously,
       //      so a non-firing RAF leaves the line at default (no trim) = visible.
       const fullPath = result.path; // array of [lat, lon]
-      if (!fullPath || fullPath.length < 2) return;
+      if (!fullPath || fullPath.length < 2) {
+        // Reveal without animation for degenerate paths.
+        try { map.setPaintProperty("walk-path-line",    "line-opacity", 0);                    } catch { /* layer removed */ }
+        try { map.setPaintProperty("walk-segments-line","line-opacity", SEG_ALT_OPACITY_EXPR); } catch { /* layer removed */ }
+        return;
+      }
 
       const setTrim = (p) => {
         // [trimStart=p, trimEnd=1]: visible region is [0..p], hidden is [p..1].
@@ -171,10 +189,11 @@ export function MapRouteLayer({
         } catch { /* layer removed */ }
       };
       const clearTrim = () => {
-        try {
-          map.setPaintProperty("walk-path-line", "line-trim-offset", null);
-          map.triggerRepaint();
-        } catch { /* layer removed */ }
+        // Swap: hide the scrim, reveal the alternating-segment line.
+        try { map.setPaintProperty("walk-path-line",    "line-trim-offset",  null);              } catch { /* layer removed */ }
+        try { map.setPaintProperty("walk-path-line",    "line-opacity",      0);                 } catch { /* layer removed */ }
+        try { map.setPaintProperty("walk-segments-line","line-opacity",      SEG_ALT_OPACITY_EXPR); } catch { /* layer removed */ }
+        map.triggerRepaint();
       };
 
       const durationMs = animDurationMs(result.total_miles);
@@ -257,12 +276,16 @@ export function MapRouteLayer({
 
     const prev = prevActiveTurnRef.current;
     if (prev != null && prev !== activeTurnIndex) {
-      try { map.setFeatureState({ source: "walk-turns", id: prev }, { active: false }); }
+      try { map.setFeatureState({ source: "walk-turns",    id: prev }, { active: false }); }
       catch { /* feature gone (route changed underfoot) */ }
+      try { map.setFeatureState({ source: "walk-segments", id: prev }, { active: false }); }
+      catch { /* segment source not present */ }
     }
     if (activeTurnIndex != null) {
-      try { map.setFeatureState({ source: "walk-turns", id: activeTurnIndex }, { active: true }); }
+      try { map.setFeatureState({ source: "walk-turns",    id: activeTurnIndex }, { active: true }); }
       catch { /* feature missing (deduped or route changed) */ }
+      try { map.setFeatureState({ source: "walk-segments", id: activeTurnIndex }, { active: true }); }
+      catch { /* segment source not present */ }
     }
     prevActiveTurnRef.current = activeTurnIndex;
 

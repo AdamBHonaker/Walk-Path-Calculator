@@ -92,7 +92,9 @@ Passage/
     │   │                          #   route ⇄ explore mode toggle
     │   ├── MapView.jsx            # Slim shell: maplibre.Map instance, unlock + locate buttons.
     │   │                          #   Layer effects live in map/{Route,Explore,Pick}Layer.jsx
-    │   ├── map/                   # MapRouteLayer (polyline + draw-in animation + turn highlight),
+    │   ├── map/                   # MapRouteLayer (polyline + draw-in animation + turn highlight +
+    │   │                          #   per-step segment differentiation: alternating opacity wash,
+    │   │                          #   numbered turn circles, ember glow casing on active step),
     │   │                          #   MapExploreLayer (polygon / heatmap / clustered pins / popup),
     │   │                          #   MapPickLayer (pick-on-map preview marker + confirm card)
     │   ├── components/            # Masthead, Footer, DirectionLedger, RouteFlavorTabs,
@@ -114,7 +116,10 @@ Passage/
     │   │                          #   useFollowLocation (watchPosition lifecycle for live map tracking)
     │   ├── compareEstimates.js    # Ride-share vs. walk cost/CO2 comparison
     │   ├── mapHelpers.js          # Map config, route paint (ink/ember), GeoJSON helpers,
-    │   │                          #   renderExplore() for the isochrone layers, gesture lock/unlock
+    │   │                          #   renderExplore() for the isochrone layers, gesture lock/unlock.
+    │   │                          #   buildRouteSegments() slices path into per-step LineStrings for
+    │   │                          #   walk-segment-casing (ember glow) + walk-segments-line (alt. opacity);
+    │   │                          #   SEG_ALT_OPACITY_EXPR is the alternating-opacity data expression.
     │   ├── calorieEquiv.js        # Maps calories → food-equivalent strings
     │   ├── lib/
     │   │   ├── storage.js         # Safe local/sessionStorage wrappers (try/catch in one place)

@@ -5,6 +5,12 @@
 export const WALK_PATH_COLOR  = "#171310"; // var(--ink)
 export const TURN_COLOR_ACTIVE = "#9c2a1a"; // var(--ember)
 
+// Alternating segment opacity expression: odd-indexed segments render at 55%
+// opacity, even at 100%. Creates subtle perceptual breaks between direction
+// steps without colour changes. Applied to walk-segments-line after animation
+// completes via setPaintProperty (hidden at 0 during draw-in).
+export const SEG_ALT_OPACITY_EXPR = ["case", ["==", ["%", ["get", "segmentIndex"], 2], 1], 0.55, 1.0];
+
 // Shared map defaults — used by both MapView and RouteCard so the two
 // renderings can never drift on tile provider or default framing.
 export const MAP_STYLE_URL =
@@ -30,6 +36,95 @@ export function haversineMeters([lat1, lon1], [lat2, lon2]) {
 // the trig + sqrt of a full Haversine call per turn pair.
 const _DEDUP_METERS_SQ = 25;
 const _METERS_PER_DEG_LAT = 111320;
+
+// Linearly interpolate between path[pi] and path[pi+1] at fraction t.
+// Returns the raw path point when t is at the boundary (avoids index overrun).
+function _interp(path, pi, t) {
+  if (t <= 0) return path[pi];
+  if (t >= 1 || pi + 1 >= path.length) return path[Math.min(pi + 1, path.length - 1)];
+  const a = path[pi];
+  const b = path[pi + 1];
+  return [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+}
+
+// Map each direction step to the path vertex + interpolation fraction {pi, t}
+// where that step begins. Mirrors useTurnCoords but returns raw {pi,t} pairs
+// instead of interpolated [lat,lon] coords.
+function _buildTurnPathInfo(path, directions) {
+  const N = directions.length;
+  if (N === 0 || path.length < 2) return [];
+
+  const cumDist = [0];
+  for (let i = 1; i < path.length; i++) {
+    cumDist[i] = cumDist[i - 1] + haversineMeters(path[i - 1], path[i]);
+  }
+
+  let pi = 0;
+  let running = 0;
+  const result = [];
+  for (let i = 0; i < N; i++) {
+    const target = running;
+    // Advance pi until the target falls within [cumDist[pi], cumDist[pi+1]).
+    // The <= check means a turn that lands exactly on a vertex is attributed
+    // to the *next* segment (t=0), matching useTurnCoords behaviour.
+    while (pi + 1 < path.length - 1 && cumDist[pi + 1] <= target) pi++;
+    const segLen = cumDist[pi + 1] - cumDist[pi];
+    const t = segLen <= 0 ? 0 : Math.min(1, (target - cumDist[pi]) / segLen);
+    result.push({ pi, t });
+    running += directions[i].distance_meters ?? 0;
+  }
+  return result;
+}
+
+// Build a GeoJSON FeatureCollection of N per-step LineString segments from
+// the route path + direction array. Each feature carries `segmentIndex` (0-based)
+// for the alternating-opacity data expression, and `id: i` so setFeatureState
+// can address it directly. All N segments are always emitted — no dedup.
+export function buildRouteSegments(path, directions) {
+  if (!directions?.length || !path?.length) {
+    return { type: "FeatureCollection", features: [] };
+  }
+
+  const turnInfos = _buildTurnPathInfo(path, directions);
+  const N = turnInfos.length;
+  const features = [];
+
+  for (let i = 0; i < N; i++) {
+    const { pi: startPi, t: startT } = turnInfos[i];
+    const coords = [];
+
+    coords.push(toGeo(_interp(path, startPi, startT)));
+
+    if (i === N - 1) {
+      // Last segment: include intermediate verts up to (but not including)
+      // the final point, then anchor directly to path[last] — avoids the
+      // index-overrun that would occur if we tried to interpolate at t=1
+      // beyond the last vertex.
+      for (let k = startPi + 1; k < path.length - 1; k++) {
+        coords.push(toGeo(path[k]));
+      }
+      coords.push(toGeo(path[path.length - 1]));
+    } else {
+      const { pi: endPi, t: endT } = turnInfos[i + 1];
+      for (let k = startPi + 1; k <= endPi; k++) {
+        coords.push(toGeo(path[k]));
+      }
+      coords.push(toGeo(_interp(path, endPi, endT)));
+    }
+
+    // GeoJSON LineString requires ≥ 2 points; guard against degenerate turns.
+    if (coords.length < 2) coords.push(coords[0]);
+
+    features.push({
+      type: "Feature",
+      id: i,
+      properties: { segmentIndex: i },
+      geometry: { type: "LineString", coordinates: coords },
+    });
+  }
+
+  return { type: "FeatureCollection", features };
+}
 
 // Build the GeoJSON FeatureCollection for the turn-point source. The active
 // flag is no longer baked into properties — the paint expression reads
@@ -124,7 +219,7 @@ function dropTracked(map, ids, sourceIds, layerIds) {
 export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layerIds, sourceIds, fitPadding = 60, routeColor = WALK_PATH_COLOR, drawEndpointDots = true) {
   if (!result?.path?.length) return;
 
-  const { path, origin_coords, dest_coords } = result;
+  const { path, origin_coords, dest_coords, directions } = result;
 
   const geoPath = [];
   let minLon = Infinity, minLat = Infinity;
@@ -139,6 +234,40 @@ export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layer
     if (lat > maxLat) maxLat = lat;
   }
   const bounds = [[minLon, minLat], [maxLon, maxLat]];
+
+  // ── Per-step segment layers (below the scrim) ────────────────────────
+  // walk-segment-casing: blurred ember glow revealed via feature-state on
+  // the active direction step. walk-segments-line: alternating-opacity copy
+  // of the route line, hidden during draw-in animation and swapped in after.
+  if (directions?.length) {
+    const hadSegSource = !!map.getSource?.("walk-segments");
+    upsertGeoSource(map, "walk-segments", buildRouteSegments(path, directions), sourceIds);
+    if (hadSegSource) {
+      try { map.removeFeatureState?.({ source: "walk-segments" }); }
+      catch { /* source torn down between checks */ }
+    }
+    ensureLayer(map, {
+      id: "walk-segment-casing", type: "line", source: "walk-segments",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": TURN_COLOR_ACTIVE,
+        "line-width": 9,
+        "line-blur": 2,
+        "line-opacity": ["case", ["coalesce", ["feature-state", "active"], false], 0.85, 0],
+      },
+    }, layerIds);
+    ensureLayer(map, {
+      id: "walk-segments-line", type: "line", source: "walk-segments",
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": routeColor,
+        "line-width": 4,
+        "line-opacity": 0,  // revealed post-animation via setPaintProperty
+      },
+    }, layerIds);
+  } else {
+    dropTracked(map, ["walk-segments-line", "walk-segment-casing", "walk-segments"], sourceIds, layerIds);
+  }
 
   upsertGeoSource(
     map, "walk-path",
@@ -168,15 +297,29 @@ export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layer
     ensureLayer(map, {
       id: "walk-turns-circle", type: "circle", source: "walk-turns",
       paint: {
-        "circle-radius":       ["case", ["coalesce", ["feature-state", "active"], false], 8, 5],
+        // Bumped from 5/8 → 11/13 to host 1–2 digit step numbers.
+        "circle-radius":       ["case", ["coalesce", ["feature-state", "active"], false], 13, 11],
         "circle-color":        ["case", ["coalesce", ["feature-state", "active"], false], TURN_COLOR_ACTIVE, routeColor],
         "circle-stroke-width": 2,
         "circle-stroke-color": "#ffffff",
         "circle-opacity":      ["case", ["coalesce", ["feature-state", "active"], false], 1, 0.75],
       },
     }, layerIds);
+    ensureLayer(map, {
+      id: "walk-turns-label", type: "symbol", source: "walk-turns",
+      layout: {
+        "text-field":  ["to-string", ["+", ["get", "index"], 1]],  // 0-based → 1-based
+        "text-size":   10,
+        "text-anchor": "center",
+        // Single-font only: OpenFreeMap 404s on comma-joined font fallbacks,
+        // which errors the entire glyph bucket and would hide the numbered
+        // markers. See walk-stops-label for the same constraint.
+        "text-font":   ["Noto Sans Bold"],
+      },
+      paint: { "text-color": "#ffffff" },
+    }, layerIds);
   } else {
-    dropTracked(map, ["walk-turns-circle", "walk-turns"], sourceIds, layerIds);
+    dropTracked(map, ["walk-turns-label", "walk-turns-circle", "walk-turns"], sourceIds, layerIds);
   }
 
   // Numbered markers for intermediate stops (multi-stop routes only).
