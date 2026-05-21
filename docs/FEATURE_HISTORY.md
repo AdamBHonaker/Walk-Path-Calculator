@@ -898,3 +898,16 @@ A "Divvy bike share" category in the Explorer's Daily life group. Selecting it d
 - [`backend/tests/test_places.py`](backend/tests/test_places.py): two new assertions in `TestCuratedSources` — `test_curated_metadata_lists_divvy` (source key present in metadata) and `test_divvy_stations_loaded_into_index` (city-wide query returns > 200 `bike_share` / `cdp_divvy` entries). Both `skipif`-skip until the `cdp_divvy` source lands in `places_curated.json`, then activate automatically.
 
 **Out of scope:** real-time dock/bike availability (GBFS feed — v1 uses the CDP static roster deliberately); multi-city generalization (part of FEAT-1); per-station amenity filtering (no subcategories needed at this granularity); routing integration (Divvy stations are not a routing graph input).
+
+---
+
+## Per-IP Rate Limiter: Proxy-Aware Keying + /explore Limit Increase
+**Type:** Hardening | **Area:** Backend | **Shipped:** 2026-05-21
+
+Raised the `POST /explore` per-IP rate limit from 10 to 30 requests per minute (isochrone computation is CPU-heavy but 10/min was too tight for normal interactive use). Separately, fixed a bucket-collapse issue where the slowapi limiter keyed on `request.client.host` — behind a reverse proxy (Railway, Cloudflare) that is always the proxy's connection peer, not the end-user's IP, meaning every client shared a single rate-limit bucket. The fix adds a `TRUSTED_PROXY_HOPS` env var and a `_client_ip` key function that recovers the real client IP from `X-Forwarded-For` by reading the entry that many positions from the right (spoof-resistant: a client can prepend arbitrary XFF values, but cannot forge the entries our own proxies append). Defaults to 0 (ignore XFF, key on the TCP peer) — the correct behavior for direct exposure or local dev. Typical production values: 1 for Railway alone, 2 for Cloudflare in front of Railway.
+
+**What changed:**
+- [backend/main.py](../backend/main.py): added `_resolve_trusted_proxy_hops()` (parses and validates `TRUSTED_PROXY_HOPS` env var, logs and falls back to 0 on bad input), module-level `_TRUSTED_PROXY_HOPS`, and `_client_ip(request)` key function. `Limiter` now uses `key_func=_client_ip`. Changed `@limiter.limit` on `/explore` from `"10/minute"` to `"30/minute"`.
+- [backend/.env.example](../backend/.env.example): added `TRUSTED_PROXY_HOPS` slot with full security note (hop semantics, typical Railway/Cloudflare values, why over-declaring is unsafe).
+- [backend/tests/test_main.py](../backend/tests/test_main.py): added `TestClientIpKeyFunc` — 10 unit tests covering zero-hop passthrough, single/double hop extraction, spoofed-prefix rejection, missing/short XFF fallback, and `_resolve_trusted_proxy_hops` int parsing edge cases.
+- [backend/tests/conftest.py](../backend/tests/conftest.py): updated stale comment that referenced the old 10/min `/explore` limit.
