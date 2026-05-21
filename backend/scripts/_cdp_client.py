@@ -9,6 +9,7 @@ Reads API credentials and per-dataset endpoint URLs from `backend/.env`:
     CDP_API_ENDPOINT_POLICE_STATIONS
     CDP_API_ENDPOINT_FIRE_STATIONS
     CDP_API_ENDPOINT_Schools
+    CDP_API_ENDPOINT_DIVVY
 
 Each `CDP_API_ENDPOINT_*` value is a classic SODA resource URL of the form
 `https://data.cityofchicago.org/resource/<4x4-id>.json` — i.e. a GET endpoint

@@ -59,6 +59,12 @@ export const EXPLORE_GROUPS = [
         color: "var(--harbor)",
         glyph: "F",
       },
+      {
+        key: "bike_share",
+        label: "Divvy bike share",
+        color: "var(--harbor)",
+        glyph: "D",
+      },
     ],
   },
   {

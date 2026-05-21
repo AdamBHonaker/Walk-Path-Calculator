@@ -19,10 +19,9 @@ Chunked plans for upcoming major features, followed by ideas deferred until post
 | 2 | Ship `chicago_boundary.json` as a release artifact (lakefront `/explore` clipping) | Bolt-On | Low |
 | 3 | GCFD Food Banks & Pantries in the Neighborhood Explorer | Bolt-On | Medium |
 | 4 | Beaches as a subcategory of Public Parks (Explorer) | Bolt-On | Low |
-| 5 | Divvy Bike-Share Stations in the Neighborhood Explorer | Bolt-On | Low–Medium |
-| 6 | Chicago Landmark Designations in the Neighborhood Explorer | Bolt-On | Low |
-| 7 | Community Health Centers as a subcategory of Medical (Explorer) | Bolt-On | Low |
-| 8 | Refresh Stale Farmers-Market Data (source TBD — investigation pending) | Bolt-On | Low–Medium |
+| 5 | Chicago Landmark Designations in the Neighborhood Explorer | Bolt-On | Low |
+| 6 | Community Health Centers as a subcategory of Medical (Explorer) | Bolt-On | Low |
+| 7 | Refresh Stale Farmers-Market Data (source TBD — investigation pending) | Bolt-On | Low–Medium |
 
 **Unscoped notes** (need a scoping pass before they become chunked plans):
 
@@ -465,49 +464,7 @@ The Explorer's Public parks category shows a "Beaches" sub-checkbox; selecting i
 
 ---
 
-## 5. Divvy Bike-Share Stations in the Neighborhood Explorer
-
-**Type:** Bolt-On | **Effort:** Low–Medium | **Area:** Backend + Frontend + Data ingestion
-**Depends on:** none.
-
-**Why.** The Explorer answers "what can I reach on foot." Divvy docks are the natural extension of that — they turn a walk into a longer car-free trip, and a user planning errands wants to know which docks sit inside their walkshed. Chicago's Divvy system has ~800+ stations with an authoritative, frequently-updated CDP feed.
-
-**Mission fit (settled 2026-05-20).** Passage's voice is "walk instead of *other transportation*," but bike-share is active transport that *extends* a walk rather than competing with it — and `train_stations` already establishes that getting-around amenities belong in the Explorer. Including Divvy is a deliberate, settled decision; a future reader should not relitigate it.
-
-### Data source
-
-The CDP "Divvy Bicycle Stations" classic-SODA resource, fetched via `_cdp_client.py`. Each row carries a station name and lat/lon. ~800+ rows. Confirm the exact 4×4 resource ID in chunk 1.
-
-### Category model
-
-New **top-level category** in the **Daily life** group. Proposed key `bike_share` (system-neutral, so a future multi-city port to a non-Divvy city reuses the key cleanly); label "Divvy bike share". It auto-joins `PIN_CATEGORIES` and `REQUESTABLE_CATEGORY_KEYS` from the catalog — **no backend code change**; `places.py`'s category filter and the `/explore` filter handle any new category key. Needs a Wayfarer color token + a single-character glyph (small open decision below).
-
-### Chunks
-
-1. **CDP dataset confirmation + env wiring.** Identify the resource; add `CDP_API_ENDPOINT_DIVVY` to `.env.example` + the `_cdp_client.py` docstring.
-2. **`build_divvy.py` ingestion.** New script modeled on `build_libraries.py`; `category="bike_share"`, `subcategory=None`, `_source="cdp_divvy"`; `merge_and_write`; commit the regenerated `places_curated.json`.
-3. **Catalog wiring.** Add the `bike_share` category object (key/label/color/glyph) to the Daily life group in `exploreCategories.js`.
-4. **Pin-density check.** ~800 pins is materially more than any current category. Eyeball a large (45-minute) isochrone on desktop *and* mobile and confirm [`MapExploreLayer.jsx`](../frontend/src/map/MapExploreLayer.jsx)'s existing pin clustering keeps it legible. Flag only if a denser cluster radius is needed for this category (likely not — clustering is already in place).
-5. **Tests + docs.** `test_places` assertion for the `cdp_divvy` source; CLAUDE.md updates (scripts list, curated-source description, `/explore` `source` enum, category list); delete this entry and summarize in `FEATURE_HISTORY.md`.
-
-### Files likely touched
-
-`backend/scripts/build_divvy.py` (new), `backend/scripts/_cdp_client.py` (docstring), `backend/.env.example`, `backend/data/places_curated.json`, `frontend/src/lib/exploreCategories.js`, `backend/tests/test_places.py`, `CLAUDE.md`.
-
-### Open questions
-
-- **Category key:** `bike_share` (system-neutral, recommended) vs. `divvy` (literal). Pick before chunk 2 — it is the backend `places.category` value and must match the catalog exactly.
-- **Glyph + color.** Daily life already uses glyphs G / + / T / F and tokens `var(--field|--ember|--ink|--harbor)`. Pick a non-colliding glyph (e.g. `D`) and a token.
-- **CDP roster vs. Lyft's live GBFS feed.** GBFS carries real-time dock/bike counts; the CDP feed is a static roster. v1 uses the static CDP roster — it matches every other curated category (a baked snapshot, no live runtime calls). Recorded for the record; not a blocker.
-- **Multi-City Support.** Chicago-only CDP feed; the build script targets `places_curated_chicago.json` if Multi-City Support lands first.
-
-### Definition of done
-
-A "Divvy bike share" category appears in the Explorer's Daily life group; selecting it drops a pin per Divvy dock inside the isochrone; `places_curated.json` carries the source; pin density verified legible on mobile; tests + CLAUDE.md updated; this entry is moved to `FEATURE_HISTORY.md`.
-
----
-
-## 6. Chicago Landmark Designations in the Neighborhood Explorer
+## 5. Chicago Landmark Designations in the Neighborhood Explorer
 
 **Type:** Bolt-On | **Effort:** Low | **Area:** Backend + Frontend + Data ingestion
 **Depends on:** none.
@@ -549,7 +506,7 @@ A "Landmarks" category appears in the Explorer's Culture group; selecting it dro
 
 ---
 
-## 7. Community Health Centers as a Subcategory of Medical
+## 6. Community Health Centers as a Subcategory of Medical
 
 **Type:** Bolt-On | **Effort:** Low | **Area:** Backend + Frontend + Data ingestion
 **Depends on:** none.
@@ -606,7 +563,7 @@ The Explorer's Medical category shows a "Community health centers" sub-checkbox;
 
 ---
 
-## 8. Refresh Stale Farmers-Market Data
+## 7. Refresh Stale Farmers-Market Data
 
 **Type:** Bolt-On | **Effort:** Low–Medium (depends on the source chosen) | **Area:** Backend + Data ingestion
 **Depends on:** none.

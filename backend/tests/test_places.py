@@ -146,6 +146,25 @@ class TestCuratedSources:
         # 2013 dataset has ~24 entries; expect at least a handful inside the city bbox.
         assert len(farmers) > 5
 
+    def test_curated_metadata_lists_divvy(self):
+        data = json.loads(places.PLACES_CURATED_PATH.read_text(encoding="utf-8"))
+        sources = {s["name"] for s in data["metadata"]["sources"]}
+        assert "cdp_divvy" in sources, (
+            "cdp_divvy missing — run "
+            "`python backend/scripts/build_divvy.py` with CDP credentials "
+            "to populate Divvy stations."
+        )
+
+    def test_divvy_stations_loaded_into_index(self):
+        # Divvy dataset has ~800 stations city-wide; a full-city bbox should
+        # return well over 200 even accounting for inactive-status filtering.
+        bbox = _box(41.66, -87.94, 42.02, -87.52)
+        results = places.places_in_polygon(bbox, categories=["bike_share"])
+        assert len(results) > 200, f"expected many Divvy stations city-wide, got {len(results)}"
+        for p in results:
+            assert p["category"] == "bike_share"
+            assert p["source"] == "cdp_divvy"
+
 
 class TestResidentialHeatmap:
     """Tests for places.residential_heatmap — the single-unioned MultiPolygon
