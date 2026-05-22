@@ -14,7 +14,7 @@ Categories (matches the table in docs/FEATURE_PLANS.md FEAT #1):
 
     grocery{supermarket|greengrocer|convenience|specialty},
     medical{pharmacy|urgent_care|hospital},
-    train_stations, gyms_fitness,
+    el_train_stations, metra_stations, gyms_fitness,
     coffee_bakery{bakery|chain_coffee_shop|coffee_shop|cafe}, restaurants,
     bars_nightlife, parks{playground|dog_park},
     art_museums, theaters{movie|live}, bookstores,
@@ -86,7 +86,10 @@ _QUERIES: list[tuple[str, str, str | None]] = [
     ('amenity=hospital',                    "medical",            "hospital"),
     # Train stations — operator filter applied post-fetch (Overpass regex
     # filters here would over-fetch since OSM operator tags are inconsistent).
-    ('railway=station',                     "train_stations",     None),
+    # _categorize() splits these into el_train_stations (CTA) vs.
+    # metra_stations from the operator tag; the category below is a
+    # placeholder it overrides.
+    ('railway=station',                     "el_train_stations",  None),
     # Gyms & fitness
     ('leisure=fitness_centre',              "gyms_fitness",       None),
     ('leisure=sports_centre',               "gyms_fitness",       None),
@@ -116,11 +119,14 @@ _QUERIES: list[tuple[str, str, str | None]] = [
     ('amenity=place_of_worship',            "places_of_worship",  None),
 ]
 
-# Train-station operator filter — case-insensitive substring match against
-# the OSM `operator` tag. Tag values are inconsistent (e.g. "CTA",
-# "Chicago Transit Authority", "METRA", "Metra Rail") so we do this in
-# Python rather than in the Overpass query itself.
-_TRAIN_OPERATORS = ("cta", "chicago transit", "metra")
+# Train-station operator classifier — case-insensitive substring match
+# against the OSM `operator` tag. Tag values are inconsistent (e.g. "CTA",
+# "Chicago Transit Authority", "METRA", "Metra Rail") so we classify in
+# Python rather than in the Overpass query itself. A station is kept only
+# if its operator matches one of these groups; the matching group decides
+# whether it lands as an El (CTA rapid transit) or a Metra station.
+_EL_OPERATORS = ("cta", "chicago transit")
+_METRA_OPERATORS = ("metra",)
 
 # Religion → subcategory key for Places of Worship.
 _RELIGION_SUBCATEGORY = {
@@ -214,19 +220,26 @@ def _categorize(tags: dict) -> tuple[str, str | None] | None:
     """Map an Overpass element's tags to (category, subcategory).
 
     Walks _QUERIES in order, taking the first matching tag pair. Three
-    post-fetch filters: train_stations restricts to CTA/Metra operators,
-    places_of_worship breaks down by `religion=*`, and coffee_bakery splits
-    `shop=bakery` / `amenity=cafe` into bakery / chain / coffee_shop / café.
+    post-fetch filters: railway=station elements are kept only for CTA or
+    Metra operators and split into el_train_stations / metra_stations
+    accordingly, places_of_worship breaks down by `religion=*`, and
+    coffee_bakery splits `shop=bakery` / `amenity=cafe` into
+    bakery / chain / coffee_shop / café.
     """
     for filter_expr, category, subcategory in _QUERIES:
         key, _, value = filter_expr.partition("=")
         if tags.get(key) != value:
             continue
 
-        if category == "train_stations":
+        if filter_expr == "railway=station":
             operator = (tags.get("operator") or "").lower()
-            if not any(op in operator for op in _TRAIN_OPERATORS):
-                return None  # OSM has many private/freight stations we skip.
+            # Metra checked first so a rare dual-tagged platform
+            # (operator="Metra;CTA") resolves to Metra.
+            if any(op in operator for op in _METRA_OPERATORS):
+                return ("metra_stations", None)
+            if any(op in operator for op in _EL_OPERATORS):
+                return ("el_train_stations", None)
+            return None  # Private/freight/Amtrak/NICTD stations we skip.
 
         if category == "coffee_bakery":
             if value == "bakery":  # shop=bakery — a bakery even if it's a chain.

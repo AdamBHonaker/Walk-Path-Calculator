@@ -43,7 +43,7 @@ A walking route calculator for Chicago that shows exact step counts alongside tu
 ### Neighborhood Explorer
 - Walkable-isochrone polygon (concave hull of all reachable street-graph nodes) for a 5–45 minute budget
 - Origin = browser geolocation **or** any of Chicago's 77 community areas
-- Filterable place pins across 16 top-level categories (groceries, medical, train stations, gyms, coffee/bakery, restaurants, bars, parks, art/museums, theaters, bookstores, schools, places of worship, libraries, police stations, fire stations) with subcategories where tagged
+- Filterable place pins across 17 top-level categories (groceries, medical, El train stations, Metra stations, gyms, coffee/bakery, restaurants, bars, parks, art/museums, theaters, bookstores, schools, places of worship, libraries, police stations, fire stations) with subcategories where tagged
 - Four toggleable heatmap overlays — **Residential areas** (OSM `landuse=residential`, default ON), **Tree canopy** (3 density bands baked from OSM `natural=tree` via KDE), **CPD park footprints** (saturated `--field` green, name + acres per park), and **Other green space** (softer moss wash — OSM cemeteries / golf / nature reserves / recreation grounds). Layered z-order picks parks above green-space so authoritative CPD wins on overlap.
 - "Within reach" neighborhood chips that hand off back to the routing flow
 
@@ -382,7 +382,7 @@ Walkable-isochrone endpoint for the Neighborhood Explorer. Returns the alpha-sha
 | `height_inches`         | number, 36–108, optional | Reserved for future step-count enrichment.      |
 
 Top-level place categories (matched against `places.category`):
-`grocery`, `medical`, `train_stations`, `gyms_fitness`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories on individual records (`medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`, `coffee_bakery/chain_coffee_shop`, …).
+`grocery`, `medical`, `el_train_stations`, `metra_stations`, `gyms_fitness`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories on individual records (`medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`, `coffee_bakery/chain_coffee_shop`, …).
 
 **Response:**
 ```json

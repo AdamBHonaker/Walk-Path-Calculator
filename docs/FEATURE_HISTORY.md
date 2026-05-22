@@ -57,7 +57,34 @@ A log of features that have been designed and fully implemented. Entries are mov
 | `chicago_boundary.json` as Release Artifact | Bolt-On | 2026-05-19 |
 | Divvy Bike-Share Stations (Neighborhood Explorer) | Bolt-On | 2026-05-21 |
 | Route Turn Segment Differentiation | Bolt-On | 2026-05-21 |
+| El / Metra Station Split (Neighborhood Explorer) | Bolt-On | 2026-05-22 |
 | Coffee / Bakery Subcategory Split (Neighborhood Explorer) | Bolt-On | 2026-05-22 |
+
+---
+
+## El / Metra Station Split (Neighborhood Explorer)
+**Type:** Bolt-On | **Area:** Backend + Frontend + Data ingestion | **Shipped:** 2026-05-22
+
+The Explorer's single "Train stations" category lumped CTA "L" rapid-transit stops together with Metra commuter-rail stations — two unrelated networks. It splits into two categories: **El Train Stations** (CTA) and **Metra Stations**. The OSM `operator` tag distinguishes them; the ingest already fetched it for a keep/drop filter but discarded it, so the dataset must be regenerated to carry the split.
+
+**Pending data ingest (PV-009).** This feature shipped **code-only**. Re-running `build_places_osm.py` needs network access to `overpass-api.de`, which the build session's network policy blocked, so `places_osm.json` still carries the pre-split `train_stations` key — both new categories render but surface zero pins until the ingest runs. The ingest + visual check are tracked as **PV-009** in [`docs/Pending_Verification.md`](Pending_Verification.md).
+
+**Design decisions:**
+- Category keys `el_train_stations` (CTA) + `metra_stations`. The El key was renamed from `train_stations` (rather than kept) for self-documenting semantics; a one-time `explorePrefs.js` migration remaps the legacy key so a returning user keeps their selection.
+- The El/Metra decision lives in `_categorize()`, keyed on the `railway=station` filter expression, from the OSM `operator` tag — Metra is checked first so a rare dual-tagged platform (`operator="Metra;CTA"`) resolves to Metra.
+- Non-CTA/non-Metra operators (Amtrak, South Shore / NICTD, freight) still drop, exactly as before the split.
+- El glyph `"E"` / color `var(--ink)`; Metra glyph `"M"` / color `var(--harbor)`. `E` replaces the old `"T"` (which collided cross-group with `theaters`); `M` is unused elsewhere.
+- No backend module or `main.py` / `explore.py` / `MapExploreLayer.jsx` change — both categories flow through the existing `places_in_polygon` category-filter pipeline and the catalog-derived map symbology.
+
+**What changed:**
+- [`backend/scripts/build_places_osm.py`](backend/scripts/build_places_osm.py): `_TRAIN_OPERATORS` split into `_EL_OPERATORS` + `_METRA_OPERATORS`; `_categorize()` returns `el_train_stations` / `metra_stations` from the operator tag; the `railway=station` `_QUERIES` row + docstrings updated.
+- `backend/data/places_osm.json`: **not yet regenerated** — re-running the ingest replaces the 228 `train_stations` records with `el_train_stations` + `metra_stations` entries. Pending as PV-009.
+- [`frontend/src/lib/exploreCategories.js`](frontend/src/lib/exploreCategories.js): the `train_stations` entry became `el_train_stations` ("El Train Stations"); a new `metra_stations` entry ("Metra Stations") was added immediately after it in the `daily_life` group. The derived exports (`PIN_CATEGORIES`, `REQUESTABLE_CATEGORY_KEYS`, …) and `ExploreCategoryPanel` pick both up automatically.
+- [`frontend/src/lib/explorePrefs.js`](frontend/src/lib/explorePrefs.js): `sanitize()` remaps a persisted `train_stations` selection to `el_train_stations` before the valid-key filter.
+- [`backend/tests/test_places.py`](backend/tests/test_places.py): `test_all_known_categories_present` expects the two new keys and `skip`s while the legacy `train_stations` key is still in the data, then activates once the ingest lands.
+- [`CLAUDE.md`](CLAUDE.md), [`README.md`](README.md): category-key lists updated; README top-level category count 16 → 17.
+
+**Out of scope:** real-time train arrivals (no GTFS dependency — see the "No transit data" design note); per-line subcategories for El stations (a possible future enhancement); routing integration (stations are not a routing graph input).
 
 ---
 
@@ -901,7 +928,7 @@ Each stop input has a 📍 pin icon button. Clicking it enters a `pickMode` stat
 ## Divvy Bike-Share Stations (Neighborhood Explorer)
 **Type:** Bolt-On | **Area:** Backend + Frontend + Data ingestion | **Shipped:** 2026-05-21
 
-A "Divvy bike share" category in the Explorer's Daily life group. Selecting it drops a clustered pin per Divvy dock inside the isochrone — extending the Explorer's "what can I reach from here" answer into a longer car-free trip via bike-share. `train_stations` already established that getting-around amenities belong in the Explorer; Divvy is the bike-share parallel. Station data is a static CDP roster snapshot (matching every other curated category — no live runtime calls).
+A "Divvy bike share" category in the Explorer's Daily life group. Selecting it drops a clustered pin per Divvy dock inside the isochrone — extending the Explorer's "what can I reach from here" answer into a longer car-free trip via bike-share. Train stations already established that getting-around amenities belong in the Explorer; Divvy is the bike-share parallel. Station data is a static CDP roster snapshot (matching every other curated category — no live runtime calls).
 
 **Pending data ingest (PV-007).** This feature shipped **code-only**. The `build_divvy.py` ingest needs CDP credentials + network, which the build session lacked, so `places_curated.json` does not yet carry the `cdp_divvy` source — the category renders but surfaces zero pins until the ingest runs. The data-ingest steps and the chunk-4 pin-density check are tracked as **PV-007** in [`docs/Pending_Verification.md`](Pending_Verification.md).
 
@@ -941,7 +968,7 @@ Subcategory keys (matched against `places.subcategory`): `coffee_shop`, `chain_c
 
 `build_places_osm.py` already fetches the full OSM tag dict (`out center tags;`), so the discriminating tags (`cuisine`, `brand`, `brand:wikidata`) were available at ingest time — the split is a pure code change in `_categorize()`, mirroring the existing `places_of_worship` → religion post-fetch pattern.
 
-**Pending data ingest (PV-008).** This feature shipped **code-only**. The committed `places_osm.json` predates the split, so every `coffee_bakery` place still has `subcategory: null` until `build_places_osm.py` is re-run (needs Overpass network access, unavailable in the build session). Until then the four sub-checkboxes render but selecting one filters out *every* coffee_bakery pin (a selected sub drops the bare category key from `activeSubs`). Re-running the ingest and committing the regenerated `places_osm.json` is tracked as **PV-009** in [`docs/Pending_Verification.md`](Pending_Verification.md) — it must land in the same branch as the code.
+**Pending data ingest (PV-010).** This feature shipped **code-only**. The committed `places_osm.json` predates the split, so every `coffee_bakery` place still has `subcategory: null` until `build_places_osm.py` is re-run (needs Overpass network access, unavailable in the build session). Until then the four sub-checkboxes render but selecting one filters out *every* coffee_bakery pin (a selected sub drops the bare category key from `activeSubs`). Re-running the ingest and committing the regenerated `places_osm.json` is tracked as **PV-010** in [`docs/Pending_Verification.md`](Pending_Verification.md) — it must land in the same branch as the code.
 
 **What changed:**
 - [`backend/scripts/build_places_osm.py`](backend/scripts/build_places_osm.py): added `_COFFEE_CHAIN_NAMES` + `_normalize_chain_name` + `_is_coffee_chain`, and a `coffee_bakery` branch in `_categorize()`. Docstring updated.
