@@ -28,6 +28,21 @@ describe("resolveSnapPx", () => {
     Object.defineProperty(window, "innerHeight", { value: original, configurable: true });
   });
 
+  it("prefers visualViewport height over window.innerHeight when available", () => {
+    // While the iOS keyboard is up, visualViewport.height shrinks but
+    // innerHeight does not — the smaller, visible height must win.
+    const originalInner = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", { value: 900, configurable: true });
+    window.visualViewport = { height: 500 };
+    try {
+      expect(resolveSnapPx("88dvh", 800)).toBe(440);
+      expect(resolveSnapPx("50vh", 800)).toBe(250);
+    } finally {
+      delete window.visualViewport;
+      Object.defineProperty(window, "innerHeight", { value: originalInner, configurable: true });
+    }
+  });
+
   it("returns 0 for nonsense input rather than NaN", () => {
     expect(resolveSnapPx("not-a-snap", 800)).toBe(0);
   });

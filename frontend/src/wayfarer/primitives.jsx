@@ -474,7 +474,12 @@ export function resolveSnapPx(value, containerHeight) {
   if (unit === "px") return n;
   if (unit === "%")  return Math.round((containerHeight || 0) * n / 100);
   if (unit === "dvh" || unit === "vh") {
-    const vh = typeof window !== "undefined" ? window.innerHeight : (containerHeight || 0);
+    // Prefer the visual viewport: while the iOS keyboard is up it reports the
+    // truly-visible height, whereas window.innerHeight stays at the full
+    // layout height and would over-size the sheet behind the keyboard.
+    const vh = typeof window !== "undefined"
+      ? (window.visualViewport?.height ?? window.innerHeight)
+      : (containerHeight || 0);
     return Math.round(vh * n / 100);
   }
   return n;
