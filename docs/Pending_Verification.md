@@ -393,3 +393,46 @@ legacy key is present, then activates automatically.
 `places_osm.json` is committed, `test_all_known_categories_present`
 passes, and the El/Metra pins are visually correct on desktop. Any
 failure → paste into BUGS.md, keep this entry.
+
+---
+
+## PV-010 · Coffee / bakery subcategory split — data ingest + filter check
+**Shipped:** 2026-05-22 (Coffee / Bakery Subcategory Split in the
+Neighborhood Explorer). Code is complete; the data ingest is the
+pending step.
+**Why pending:** the feature shipped code-only. The committed
+`backend/data/places_osm.json` predates the split, so every
+`coffee_bakery` place still has `subcategory: null`. The four
+sub-checkboxes (Coffee shops / Chain coffee shops / Cafés / Bakeries)
+render in the Explorer, but until the regenerated data lands, selecting
+any one of them filters out **every** coffee_bakery pin — a selected
+sub drops the bare `coffee_bakery` key from `activeSubs`, and no place
+carries a matching `category/subcategory` key yet.
+
+**Step 1 — re-run the OSM ingest** (one-time, needs Overpass network):
+- [ ] Run `python backend/scripts/build_places_osm.py`. Confirm the
+  build log's per-category counts show four non-zero `coffee_bakery/*`
+  rows (`bakery`, `cafe`, `chain_coffee_shop`, `coffee_shop`) and no
+  remaining bare `coffee_bakery` (null-subcategory) row.
+- [ ] Sanity-check the chain split: `chain_coffee_shop` should be a
+  meaningful share (Chicago has many Starbucks / Dunkin' locations). A
+  near-zero count means OSM `brand` tags are sparser than expected and
+  the `_COFFEE_CHAIN_NAMES` curated list needs more entries.
+- [ ] Commit the regenerated `backend/data/places_osm.json` **in the
+  same branch as the code** — shipping the code without the data leaves
+  the sub-filter broken.
+
+**Step 2 — filter behavior check** (run `npm run dev` from `frontend/`):
+- [ ] Open the Explorer, expand **Food & drink**, check "Coffee shops /
+  bakeries". Confirm all coffee_bakery pins show and the four
+  sub-checkboxes appear.
+- [ ] Check a single sub (e.g. "Bakeries"). Confirm the map narrows to
+  bakery pins only — coffee shops / chains / cafés drop out.
+- [ ] Check two subs (e.g. "Bakeries" + "Cafés"). Confirm both types
+  show and the other two drop out — multi-select parity with `grocery`.
+- [ ] Open a Starbucks (or other chain) pin popup: confirm the card
+  reads "chain coffee shop".
+
+**When to delete this entry:** the ingest has run, the regenerated
+`places_osm.json` is committed, and both filter checks pass on desktop.
+Any failure → paste into BUGS.md, keep this entry.

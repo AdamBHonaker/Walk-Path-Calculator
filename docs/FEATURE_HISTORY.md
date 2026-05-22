@@ -58,6 +58,7 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Divvy Bike-Share Stations (Neighborhood Explorer) | Bolt-On | 2026-05-21 |
 | Route Turn Segment Differentiation | Bolt-On | 2026-05-21 |
 | El / Metra Station Split (Neighborhood Explorer) | Bolt-On | 2026-05-22 |
+| Coffee / Bakery Subcategory Split (Neighborhood Explorer) | Bolt-On | 2026-05-22 |
 
 ---
 
@@ -949,6 +950,33 @@ A "Divvy bike share" category in the Explorer's Daily life group. Selecting it d
 - [`backend/tests/test_places.py`](backend/tests/test_places.py): two new assertions in `TestCuratedSources` — `test_curated_metadata_lists_divvy` (source key present in metadata) and `test_divvy_stations_loaded_into_index` (city-wide query returns > 200 `bike_share` / `cdp_divvy` entries). Both `skipif`-skip until the `cdp_divvy` source lands in `places_curated.json`, then activate automatically.
 
 **Out of scope:** real-time dock/bike availability (GBFS feed — v1 uses the CDP static roster deliberately); multi-city generalization (part of FEAT-1); per-station amenity filtering (no subcategories needed at this granularity); routing integration (Divvy stations are not a routing graph input).
+
+---
+
+## Coffee / Bakery Subcategory Split (Neighborhood Explorer)
+**Type:** Bolt-On | **Area:** Backend ingestion + Frontend | **Shipped:** 2026-05-22
+
+The Explorer's `coffee_bakery` category ("Coffee shops / bakeries") was a single flat bucket. It now splits into four subcategories — Coffee shops, Chain coffee shops, Cafés, Bakeries — so users can filter the isochrone place list the same way they already can for `grocery`, `medical`, and `places_of_worship`.
+
+Subcategory keys (matched against `places.subcategory`): `coffee_shop`, `chain_coffee_shop`, `cafe`, `bakery`.
+
+**Classification (post-fetch, in `build_places_osm.py`):**
+- `shop=bakery` → `bakery` (a bakery even when it's a chain — "Chain coffee shop" is a coffee-only bucket by design).
+- `amenity=cafe` → chain detection first: OSM-data-first (`brand` / `brand:wikidata` tag), with a curated name-substring fallback (`_COFFEE_CHAIN_NAMES`: Starbucks, Dunkin', Peet's, Caribou, etc.) for the many chain locations whose mappers never added a brand tag. A chain → `chain_coffee_shop`.
+- Non-chain `amenity=cafe` with `cuisine` containing `coffee_shop` → `coffee_shop`.
+- Everything else → `cafe` (catch-all).
+
+`build_places_osm.py` already fetches the full OSM tag dict (`out center tags;`), so the discriminating tags (`cuisine`, `brand`, `brand:wikidata`) were available at ingest time — the split is a pure code change in `_categorize()`, mirroring the existing `places_of_worship` → religion post-fetch pattern.
+
+**Pending data ingest (PV-010).** This feature shipped **code-only**. The committed `places_osm.json` predates the split, so every `coffee_bakery` place still has `subcategory: null` until `build_places_osm.py` is re-run (needs Overpass network access, unavailable in the build session). Until then the four sub-checkboxes render but selecting one filters out *every* coffee_bakery pin (a selected sub drops the bare category key from `activeSubs`). Re-running the ingest and committing the regenerated `places_osm.json` is tracked as **PV-010** in [`docs/Pending_Verification.md`](Pending_Verification.md) — it must land in the same branch as the code.
+
+**What changed:**
+- [`backend/scripts/build_places_osm.py`](backend/scripts/build_places_osm.py): added `_COFFEE_CHAIN_NAMES` + `_normalize_chain_name` + `_is_coffee_chain`, and a `coffee_bakery` branch in `_categorize()`. Docstring updated.
+- [`frontend/src/lib/exploreCategories.js`](frontend/src/lib/exploreCategories.js): added a `subs` array to the `coffee_bakery` entry. No other frontend changes — `ExploreCategoryPanel`, `activeSubsSet` (App.jsx), `requestCategories` (useExploreFetch.js), and the `MapExploreLayer` place filter are all category-agnostic, so the new subs behave identically to `grocery` (single or multi-select; unselected subs filtered out of the pins).
+- [`backend/tests/test_build_places_osm.py`](backend/tests/test_build_places_osm.py) (new): 16 unit tests over `_categorize` / `_is_coffee_chain` — no Overpass access required.
+- `CLAUDE.md`: added `coffee_bakery/chain_coffee_shop` to the `/explore` subcategory examples.
+
+**Out of scope:** per-subcategory pin colors/glyphs (subcategories don't restyle pins, consistent with `medical`/`grocery`); chain detection for non-coffee `amenity=cafe` brands (rare in Chicago — accepted as `chain_coffee_shop`); a chain-bakery bucket (chain `shop=bakery` stays `bakery`).
 
 ---
 

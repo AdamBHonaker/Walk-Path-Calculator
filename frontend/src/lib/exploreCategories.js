@@ -82,6 +82,14 @@ export const EXPLORE_GROUPS = [
         label: "Coffee shops / bakeries",
         color: "var(--gilt)",
         glyph: "C",
+        // OSM amenity=cafe / shop=bakery split by build_places_osm.py:
+        // chain detection uses OSM brand tags + a curated name list.
+        subs: [
+          { key: "coffee_shop",       label: "Coffee shops" },
+          { key: "chain_coffee_shop", label: "Chain coffee shops" },
+          { key: "cafe",              label: "Cafés" },
+          { key: "bakery",            label: "Bakeries" },
+        ],
       },
       {
         key: "restaurants",

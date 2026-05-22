@@ -14,7 +14,8 @@ Categories (matches the table in docs/FEATURE_PLANS.md FEAT #1):
 
     grocery{supermarket|greengrocer|convenience|specialty},
     medical{pharmacy|urgent_care|hospital},
-    el_train_stations, metra_stations, gyms_fitness, coffee_bakery, restaurants,
+    el_train_stations, metra_stations, gyms_fitness,
+    coffee_bakery{bakery|chain_coffee_shop|coffee_shop|cafe}, restaurants,
     bars_nightlife, parks{playground|dog_park},
     art_museums, theaters{movie|live}, bookstores,
     schools, places_of_worship{buddhism|christianity|hinduism|islam|judaism}
@@ -136,6 +137,45 @@ _RELIGION_SUBCATEGORY = {
     "jewish":    "judaism",
 }
 
+# Coffee-shop chain detection for the coffee_bakery subcategory split.
+# OSM-data-first: an `amenity=cafe` element is treated as a chain when it
+# carries a `brand` or `brand:wikidata` tag. The curated name list below is a
+# fallback for the (many) chain locations whose mappers never added a brand
+# tag — a maintained allowlist of substrings matched against the normalized
+# name.
+_COFFEE_CHAIN_NAMES: frozenset[str] = frozenset({
+    "starbucks",
+    "dunkin",          # "Dunkin'", "Dunkin' Donuts"
+    "peet",            # "Peet's Coffee"
+    "caribou coffee",
+    "einstein",        # "Einstein Bros. Bagels"
+    "panera",
+    "pret a manger",
+    "philz",
+    "blue bottle",
+    "biggby",
+    "tim hortons",
+})
+
+
+def _normalize_chain_name(name: str) -> str:
+    """Lowercase + fold curly apostrophes so chain-name matching is robust."""
+    return name.strip().lower().replace("’", "'")
+
+
+def _is_coffee_chain(tags: dict, name: str) -> bool:
+    """True when an `amenity=cafe` element belongs to a coffee chain.
+
+    OSM-first: any non-empty `brand` / `brand:wikidata` tag marks a chain.
+    Fallback: the normalized name contains a curated chain substring.
+    """
+    if (tags.get("brand:wikidata") or "").strip():
+        return True
+    if (tags.get("brand") or "").strip():
+        return True
+    normalized = _normalize_chain_name(name)
+    return any(chain in normalized for chain in _COFFEE_CHAIN_NAMES)
+
 
 def _bbox_str() -> str:
     """Overpass bbox: south,west,north,east."""
@@ -179,10 +219,12 @@ def _format_address(tags: dict) -> str | None:
 def _categorize(tags: dict) -> tuple[str, str | None] | None:
     """Map an Overpass element's tags to (category, subcategory).
 
-    Walks _QUERIES in order, taking the first matching tag pair. Two
+    Walks _QUERIES in order, taking the first matching tag pair. Three
     post-fetch filters: railway=station elements are kept only for CTA or
     Metra operators and split into el_train_stations / metra_stations
-    accordingly, and places_of_worship breaks down by `religion=*`.
+    accordingly, places_of_worship breaks down by `religion=*`, and
+    coffee_bakery splits `shop=bakery` / `amenity=cafe` into
+    bakery / chain / coffee_shop / café.
     """
     for filter_expr, category, subcategory in _QUERIES:
         key, _, value = filter_expr.partition("=")
@@ -198,6 +240,17 @@ def _categorize(tags: dict) -> tuple[str, str | None] | None:
             if any(op in operator for op in _EL_OPERATORS):
                 return ("el_train_stations", None)
             return None  # Private/freight/Amtrak/NICTD stations we skip.
+
+        if category == "coffee_bakery":
+            if value == "bakery":  # shop=bakery — a bakery even if it's a chain.
+                return (category, "bakery")
+            # value == "cafe" (amenity=cafe)
+            name = (tags.get("name") or "").strip()
+            if _is_coffee_chain(tags, name):
+                return (category, "chain_coffee_shop")
+            if "coffee_shop" in (tags.get("cuisine") or "").lower():
+                return (category, "coffee_shop")
+            return (category, "cafe")
 
         if category == "places_of_worship":
             religion = (tags.get("religion") or "").lower()

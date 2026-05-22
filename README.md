@@ -382,7 +382,7 @@ Walkable-isochrone endpoint for the Neighborhood Explorer. Returns the alpha-sha
 | `height_inches`         | number, 36–108, optional | Reserved for future step-count enrichment.      |
 
 Top-level place categories (matched against `places.category`):
-`grocery`, `medical`, `el_train_stations`, `metra_stations`, `gyms_fitness`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories on individual records (`medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`, …).
+`grocery`, `medical`, `el_train_stations`, `metra_stations`, `gyms_fitness`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories on individual records (`medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`, `coffee_bakery/chain_coffee_shop`, …).
 
 **Response:**
 ```json
@@ -395,7 +395,7 @@ Top-level place categories (matched against `places.category`):
   "places": [
     {
       "category": "coffee_bakery",
-      "subcategory": null,
+      "subcategory": "coffee_shop",
       "name": "Heritage Outpost",
       "lat": 41.9213,
       "lon": -87.6987,
