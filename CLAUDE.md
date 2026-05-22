@@ -264,7 +264,7 @@ Request — exactly one of the two origin modes:
 | `height_inches`          | number, 36–108, optional | Accepted but unused (reserved for future step-count enrichment). |
 
 Place categories (top-level keys, matched against `places.category`):
-`grocery`, `medical`, `train_stations`, `gyms_fitness`, `bike_share`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `landmarks`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories tagged on individual records (e.g., `medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`).
+`grocery`, `medical`, `el_train_stations`, `metra_stations`, `gyms_fitness`, `bike_share`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `landmarks`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories tagged on individual records (e.g., `medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`).
 
 Response:
 ```json

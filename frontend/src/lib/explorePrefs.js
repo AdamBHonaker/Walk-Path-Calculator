@@ -103,7 +103,14 @@ function sanitize(prefs) {
     : [...DEFAULT_PREFS.expandedGroups];
 
   const selectedCategories = Array.isArray(prefs.selectedCategories)
-    ? Array.from(new Set(prefs.selectedCategories.filter(k => VALID_CATEGORY_KEYS.has(k))))
+    ? Array.from(new Set(
+        prefs.selectedCategories
+          // Migration: train_stations split into El + Metra (2026-05). The
+          // legacy key maps to the El category so a returning user keeps
+          // their rapid-transit selection.
+          .map(k => (k === "train_stations" ? "el_train_stations" : k))
+          .filter(k => VALID_CATEGORY_KEYS.has(k)),
+      ))
     : [];
 
   const selectedSubs = Array.isArray(prefs.selectedSubs)
