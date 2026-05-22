@@ -98,6 +98,18 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ---
 
+### 2026-05-22 · Reverse-geocode neighborhood KDTree ranked candidates in raw degree space (BUG-005, fourth scan)
+
+**Files:** `backend/geocoding.py`, `backend/tests/test_geocoding.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `_get_neighborhood_kdtree()` built a `cKDTree` over neighborhood centroids in raw `[lon, lat]` degrees. `reverse_geocode_point` queried it for the `k=5` nearest centroids, then re-ranked just those 5 by true `haversine_miles`. Because one degree of longitude is shorter than one of latitude (≈0.745× at Chicago's latitude), the KDTree's Euclidean-in-degrees ordering was not the true geographic ordering — in principle the genuinely-nearest neighborhood could rank 6th by degree distance and be excluded from the candidate set before the haversine re-rank ever saw it. Latent: real Chicago neighborhood centroids are kilometres apart, so no misbehavior was observed.
+
+**How it was resolved:** Made the KDTree metric-consistent. Added `import math` and a module-level `_KDTREE_LON_SCALE = cos(radians(41.85))` (Chicago reference latitude, the same projection pattern `local_search.py` already uses). `_get_neighborhood_kdtree` now scales each centroid's longitude by that factor before building the tree, and `reverse_geocode_point` scales the query point's longitude the same way, so the pre-filter ranks by true distance and cannot drop the nearest neighborhood. The final `haversine_miles` re-rank + 200 m threshold are unchanged. New `TestReverseNeighborhoodKDTreeProjection` builds a synthetic six-neighborhood layout where the true nearest sits one pure-longitude step away and five decoys one pure-latitude step away — an unprojected k=5 pre-filter evicts the true nearest, the projected one keeps it rank 1 (both variants verified during implementation).
+
+---
+
 ### 2026-05-21 · Explorer subcategory selection still showed the whole parent category
 
 **Files:** `frontend/src/App.jsx`, `frontend/src/components/ExploreCategoryPanel.jsx`

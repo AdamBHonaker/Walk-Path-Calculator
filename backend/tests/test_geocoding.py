@@ -106,3 +106,42 @@ class TestReverseDisplayNameTrim:
         assert label is not None
         assert label.endswith("60601")
         assert "United States" not in label
+
+
+class TestReverseNeighborhoodKDTreeProjection:
+    """BUG-005 — the neighborhood KDTree pre-filter must rank candidates in
+    projected (metric-consistent) space, not raw lon/lat degrees, so it cannot
+    drop the genuinely-nearest neighborhood before the haversine re-rank."""
+
+    def test_projection_keeps_the_true_nearest_in_the_candidate_set(self, monkeypatch):
+        import geocoding
+
+        # Q sits one pure-longitude step west of the true-nearest neighborhood
+        # and one (slightly smaller) pure-latitude step from five decoys.
+        # In raw degrees the five decoys are all closer than the true nearest,
+        # so an unprojected k=5 pre-filter would evict it. After the cos(lat)
+        # longitude projection the true nearest is rank 1, as geography says.
+        q_lat, q_lon = 41.85, -87.65
+        synthetic = {
+            "projterra":     (q_lat, q_lon - 0.0018),   # pure-lon: ~149 m true
+            "decoy north a": (q_lat + 0.00150, q_lon),  # pure-lat: ~167 m true
+            "decoy north b": (q_lat + 0.00151, q_lon),
+            "decoy north c": (q_lat + 0.00152, q_lon),
+            "decoy south a": (q_lat - 0.00150, q_lon),
+            "decoy south b": (q_lat - 0.00151, q_lon),
+        }
+        monkeypatch.setattr(geocoding, "NEIGHBORHOOD_COORDS", synthetic)
+        # Force a rebuild of the cached tree from the synthetic coords.
+        monkeypatch.setattr(geocoding, "_neighborhood_kdtree", None)
+        monkeypatch.setattr(geocoding, "_neighborhood_names", ())
+        monkeypatch.setattr(geocoding, "_neighborhood_coords_arr", None)
+        monkeypatch.setattr(geocoding, "_cache_get_reverse", lambda *a, **k: None)
+        monkeypatch.setattr(geocoding, "_cache_set_reverse", lambda *a, **k: None)
+
+        result = geocoding.reverse_geocode_point(q_lat, q_lon)
+
+        assert result["source"] == "neighborhood"
+        assert result["label"] == "Projterra", (
+            "the geographically-nearest neighborhood must win — an unprojected "
+            "KDTree would have evicted it from the top-5 candidate set"
+        )

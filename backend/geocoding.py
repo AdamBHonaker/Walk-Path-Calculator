@@ -19,6 +19,7 @@ breaker around Tier 5 still trips on 429 / persistent-failure responses.
 import atexit as _atexit
 import hashlib
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -858,6 +859,14 @@ _neighborhood_names: tuple[str, ...] = ()
 _neighborhood_coords_arr = None
 _neighborhood_kdtree_lock = threading.Lock()
 
+# The KDTree pre-filter ranks candidates by Euclidean distance. In raw
+# lon/lat degrees that is not the true geographic ordering — one degree of
+# longitude is shorter than one of latitude. Scaling longitude by
+# cos(reference latitude) makes the pre-filter metric-consistent so it
+# cannot drop the genuinely-nearest neighborhood before the haversine
+# re-rank. (Same projection pattern as local_search.py.)
+_KDTREE_LON_SCALE: float = math.cos(math.radians(41.85))  # Chicago reference latitude
+
 
 def _get_neighborhood_kdtree():
     global _neighborhood_kdtree, _neighborhood_names, _neighborhood_coords_arr
@@ -871,7 +880,9 @@ def _get_neighborhood_kdtree():
 
         items = list(NEIGHBORHOOD_COORDS.items())
         names = tuple(name for name, _ in items)
-        coords = np.array([[lon, lat] for _, (lat, lon) in items], dtype=float)
+        coords = np.array(
+            [[lon * _KDTREE_LON_SCALE, lat] for _, (lat, lon) in items], dtype=float
+        )
         tree = cKDTree(coords)
         _neighborhood_names = names
         _neighborhood_coords_arr = coords
@@ -897,7 +908,9 @@ def reverse_geocode_point(lat: float, lon: float) -> dict:
     # 2. Nearest neighborhood via KDTree pre-filter, Haversine final ranking
     tree = _get_neighborhood_kdtree()
     k = min(5, len(_neighborhood_names))
-    _, idx = tree.query([lon, lat], k=k)
+    # Project the query point's longitude to match the tree's coordinate
+    # space (see _KDTREE_LON_SCALE) so the pre-filter ranks by true distance.
+    _, idx = tree.query([lon * _KDTREE_LON_SCALE, lat], k=k)
     candidate_idx = [int(idx)] if k == 1 else [int(i) for i in idx]
     best_name: str | None = None
     best_dist = float("inf")

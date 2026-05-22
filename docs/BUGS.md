@@ -17,7 +17,6 @@ items (latent-hardening + documentation drift).
 | ID | Priority | Summary |
 | --- | --- | --- |
 | BUG-002 | 🟡 Medium | Docs claim Divvy + Landmarks data that `places_curated.json` does not contain; `source` enum wrong both ways |
-| BUG-005 | 🟢 Low | Reverse-geocode neighborhood KDTree ranks candidates in raw degree space (latent, no observed impact) |
 | BUG-006 | 🟢 Low | CLAUDE.md links to a non-existent `frontend/handoff/HANDOFF.md` |
 | BUG-007 | 🟢 Low | CLAUDE.md misdescribes how per-direction `distance_miles` is computed |
 | BUG-008 | 🟢 Low | Test-count claims are stale and inconsistent across CLAUDE.md / FEATURE_HISTORY / TD-032 |
@@ -49,27 +48,6 @@ The documented `source` enum is wrong in **both** directions: it lists two value
 - **Regardless of A or B:** fix the `/explore` `source` enum to the actually-emitted set — `osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations` (add `cdp_divvy` / `cdp_landmarks` when Option A lands).
 
 **Verification:** `python -c "import json; print(sorted(s['name'] for s in json.load(open('backend/data/places_curated.json'))['metadata']['sources']))"` should match the documented enum. Run `pytest backend/tests/test_places.py -v` and confirm whether the Divvy/Landmarks tests execute (Option A) or are expected-skipped (Option B). Grep CLAUDE.md for `cdp_divvy` / `cdp_landmarks` and confirm each occurrence is accurate.
-
----
-
-### BUG-005 (fourth scan) · `reverse_geocode_point` neighborhood KDTree ranks candidates in raw degree space
-
-**Files:** `backend/geocoding.py:862-915`
-
-**Priority:** 🟢 Low (latent — no observed user-facing impact; see assessment)
-
-**What the bug is:** `_get_neighborhood_kdtree()` builds a `scipy.spatial.cKDTree` over neighborhood centroids in **raw `[lon, lat]` degrees** (`geocoding.py:874`). `reverse_geocode_point` queries it for the `k = min(5, …)` nearest centroids (`:899-900`), then re-ranks just those 5 by true `haversine_miles` and applies the 200 m threshold (`:904-912`). Because one degree of longitude is shorter than one degree of latitude (at Chicago's ~41.85° latitude, ≈0.745×), the KDTree's Euclidean-in-degrees ordering is not the true geographic ordering. In principle the genuinely-nearest neighborhood could rank 6th by degree distance and be excluded from the top-5 candidate set, so a point within 200 m of a neighborhood centroid could fail the neighborhood tier and fall through to the address / LocationIQ tiers.
-
-**Assessment / why Low:** This has effectively zero real-world impact. Chicago's named neighborhood centroids are kilometres apart, and the longitude distortion is a uniform ~0.745× scale on one axis — far too small to reorder a top-5 nearest set when the candidates are that far apart. The final `haversine_miles` + 200 m threshold (`:907,912`) is correct, so any result that *is* returned is accurate. It is recorded here for completeness and correctness-by-construction, not because misbehavior has been observed. An earlier audit pass over-rated this as HIGH — it is not.
-
-**Recommended fix (optional — the team may reasonably choose to leave this and just annotate it):** make the KDTree metric-consistent so the pre-filter cannot drop a true-nearest candidate. Either:
-
-- Build the tree on *projected* coordinates — multiply each longitude by `cos(radians(reference_lat))` before constructing the tree and apply the same factor to the query point. (`geocoding.py` / `local_search.py` already use this projection pattern elsewhere.) Or
-- Simply raise `k` (e.g. `k = min(15, len(_neighborhood_names))`) — cheap, and makes an excluded true-nearest essentially impossible.
-
-If left as-is, add a one-line comment at `geocoding.py:874` noting the tree is unprojected degrees and the `haversine` re-rank is what makes results correct.
-
-**Verification:** `pytest backend/tests/test_geocoding.py -v`. If fixed, add a test that reverse-geocodes a point sitting between two neighborhood centroids whose lon/lat offsets differ and assert the geographically-nearer one is returned.
 
 ---
 
