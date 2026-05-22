@@ -17,8 +17,6 @@ items (latent-hardening + documentation drift).
 | ID | Priority | Summary |
 | --- | --- | --- |
 | BUG-002 | 🟡 Medium | Docs claim Divvy + Landmarks data that `places_curated.json` does not contain; `source` enum wrong both ways |
-| BUG-003 | 🟢 Low | Tree-canopy cell-size fallback constant is 50 m; the shipped grid is 100 m (+ stale comment) |
-| BUG-004 | 🟢 Low | Greenest edge-weight discount does not sanitize non-finite canopy/park scores |
 | BUG-005 | 🟢 Low | Reverse-geocode neighborhood KDTree ranks candidates in raw degree space (latent, no observed impact) |
 | BUG-006 | 🟢 Low | CLAUDE.md links to a non-existent `frontend/handoff/HANDOFF.md` |
 | BUG-007 | 🟢 Low | CLAUDE.md misdescribes how per-direction `distance_miles` is computed |
@@ -51,57 +49,6 @@ The documented `source` enum is wrong in **both** directions: it lists two value
 - **Regardless of A or B:** fix the `/explore` `source` enum to the actually-emitted set — `osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations` (add `cdp_divvy` / `cdp_landmarks` when Option A lands).
 
 **Verification:** `python -c "import json; print(sorted(s['name'] for s in json.load(open('backend/data/places_curated.json'))['metadata']['sources']))"` should match the documented enum. Run `pytest backend/tests/test_places.py -v` and confirm whether the Divvy/Landmarks tests execute (Option A) or are expected-skipped (Option B). Grep CLAUDE.md for `cdp_divvy` / `cdp_landmarks` and confirm each occurrence is accurate.
-
----
-
-### BUG-003 (fourth scan) · Tree-canopy cell-size fallback constant is 50 m but the shipped grid is 100 m; stale "50 m" comment
-
-**Files:** `backend/tree_canopy.py:53-57`, `backend/fetch_street_graph.py:331`
-
-**Priority:** 🟢 Low
-
-**What the bug is:** The tree-canopy artifact `backend/data/tree_canopy_kde.json` is a **100 m** grid — its `metadata.cell_size_m` is `100`, `scripts/build_tree_canopy.py` sets `CELL_SIZE_M = 100`, and CLAUDE.md describes it as a "sparse 100 m NLCD canopy-fraction grid" / "100 m cell squares". But both runtime consumers default to **50 m** when the metadata key is absent:
-
-- `tree_canopy.py:57` — `_DEFAULT_CELL_SIZE_M = 50.0`, used at lines 105-107 (`(data.get("metadata") or {}).get("cell_size_m") or _DEFAULT_CELL_SIZE_M`). The comment at lines 53-56 literally says "Chicago-latitude conversion for the **50 m cell footprint**" — wrong; the footprint is 100 m.
-- `fetch_street_graph.py:331` — `cell_size_m = float((tree_data.get("metadata") or {}).get("cell_size_m") or 50.0)` inside `_bake_green_signals`.
-
-**How it manifests:** Harmless today, because the shipped artifact always carries `metadata.cell_size_m = 100`, so the `or 50.0` fallback never fires. It becomes a real bug if the artifact is ever regenerated/edited without the metadata block, or replaced by a legacy file: `tree_canopy.py` would render every heatmap cell as a 50 m square (a quarter of the true 100 m footprint area → a visibly gappy heatmap), and `_bake_green_signals` (`half_cell = cell_size_m / 2`, lines 345/350) would mis-classify edge midpoints 25–50 m from a cell centroid as "outside" any cell, zeroing canopy scores for many edges and silently weakening greenest routing. The stale "50 m" comment also actively misinforms a maintainer.
-
-**Root cause:** The constant and comment predate the TD-033 migration from the old 50 m OSM-KDE grid to the 100 m NLCD grid and were never updated.
-
-**Recommended fix:** Change both fallback defaults from `50.0` to `100.0` so the fallback matches the only grid the project ships — `tree_canopy.py:57` → `_DEFAULT_CELL_SIZE_M = 100.0`; `fetch_street_graph.py:331` → `... or 100.0)`. Update the `tree_canopy.py:53-56` comment to "100 m cell footprint." Optionally, since a wrong cell size silently degrades output, emit a `logger.warning` when the metadata key is missing rather than defaulting silently.
-
-**Verification:** `pytest backend/tests/test_tree_canopy.py backend/tests/test_fetch_bake.py -v`. Confirm the shipped artifact's cell size: `python -c "import json; print(json.load(open('backend/data/tree_canopy_kde.json'))['metadata']['cell_size_m'])"` (expect `100`). Spot-check that a `/explore` response's `tree_canopy_heatmap` cell squares still tile without gaps.
-
----
-
-### BUG-004 (fourth scan) · Greenest edge-weight discount does not sanitize non-finite canopy/park scores
-
-**Files:** `backend/walking.py:571-587`, `backend/fetch_street_graph.py:327-358` (`_bake_green_signals`)
-
-**Priority:** 🟢 Low
-
-**What the bug is:** The greenest flavor's per-edge weight is `lengths * discount`, where (`walking.py:579-584`):
-```python
-discount = 1.0 \
-    - _GREEN_FOOTWAY_WEIGHT * green_mask.astype(np.float32) \
-    - _GREEN_CANOPY_WEIGHT  * canopy.astype(np.float32) \
-    - _GREEN_PARK_WEIGHT    * parks.astype(np.float32)
-np.maximum(discount, _GREEN_DETOUR_FLOOR, out=discount)
-return lengths * discount
-```
-If a baked `edge_tree_canopy_f32` / `edge_park_proximity_f32` value is `NaN` or `inf`, `discount` becomes `NaN`; `np.maximum(NaN, 0.5)` stays `NaN` (numpy's `maximum` propagates `NaN`); and the edge gets a `NaN` weight. A `NaN` weight passed to the shortest-path routine corrupts greenest routing for any route whose search touches that edge — `NaN` comparisons are always false, so the priority queue mis-orders.
-
-The v3-pickle guard in `walking.py` only checks that the score columns are *present* and length-`ecount()`; it does **not** validate their values. The bake itself also does not strip non-finite values: `_bake_green_signals`'s canopy-cell filter is `isinstance(c["density"], (int, float))` (`fetch_street_graph.py:336-338`) — `float('nan')` / `float('inf')` are `float` instances and pass — and `np.clip(raw, 0.0, 1.0)` (`fetch_street_graph.py:352`) returns `NaN` unchanged (clip does not remove `NaN`). (The park branch is better-bounded — it clamps via `min(1.0, max(0.0, …))` and guards `log10` against zero acreage — but `min`/`max` likewise do not sanitize `NaN`.)
-
-**How it manifests:** No occurrence observed in the current shipped pickle — `build_tree_canopy.py` computes densities as `sum / max(count, 1)` (no division by zero). This is a latent robustness gap: a malformed/hand-edited `tree_canopy_kde.json` (a `density` of `NaN`), or a future ingest change introducing a non-finite value, would silently poison greenest routing rather than failing loudly or degrading gracefully.
-
-**Recommended fix — defense in depth at both ends:**
-
-- **Source side** (`fetch_street_graph.py`, `_bake_green_signals`, the `valid_cells` comprehension at lines 333-339): add a finiteness check — `and _math.isfinite(float(c["density"]))` (`math` is already aliased as `_math`). Stops a bad value from ever being baked.
-- **Consumption side** (`walking.py`, greenest branch, after the `np.maximum(...)` floor at line 583): clamp non-finite values, e.g. `np.nan_to_num(discount, copy=False, nan=1.0, posinf=1.0, neginf=_GREEN_DETOUR_FLOOR)` — a corrupt column then degrades to "no discount" (length-only weight) instead of a `NaN` that breaks the search. Guarantees a finite, well-ordered weight vector regardless of artifact integrity.
-
-**Verification:** `pytest backend/tests/test_walking_greenest.py backend/tests/test_fetch_bake.py -v`. Add a regression test that injects a `NaN` into a synthetic canopy column and asserts the greenest weight vector is finite and routing still returns a path.
 
 ---
 

@@ -74,6 +74,30 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ---
 
+### 2026-05-22 · Tree-canopy cell-size fallback constant was 50 m but the shipped grid is 100 m (BUG-003, fourth scan)
+
+**Files:** `backend/tree_canopy.py`, `backend/fetch_street_graph.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The tree-canopy artifact `tree_canopy_kde.json` is a 100 m grid (`metadata.cell_size_m == 100`), but both runtime consumers defaulted to 50 m when the metadata key was absent — `tree_canopy.py`'s `_DEFAULT_CELL_SIZE_M = 50.0` and `fetch_street_graph.py`'s `_bake_green_signals` `... or 50.0`. The `tree_canopy.py` comment also still described a "50 m cell footprint." Harmless while the shipped artifact carries the metadata, but a metadata-less or legacy artifact would render every heatmap cell as a quarter-area square (gappy heatmap) and mis-classify edge midpoints during the greenest-routing bake.
+
+**How it was resolved:** Changed both fallback constants from `50.0` to `100.0` so the fallback matches the only grid the project ships, and corrected the `tree_canopy.py` comment to "100 m cell footprint" with a pointer to the TD-033 50 m → 100 m NLCD migration. Code-only; the shipped artifact's behavior is unchanged (metadata always present). `test_tree_canopy.py` / `test_fetch_bake.py` still green.
+
+---
+
+### 2026-05-22 · Greenest edge-weight discount did not sanitize non-finite canopy/park scores (BUG-004, fourth scan)
+
+**Files:** `backend/walking.py`, `backend/fetch_street_graph.py`, `backend/tests/test_walking_greenest.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The greenest flavor's per-edge weight is `lengths * discount`. A `NaN`/`inf` baked `edge_tree_canopy_f32` / `edge_park_proximity_f32` value made `discount` become `NaN` (`np.maximum` propagates `NaN`), giving the edge a `NaN` weight. A `NaN` weight silently corrupts the shortest-path priority queue — `NaN` comparisons are always false, so the queue mis-orders. Neither the v3-pickle guard (presence/length only) nor the bake's `isinstance(..., float)` cell filter nor `np.clip` stripped non-finite values. No occurrence in the shipped pickle — a latent robustness gap.
+
+**How it was resolved:** Defense in depth at both ends. Source: `_bake_green_signals`'s `valid_cells` comprehension now also requires `_math.isfinite(float(c["density"]))`, so a bad value never gets baked. Consumption: the greenest branch in `_build_flavor_weights` now calls `np.nan_to_num(discount, copy=False, nan=1.0, posinf=1.0, neginf=_GREEN_DETOUR_FLOOR)` after the detour-floor `np.maximum`, so a corrupt column degrades an edge to a length-only weight rather than a `NaN` that breaks the search. New `TestGreenestNonFiniteSanitization` in `test_walking_greenest.py` injects `NaN` and `inf` into synthetic canopy/park columns and asserts the greenest weight vector stays finite (corrupt edges → length-only weight, the `inf` edge → floored).
+
+---
+
 ### 2026-05-21 · Explorer subcategory selection still showed the whole parent category
 
 **Files:** `frontend/src/App.jsx`, `frontend/src/components/ExploreCategoryPanel.jsx`

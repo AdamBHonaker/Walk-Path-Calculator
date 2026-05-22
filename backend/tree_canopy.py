@@ -50,11 +50,12 @@ DENSITY_BANDS: tuple[tuple[str, float], ...] = (
     ("high", 0.40),
 )
 
-# Chicago-latitude conversion for the 50 m cell footprint. We rebuild the
+# Chicago-latitude conversion for the 100 m cell footprint. We rebuild the
 # half-extent in lat/lon degrees from the artifact's `cell_size_m`
 # metadata so the runtime is robust to future cell-size changes in the
-# ingest script. Fallback to 50 m if metadata is missing.
-_DEFAULT_CELL_SIZE_M = 50.0
+# ingest script. Fallback to 100 m if metadata is missing (matches the
+# shipped grid — see TD-033, the 50 m OSM-KDE → 100 m NLCD migration).
+_DEFAULT_CELL_SIZE_M = 100.0
 _METERS_PER_DEG_LAT = 111_320.0
 _CHI_REF_LAT_RAD = math.radians(41.85)
 

@@ -581,6 +581,12 @@ def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "np.ndarray | list[floa
                     - _GREEN_CANOPY_WEIGHT  * canopy.astype(np.float32) \
                     - _GREEN_PARK_WEIGHT    * parks.astype(np.float32)
                 np.maximum(discount, _GREEN_DETOUR_FLOOR, out=discount)
+                # A non-finite baked canopy/park score would yield a NaN
+                # weight, which silently corrupts the shortest-path ordering
+                # (NaN comparisons are always false). Degrade a corrupt edge
+                # to a length-only weight rather than poisoning the search.
+                np.nan_to_num(discount, copy=False, nan=1.0,
+                              posinf=1.0, neginf=_GREEN_DETOUR_FLOOR)
                 return lengths * discount
             # v2 fallback: legacy footway-only discount.
             return np.where(green_mask, lengths * _GREEN_DISCOUNT, lengths)
