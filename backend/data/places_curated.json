@@ -36,9 +36,15 @@
         "url": "https://data.cityofchicago.org/resource/bbyy-e7gq.json",
         "fetched_at": "2026-05-22T01:23:22Z",
         "count": 1157
+      },
+      {
+        "name": "cdp_landmarks",
+        "url": "https://data.cityofchicago.org/resource/uct4-hrvh.geojson",
+        "fetched_at": "2026-05-22T03:52:08Z",
+        "count": 407
       }
     ],
-    "count": 2027
+    "count": 2434
   },
   "places": [
     {
@@ -18283,6 +18289,3669 @@
       "lon": -87.701419,
       "address": null,
       "_source": "cdp_divvy"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Ransom R Cable House",
+      "lat": 41.893905,
+      "lon": -87.627137,
+      "address": "25 E Erie St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Farwell Building",
+      "lat": 41.894315,
+      "lon": -87.624621,
+      "address": "664 N Michigan Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Goldblatt Bros. Department Store",
+      "lat": 41.895779,
+      "lon": -87.668282,
+      "address": "1613-1635 W Chicago av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Union Station",
+      "lat": 41.87867,
+      "lon": -87.640357,
+      "address": "210 S Canal St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Quincy Elevated Station",
+      "lat": 41.87877,
+      "lon": -87.633654,
+      "address": "220 S Wells Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "South Shore Cultural Center",
+      "lat": 41.768063,
+      "lon": -87.563794,
+      "address": "7059 South Shore Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Oppenheimer-Goldblatt Bros. Department Store Bldg",
+      "lat": 41.808284,
+      "lon": -87.665604,
+      "address": "4700 S Ashland Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Whistle Stop Inn",
+      "lat": 41.953804,
+      "lon": -87.732674,
+      "address": "4200 W Irving Park Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Steuben Club Building",
+      "lat": 41.884829,
+      "lon": -87.633603,
+      "address": "188 W Randolph St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "South Side Community Art Center",
+      "lat": 41.824555,
+      "lon": -87.622632,
+      "address": "3831 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Marshall Field and Company Building",
+      "lat": 41.883859,
+      "lon": -87.627038,
+      "address": "111 N State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Sheridan Trust and Savings Bank Building",
+      "lat": 41.968496,
+      "lon": -87.659091,
+      "address": "4753 N Broadway",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Perkins-Nordine House",
+      "lat": 41.992502,
+      "lon": -87.657286,
+      "address": "6106 N. Kenmore Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Henry Gerber House",
+      "lat": 41.913213,
+      "lon": -87.636031,
+      "address": "1710 N Crilly Court",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Mundelein College Skyscraper Building",
+      "lat": 41.998675,
+      "lon": -87.656552,
+      "address": "1020 W Sheridan Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Cosmopolitan State Bank Building",
+      "lat": 41.896847,
+      "lon": -87.630826,
+      "address": "801 N Clark St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Ludlow Typograph Company Building",
+      "lat": 41.918501,
+      "lon": -87.660611,
+      "address": "2028-2062 N. Clybourn Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Shoreland Hotel",
+      "lat": 41.796188,
+      "lon": -87.581461,
+      "address": "5454 South Shore Drive",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Seth Warner House",
+      "lat": 41.892092,
+      "lon": -87.764796,
+      "address": "631 N Central Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Marquette Park State Bank Building",
+      "lat": 41.778655,
+      "lon": -87.684019,
+      "address": "6314 S Western Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Manhattan Building",
+      "lat": 41.876065,
+      "lon": -87.628964,
+      "address": "431 S Dearborn St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz BreweryTied-House@2159 W.Belmont",
+      "lat": 41.93925,
+      "lon": -87.683033,
+      "address": "2159 W. Belmont Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "London Guarantee Building",
+      "lat": 41.887863,
+      "lon": -87.625093,
+      "address": "360 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Allan Miller House",
+      "lat": 41.765507,
+      "lon": -87.571012,
+      "address": "7121 S Paxton Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 84, Truck 51",
+      "lat": 41.781268,
+      "lon": -87.646397,
+      "address": "6204 S Green St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Continental Center",
+      "lat": 41.877948,
+      "lon": -87.625728,
+      "address": "55 East Jackson Boulevard",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Monastery of the Holy Cross Buildings",
+      "lat": 41.83761,
+      "lon": -87.653221,
+      "address": "3101-3111 S. Aberdeen Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Statue of the Republic",
+      "lat": 41.779598,
+      "lon": -87.579881,
+      "address": "Jackson Park at Hayes & Richards Drs",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Plymouth Building",
+      "lat": 41.876336,
+      "lon": -87.628971,
+      "address": "417 South Dearborn Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Uptown Theater",
+      "lat": 41.96948,
+      "lon": -87.660164,
+      "address": "4816 N Broadway",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Crown Hall",
+      "lat": 41.833245,
+      "lon": -87.627285,
+      "address": "3360 S State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Wholesale Furniture Exposition Building",
+      "lat": 41.86504,
+      "lon": -87.623693,
+      "address": "1323 S. Michigan Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Vorwaerts Turner Hall",
+      "lat": 41.866152,
+      "lon": -87.687247,
+      "address": "2431 W Roosevelt Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Muddy Waters House",
+      "lat": 41.81595,
+      "lon": -87.597785,
+      "address": "4339 South Lake Park Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Charles Hitchcock House",
+      "lat": 41.891322,
+      "lon": -87.768084,
+      "address": "5704 W Ohio St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Fisher Building",
+      "lat": 41.877202,
+      "lon": -87.628992,
+      "address": "343 S Dearborn St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Joseph Downey House and Coach House",
+      "lat": 41.994858,
+      "lon": -87.654792,
+      "address": "6205 N. Sheridan Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Truevine Missionary Baptist Church Building",
+      "lat": 41.771784,
+      "lon": -87.635256,
+      "address": "6720 S Stewart Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Carbide and Carbon Building",
+      "lat": 41.886524,
+      "lon": -87.624995,
+      "address": "230 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Medinah Temple",
+      "lat": 41.892881,
+      "lon": -87.627146,
+      "address": "600 N Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Field Building",
+      "lat": 41.879764,
+      "lon": -87.631548,
+      "address": "135 S LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Jewelers  Building",
+      "lat": 41.881617,
+      "lon": -87.625667,
+      "address": "15-17 S Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Motor Club Building",
+      "lat": 41.887035,
+      "lon": -87.625425,
+      "address": "69 E. Wacker Place",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Peoples Gas-Irving Park Neighborhood Store",
+      "lat": 41.953094,
+      "lon": -87.748904,
+      "address": "4829 W Irving Park Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) James Mulligan Public School Building",
+      "lat": 41.915355,
+      "lon": -87.652918,
+      "address": "1855-1863 North Sheffield Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Eighth Church of Christ, Scientist",
+      "lat": 41.815016,
+      "lon": -87.622509,
+      "address": "4359 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Polish National Alliance Building",
+      "lat": 41.90363,
+      "lon": -87.665876,
+      "address": "1514-1520 W Division",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Hazelton-Mikota House",
+      "lat": 41.981039,
+      "lon": -87.753879,
+      "address": "5453 N Forest Glen Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pennsylania Railroad Bridge",
+      "lat": 41.855641,
+      "lon": -87.637004,
+      "address": "S Branch Chgo River, 19th St, SE of Lumber St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Sears, Roebuck and Company Administration Building",
+      "lat": 41.869747,
+      "lon": -87.70963,
+      "address": "3333 W Arthington St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago & Illinois Western Railway Bridge",
+      "lat": 41.834033,
+      "lon": -87.701943,
+      "address": "Collateral Channel Water Lot D,33rd,E of Kedzie",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "35 East Wacker Building",
+      "lat": 41.886518,
+      "lon": -87.626785,
+      "address": "35 E Wacker Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Building",
+      "lat": 41.881849,
+      "lon": -87.628173,
+      "address": "7 W Madison St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "St. Peter's Church and Parish House",
+      "lat": 41.939774,
+      "lon": -87.64522,
+      "address": "615-623 West Belmont Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Oliver Building",
+      "lat": 41.884903,
+      "lon": -87.629253,
+      "address": "159 N Dearborn St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Perkins, Fellows & Hamilton Office and Studio",
+      "lat": 41.897233,
+      "lon": -87.625073,
+      "address": "814 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Old Chicago Coast Guard Station",
+      "lat": 41.887639,
+      "lon": -87.610198,
+      "address": "250 North Breakwater Access",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Rainbow Pylons  and  the Legacy Walk",
+      "lat": 41.945642,
+      "lon": -87.649431,
+      "address": "3243-3711 North Halsted Street( Odd and Even),",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Harris and Selwyn Theaters",
+      "lat": 41.885112,
+      "lon": -87.629809,
+      "address": "180-90 N Dearborn st",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Madonna Della Strada Chapel",
+      "lat": 41.999563,
+      "lon": -87.656244,
+      "address": "6453 N. Kenmore Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 78",
+      "lat": 41.949301,
+      "lon": -87.656568,
+      "address": "1052 W Waveland Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Majestic Building and Theater",
+      "lat": 41.881079,
+      "lon": -87.628578,
+      "address": "22 W Monore St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Morton Salt Company Warehouse Complex",
+      "lat": 41.9063,
+      "lon": -87.659009,
+      "address": "1305-1399 North Elston Ave;1201299 W Blackhawk St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Lindemann & Hoverson Co. Showrm & Warehse",
+      "lat": 41.883348,
+      "lon": -87.691871,
+      "address": "2620 W Washington Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Engine Company 104, Truck 3",
+      "lat": 41.863957,
+      "lon": -87.62361,
+      "address": "1401 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Stephen Foster House and Stable",
+      "lat": 41.672803,
+      "lon": -87.630574,
+      "address": "12147 S Harvard Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Clarence Buckingham Memorial Fountain and Garden",
+      "lat": 41.875542,
+      "lon": -87.618977,
+      "address": "Grant Park at Congress Drive",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "S. Pond Refectory/Men's & Ladies Comfort Station",
+      "lat": 41.91914,
+      "lon": -87.634011,
+      "address": "2019 N Stockton Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "All Saints Church and Rectory",
+      "lat": 41.964888,
+      "lon": -87.672947,
+      "address": "4550 N Hermitage Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Bush Temple of Music",
+      "lat": 41.896903,
+      "lon": -87.631668,
+      "address": "100 W Chicago Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Blackstone Hotel",
+      "lat": 41.873352,
+      "lon": -87.624775,
+      "address": "636 S Michigan Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John Nuveen House",
+      "lat": 41.952332,
+      "lon": -87.73438,
+      "address": "3916 N. Tripp Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) South Side Trust & Savings Bank Bldg",
+      "lat": 41.809765,
+      "lon": -87.606113,
+      "address": "4659 S Cottage Grove Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Clark-Netsch House",
+      "lat": 41.913029,
+      "lon": -87.640052,
+      "address": "1700 N. Hudson Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Epworth Church",
+      "lat": 41.977917,
+      "lon": -87.656059,
+      "address": "5253 North Kenmore Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "The Warehouse",
+      "lat": 41.878978,
+      "lon": -87.6429,
+      "address": "206 S. Jefferson St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Eugenie Lane Apartments",
+      "lat": 41.912621,
+      "lon": -87.636373,
+      "address": "235 W. Eugenie Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Greater Tabernacle Cathedral (Former Holy Rosary Catholic Church)",
+      "lat": 41.688745,
+      "lon": -87.613865,
+      "address": "11300-12 S. Dr. Martin Luther King Jr. Drive,",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Yondorf Block and Hall",
+      "lat": 41.911206,
+      "lon": -87.647865,
+      "address": "758 W North Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Gauler Twin House",
+      "lat": 41.989612,
+      "lon": -87.66119,
+      "address": "5917 N Magnolia Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Henry V. Peters House",
+      "lat": 41.967209,
+      "lon": -87.74367,
+      "address": "4731 N Knox Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Melissia Ann Elam House",
+      "lat": 41.80853,
+      "lon": -87.617204,
+      "address": "4726 S Dr Martin Luther King Jr Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "IBM Building",
+      "lat": 41.888481,
+      "lon": -87.627553,
+      "address": "330 North Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Stephen Race House",
+      "lat": 41.953102,
+      "lon": -87.733671,
+      "address": "3945 N Tripp Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Albert F. Madlener House",
+      "lat": 41.909614,
+      "lon": -87.629221,
+      "address": "4 W Burton Pl",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "St Ignatius College Prep Building",
+      "lat": 41.867449,
+      "lon": -87.654077,
+      "address": "1076 W Roosevelt Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Soldiers' Home",
+      "lat": 41.830634,
+      "lon": -87.607368,
+      "address": "739 E 35th St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "First Church of Deliverance",
+      "lat": 41.815883,
+      "lon": -87.624159,
+      "address": "4315 S Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 61",
+      "lat": 41.796698,
+      "lon": -87.623661,
+      "address": "5349 S Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Hyde Park-Kenwood Nat'l Bank Bldg",
+      "lat": 41.799374,
+      "lon": -87.588188,
+      "address": "1515-1535 E 53rd St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Mt. Pisgah Missionary Baptist Church Complex",
+      "lat": 41.810705,
+      "lon": -87.617263,
+      "address": "4600-4628 S. Dr. Martin Luther King Jr. Drive",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "F. R. Schock House",
+      "lat": 41.889322,
+      "lon": -87.770223,
+      "address": "5804 W Midway Park",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Machinery Hall at Illinois Institute of Technology",
+      "lat": 41.835146,
+      "lon": -87.629221,
+      "address": "100 W 33rd St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Charles N. Loucks House",
+      "lat": 41.952624,
+      "lon": -87.732879,
+      "address": "3926 N Keeler",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Adolf Schmidt House",
+      "lat": 41.997359,
+      "lon": -87.654996,
+      "address": "6331- 33 N. Sheridan Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Site of Haymarket Tragedy",
+      "lat": 41.88519,
+      "lon": -87.644233,
+      "address": "Desplaines St (650W), betw Randolph & Lake",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pentecostal Church of Holiness",
+      "lat": 41.860993,
+      "lon": -87.730265,
+      "address": "4208 W. 15th Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pate-Comiskey House",
+      "lat": 41.801017,
+      "lon": -87.62215,
+      "address": "5131 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Museum of Science and Industry",
+      "lat": 41.790721,
+      "lon": -87.582885,
+      "address": "57th St and Lake Shore Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Kaufmann Store and Flats",
+      "lat": 41.92389,
+      "lon": -87.647034,
+      "address": "2312-14 N Lincoln Av (S Half:1883;North Half:1887)",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Schlecht House",
+      "lat": 41.890386,
+      "lon": -87.770399,
+      "address": "5804 W Race Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Engine Company 27",
+      "lat": 41.905161,
+      "lon": -87.634848,
+      "address": "1244 N Wells St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Theater",
+      "lat": 41.885489,
+      "lon": -87.627171,
+      "address": "175 N State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 65, Truck 52",
+      "lat": 41.803734,
+      "lon": -87.735357,
+      "address": "3000 W. 42nd St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Palmolive Building",
+      "lat": 41.899735,
+      "lon": -87.6235,
+      "address": "919 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Essex Inn",
+      "lat": 41.87148,
+      "lon": -87.624745,
+      "address": "800 S. Michigan Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Lion House - Lincoln Park Zoo",
+      "lat": 41.921354,
+      "lon": -87.633329,
+      "address": "2132 N Stockton Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Keck-Gottschalk-Keck Apartments",
+      "lat": 41.793551,
+      "lon": -87.597704,
+      "address": "5551 S University Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "American System-Built Houses",
+      "lat": 41.704221,
+      "lon": -87.674649,
+      "address": "10410 S Hoyne Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Union Stock Yard Gate",
+      "lat": 41.818634,
+      "lon": -87.648677,
+      "address": "Exchange Av (4150S) at Peoria St (900W)",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz Brewery-Tied House",
+      "lat": 41.975225,
+      "lon": -87.660258,
+      "address": "5120 N. Broadway",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Holden Block",
+      "lat": 41.881403,
+      "lon": -87.653252,
+      "address": "1027 W. Madison St.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Rookery Building",
+      "lat": 41.879074,
+      "lon": -87.631797,
+      "address": "209 S LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Allerton Hotel",
+      "lat": 41.8952,
+      "lon": -87.623714,
+      "address": "701 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Site of the Origin of Illinois & Michigan Canal",
+      "lat": 41.842609,
+      "lon": -87.664367,
+      "address": "S Fork of Chicago River at W Levee & W Fuller Sts",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz Brewery-Tied House@1801W.Division",
+      "lat": 41.903013,
+      "lon": -87.672541,
+      "address": "1801 W. Division St.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "227 East Walton Place Apartment Building",
+      "lat": 41.899814,
+      "lon": -87.620778,
+      "address": "227 East Walton Place",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John Wingert House",
+      "lat": 41.994312,
+      "lon": -87.821606,
+      "address": "6231 N Canfield Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Ludington Building",
+      "lat": 41.869006,
+      "lon": -87.626355,
+      "address": "1104 S Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago and North Western Railway Office Building",
+      "lat": 41.878314,
+      "lon": -87.634878,
+      "address": "226 W. Jackson Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "King-Nash House",
+      "lat": 41.883055,
+      "lon": -87.707595,
+      "address": "3234 W Washington Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Promontory Apartments",
+      "lat": 41.794332,
+      "lon": -87.581192,
+      "address": "5530-5532 South Shore Drive",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Shedd Park Fieldhouse",
+      "lat": 41.850151,
+      "lon": -87.717018,
+      "address": "3600 W 23rd St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Monumental Baptist Church of Chicago",
+      "lat": 41.822367,
+      "lon": -87.608543,
+      "address": "729 E. Oakwood Boulevard",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Courthouse Place",
+      "lat": 41.890241,
+      "lon": -87.630131,
+      "address": "54 W Hubbard St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Humboldt Park Receptory Building and Stable",
+      "lat": 41.902317,
+      "lon": -87.703336,
+      "address": "3015 W Divison St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Elizabeth Peabody Public School",
+      "lat": 41.900047,
+      "lon": -87.66434,
+      "address": "1438-1454 W. Augusta Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Biograph Theater",
+      "lat": 41.926521,
+      "lon": -87.649759,
+      "address": "2433-43 N Lincoln Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago & Northwestern Railway Bridge",
+      "lat": 41.888514,
+      "lon": -87.63911,
+      "address": "N Branch Chgo River, S of Kinzie & E of Canal St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Jackson-Thomas House",
+      "lat": 42.010475,
+      "lon": -87.681971,
+      "address": "7053 N Ridge Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Rosehill Cemetery Entrance",
+      "lat": 41.986598,
+      "lon": -87.675295,
+      "address": "5800 N Ravenswood Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Holy Trinity Orthodox Cathedral and Rectory",
+      "lat": 41.901969,
+      "lon": -87.681789,
+      "address": "1121 N Leavitt St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Commercial National Bank Building",
+      "lat": 41.879757,
+      "lon": -87.630328,
+      "address": "123 to 153 S. Clark, 60 to 80 W. Adams",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Francis J. Dewes House",
+      "lat": 41.930341,
+      "lon": -87.641574,
+      "address": "503 W Wrightwood Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Riviera Motor Sales Company Building",
+      "lat": 41.990637,
+      "lon": -87.660703,
+      "address": "5948-60 N. Broadway",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Old Chicago Main Post Office Building",
+      "lat": 41.8756,
+      "lon": -87.638673,
+      "address": "433 West Van Buren St.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Montgomery Ward & Co. Catalog House",
+      "lat": 41.897343,
+      "lon": -87.643578,
+      "address": "618 W Chicago Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pilgrim Baptist Church",
+      "lat": 41.834464,
+      "lon": -87.621482,
+      "address": "3301 S Indiana Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Samuel M. Nickerson House",
+      "lat": 41.894351,
+      "lon": -87.626534,
+      "address": "40 E Erie St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Bryan Lathrop House",
+      "lat": 41.901834,
+      "lon": -87.625059,
+      "address": "120 E Bellevue Pl",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 5, Truck 2",
+      "lat": 41.877181,
+      "lon": -87.644309,
+      "address": "324 S DesPlaines Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "North Chicago Hospital Building",
+      "lat": 41.929471,
+      "lon": -87.641874,
+      "address": "2551 N Clark Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Albert G. Wheeler House",
+      "lat": 41.998709,
+      "lon": -87.655499,
+      "address": "970 West Sheridan Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Paseo Boricua Gateway Flags",
+      "lat": 41.903353,
+      "lon": -87.697593,
+      "address": "2400-West  Division ST & 2800 West Division St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Cairo Supper Club Building",
+      "lat": 41.954997,
+      "lon": -87.654144,
+      "address": "4015-4017 North Sheridan Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Fullerton State Bank Bldg",
+      "lat": 41.924946,
+      "lon": -87.664352,
+      "address": "1425 W Fullerton Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Trustees System Service Building",
+      "lat": 41.886046,
+      "lon": -87.633634,
+      "address": "201 N Wells St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Carl Schurz High School",
+      "lat": 41.946893,
+      "lon": -87.735496,
+      "address": "3601 N Milwaukee Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Kimbell Trust & Savings Bank Bldg",
+      "lat": 41.924908,
+      "lon": -87.717269,
+      "address": "3600 W Fullerton Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "K.A.M. Isaiah Israel Temple",
+      "lat": 41.802664,
+      "lon": -87.598664,
+      "address": "1100 E Hyde Park Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Episcopal Church of the Advent and Parish House",
+      "lat": 41.928944,
+      "lon": -87.70025,
+      "address": "2900 W. Logan Boulevard",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "300 West Adams Street Office Building",
+      "lat": 41.879728,
+      "lon": -87.635681,
+      "address": "300 W Adams St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Emil Bach House",
+      "lat": 42.016576,
+      "lon": -87.664773,
+      "address": "7415 N Sheridan Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Hotel St. Benedict Flats",
+      "lat": 41.896948,
+      "lon": -87.626429,
+      "address": "40-52 E Chicago Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Civic Opera Building",
+      "lat": 41.882288,
+      "lon": -87.637522,
+      "address": "20 N Wacker Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Sydney A. Kent House",
+      "lat": 41.840648,
+      "lon": -87.624003,
+      "address": "2944 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Waller Apartments",
+      "lat": 41.885626,
+      "lon": -87.698367,
+      "address": "2840-58 W Walnut St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "LaSalle Street Cable Car Powerhouse",
+      "lat": 41.891033,
+      "lon": -87.632962,
+      "address": "500 N LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Home Bank & Trust Company",
+      "lat": 41.903595,
+      "lon": -87.667953,
+      "address": "1200-08 N Ashland Av / 1600-12 W Division St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Beeson House and Coach House",
+      "lat": 41.889318,
+      "lon": -87.770608,
+      "address": "5810 W Midway Park",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Morning Star Baptist Church of Chicago",
+      "lat": 41.821297,
+      "lon": -87.616331,
+      "address": "3993 S. Dr. Martin Luther King, Jr. Drive",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Haskell-Barker-Atwater Buildings",
+      "lat": 41.881361,
+      "lon": -87.626658,
+      "address": "18-28 S Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz Brewery-Tied House",
+      "lat": 41.885202,
+      "lon": -87.662297,
+      "address": "1393-1399 W. Lake St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Washington Block",
+      "lat": 41.882957,
+      "lon": -87.634078,
+      "address": "40 N Wells St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Carl Sandburg House",
+      "lat": 41.966572,
+      "lon": -87.672989,
+      "address": "4646 N Hermitage Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Cortland Street Drawbridge",
+      "lat": 41.916948,
+      "lon": -87.664309,
+      "address": "1440 W Cortland St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Gwendolyn Brooks House",
+      "lat": 41.759504,
+      "lon": -87.607002,
+      "address": "7428 S. Evans Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Vassar Swiss Underwear Company Bldg",
+      "lat": 41.931512,
+      "lon": -87.692143,
+      "address": "2543 - 2545 W Diversey Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "George Cleveland Hall Branch Library",
+      "lat": 41.80711,
+      "lon": -87.622301,
+      "address": "4801 S. Michigan Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Swedish American State Bank Bldg",
+      "lat": 41.979979,
+      "lon": -87.668551,
+      "address": "5400 N Clark St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Alfred Caldwell Lily Pool",
+      "lat": 41.925032,
+      "lon": -87.633966,
+      "address": "North end of Lincoln Park Zoo at Fullerton Parkway",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Rosenwald Court Apartments",
+      "lat": 41.810207,
+      "lon": -87.62367,
+      "address": "4600-4658 S.Michigan Ave,4601-4659 S.Wabash Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Orphan Asylum Building",
+      "lat": 41.801347,
+      "lon": -87.616508,
+      "address": "5120 S Dr Martin Luther King, Jr. Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chapin and Gore Building",
+      "lat": 41.87933,
+      "lon": -87.625614,
+      "address": "63 E Adams",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Delaware Building",
+      "lat": 41.884687,
+      "lon": -87.629194,
+      "address": "36 W Randolph St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Carson Pirie Scott & Company Building",
+      "lat": 41.881258,
+      "lon": -87.626956,
+      "address": "1 S State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "West Pullman School",
+      "lat": 41.676812,
+      "lon": -87.635255,
+      "address": "11941 S Parnell Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "St Charles Air Line Bridge",
+      "lat": 41.860922,
+      "lon": -87.634509,
+      "address": "S B Chgo River, N of 16th St & E of Lumber St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Main Building at Illinois Institute of Technology",
+      "lat": 41.833719,
+      "lon": -87.629224,
+      "address": "3320 S Federal St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Essanay Studios",
+      "lat": 41.972329,
+      "lon": -87.663354,
+      "address": "1333-35 W Argle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Illinois Central Swing Bridge",
+      "lat": 41.832424,
+      "lon": -87.702414,
+      "address": "San & Ship Canal, N of Stevenson Exp & E of Kedzie",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Harbor Lighthouse",
+      "lat": 41.889269,
+      "lon": -87.59041,
+      "address": "S End of the North Breakwater,N side of Harbor Ent",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John Rath House",
+      "lat": 41.927898,
+      "lon": -87.69531,
+      "address": "2703 W Logan Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Gage Group",
+      "lat": 41.881268,
+      "lon": -87.624979,
+      "address": "18,24, and 30 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Griffiths-Burroughs House",
+      "lat": 41.825266,
+      "lon": -87.623665,
+      "address": "3806 S. Michigan Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Martin Schnitzius Cottage",
+      "lat": 41.916766,
+      "lon": -87.650538,
+      "address": "1925North Fremont",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Inland Steel Building",
+      "lat": 41.881073,
+      "lon": -87.629003,
+      "address": "30 W Monore St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Stone Temple Baptist Church Building",
+      "lat": 41.86317,
+      "lon": -87.716289,
+      "address": "3620-3624 W. Douglas Blvd/ 1337-1349 S. Millard",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Heald Square Monument",
+      "lat": 41.887026,
+      "lon": -87.626905,
+      "address": "Wacker Dr at Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Frederick C. Robie House",
+      "lat": 41.78992,
+      "lon": -87.59597,
+      "address": "5757 S Woodlawn Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Michigan Avenue Bridge and Wacker Dr Esplanade",
+      "lat": 41.888743,
+      "lon": -87.624384,
+      "address": "S Side of Chicago River, bet Michigan and Wabash",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Schoenhofen Brewery",
+      "lat": 41.858055,
+      "lon": -87.639745,
+      "address": "18th St & Canalport (500W)",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Krause Music Store",
+      "lat": 41.965336,
+      "lon": -87.686011,
+      "address": "4611 N Lincoln Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Roberts Temple Church of God in Christ Building",
+      "lat": 41.82121,
+      "lon": -87.625911,
+      "address": "4021 S State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Palliser's Cottage Home No. 35",
+      "lat": 41.691092,
+      "lon": -87.679399,
+      "address": "2314 W 111th Pl",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) St. Adalbert Church Building",
+      "lat": 41.858972,
+      "lon": -87.66788,
+      "address": "1638 W 17th St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "New Genesis Assembly of God Baptist Church",
+      "lat": 41.906055,
+      "lon": -87.756222,
+      "address": "1400 N. Laramie Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Jackson Storage and Van Company Warehouse",
+      "lat": 41.851338,
+      "lon": -87.715534,
+      "address": "3609-3611 W. Cermak Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Century  Building",
+      "lat": 41.879325,
+      "lon": -87.628076,
+      "address": "202 South State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Harris Trust & Savings Bank",
+      "lat": 41.880458,
+      "lon": -87.631306,
+      "address": "111 West  Monroe Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Erie Street Row",
+      "lat": 41.893973,
+      "lon": -87.623086,
+      "address": "161 E. Erie St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "WAX TRAX!",
+      "lat": 41.926714,
+      "lon": -87.650023,
+      "address": "2449 North Lincoln Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Consumers Building",
+      "lat": 41.878995,
+      "lon": -87.628159,
+      "address": "220 South State Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Bankers Building",
+      "lat": 41.879128,
+      "lon": -87.631168,
+      "address": "105 W. Adams St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Second Presbyterian Church",
+      "lat": 41.855779,
+      "lon": -87.62436,
+      "address": "1928-1936 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Ida B. Wells-Barnett House",
+      "lat": 41.828592,
+      "lon": -87.617732,
+      "address": "3624 S Dr Martin Luther King Jr Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Jewish People's Institute",
+      "lat": 41.863256,
+      "lon": -87.713373,
+      "address": "3500 W Douglas Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "New Regal Theater",
+      "lat": 41.751247,
+      "lon": -87.58351,
+      "address": "1641 E 79th st",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Calumet Park Fieldhouse",
+      "lat": 41.717674,
+      "lon": -87.530197,
+      "address": "9801 S Avenue G",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Varnish Company Building",
+      "lat": 41.888996,
+      "lon": -87.629348,
+      "address": "33 W Kinzie St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Old Colony Building",
+      "lat": 41.876608,
+      "lon": -87.628977,
+      "address": "407 S Dearborn St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Canaan Baptist Church of Christ Building",
+      "lat": 41.772963,
+      "lon": -87.632781,
+      "address": "6657-59 S Harvard Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Illinois Central Swing Bridge",
+      "lat": 41.828649,
+      "lon": -87.714411,
+      "address": "San & Ship Canal, S of 35th St & E of Pulaski Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 129, Truck 50",
+      "lat": 41.746005,
+      "lon": -87.663706,
+      "address": "8120 S Ashland Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Mather Tower",
+      "lat": 41.887606,
+      "lon": -87.625427,
+      "address": "75 E Wacker Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago and Alton Railway Bridge",
+      "lat": 41.839856,
+      "lon": -87.664673,
+      "address": "S Fork of S Branch, N of Archer & E of Ashland",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Emmett Till and Mamie Till- Mobley House",
+      "lat": 41.777706,
+      "lon": -87.610372,
+      "address": "6427 South St. Lawrence Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Jane Addams' Hull House and Dining Hall",
+      "lat": 41.871498,
+      "lon": -87.648348,
+      "address": "800 S Halsted St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Site of the Sauganash Hotel/Wigwam",
+      "lat": 41.885365,
+      "lon": -87.636473,
+      "address": "SE corner of Lake St & Wacker Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Third Unitarian Church Building",
+      "lat": 41.885847,
+      "lon": -87.771645,
+      "address": "301 N Mayfield Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "First Baptist Congregational Church",
+      "lat": 41.883016,
+      "lon": -87.667282,
+      "address": "60 N Ashland Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Reebie Storage Warehouse",
+      "lat": 41.924677,
+      "lon": -87.639389,
+      "address": "2325-33 N Clark St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Mathilde Eliel House",
+      "lat": 41.819256,
+      "lon": -87.602788,
+      "address": "4122 S Ellis Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 45, Truck 15",
+      "lat": 41.811219,
+      "lon": -87.607003,
+      "address": "4600 S Cottage Grove Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Metropolitan Apostolic Community Church Building",
+      "lat": 41.819998,
+      "lon": -87.617525,
+      "address": "4100 S Dr Martin Luther King Jr Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Kenna Apartments",
+      "lat": 41.7701,
+      "lon": -87.570798,
+      "address": "2214 E 69th St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Blackwell-Israel Samuel A.M.E. Zion Church Building",
+      "lat": 41.822391,
+      "lon": -87.610052,
+      "address": "3956 S. Langley Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Rockefeller Memorial Chapel",
+      "lat": 41.788411,
+      "lon": -87.597047,
+      "address": "1156-80 E 59th St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "James Ward Public School",
+      "lat": 41.843196,
+      "lon": -87.635092,
+      "address": "2703 S Shields Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Garfield Park Fieldhouse",
+      "lat": 41.882694,
+      "lon": -87.716097,
+      "address": "100 N. Central Park Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Reid, Murdoch and Company Building",
+      "lat": 41.888165,
+      "lon": -87.631863,
+      "address": "320 N Clark St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Florsheim Shoe Company Building",
+      "lat": 41.938585,
+      "lon": -87.72656,
+      "address": "3963 W Belmont Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Marshfield Trust & Savings Bank Bldg",
+      "lat": 41.942037,
+      "lon": -87.670115,
+      "address": "3321 N Lincoln Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pulaski Park Fieldhouse",
+      "lat": 41.906115,
+      "lon": -87.663733,
+      "address": "1419 W Blackhawk St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Dearborn Street Station",
+      "lat": 41.871741,
+      "lon": -87.629105,
+      "address": "47 W Polk St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Calumet National Bank Bldg",
+      "lat": 41.729511,
+      "lon": -87.550846,
+      "address": "9117 S Commercial Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Tribune Tower",
+      "lat": 41.890388,
+      "lon": -87.62325,
+      "address": "435 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "McGraw-Hill Building",
+      "lat": 41.891326,
+      "lon": -87.624979,
+      "address": "520 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz Brewery Stable Building",
+      "lat": 41.68855,
+      "lon": -87.612176,
+      "address": "11314 S. Front Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Chicago City Bank & Trust Co.",
+      "lat": 41.779377,
+      "lon": -87.64553,
+      "address": "815-815 W 63rd St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Stock Yards National Bank Building",
+      "lat": 41.818809,
+      "lon": -87.646296,
+      "address": "4150 S Halsted St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Noble-Seymour-Crippen House",
+      "lat": 41.983578,
+      "lon": -87.795843,
+      "address": "5624 N Newark Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Little Village Arch",
+      "lat": 41.844538,
+      "lon": -87.70333,
+      "address": "3100 W. 26th Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Metropolitan Missionary Baptist Church",
+      "lat": 41.8828,
+      "lon": -87.681242,
+      "address": "2151 W Washington Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Isidore H. Heller House",
+      "lat": 41.801374,
+      "lon": -87.597111,
+      "address": "5132 S Woodlawn Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Gauler Twin House",
+      "lat": 41.989703,
+      "lon": -87.661193,
+      "address": "5921 N Magnolia Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Site of Fort Dearborn",
+      "lat": 41.888362,
+      "lon": -87.62451,
+      "address": "at the intersection of Michigan Av & Wacker Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Lorado Taft's Midway Studios",
+      "lat": 41.785537,
+      "lon": -87.603205,
+      "address": "6016 S Ingleside Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz BreweryTied-House@3159NSouthport",
+      "lat": 41.939648,
+      "lon": -87.663451,
+      "address": "3159 N. Southport Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Assumption School",
+      "lat": 41.893717,
+      "lon": -87.636518,
+      "address": "319 W Erie St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "2678 West Washington Boulevard",
+      "lat": 41.883443,
+      "lon": -87.694025,
+      "address": "2678 West Washington Boulevard",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Apollo's 2000",
+      "lat": 41.851594,
+      "lon": -87.698319,
+      "address": "2875 W. Cermak Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John B. Murphy Memorial",
+      "lat": 41.89442,
+      "lon": -87.62626,
+      "address": "50 E. Erie St.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Promontory Point",
+      "lat": 41.795934,
+      "lon": -87.577125,
+      "address": "Jean-Baptiste_DuSableLSD_54th_56th Sts",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pioneer Arcade",
+      "lat": 41.909233,
+      "lon": -87.726148,
+      "address": "1535-1545 North Pulaski Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John and Phebe Gray House",
+      "lat": 41.950154,
+      "lon": -87.737718,
+      "address": "4362 W. Grace St.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Rector Building",
+      "lat": 41.880327,
+      "lon": -87.63051,
+      "address": "79 W. Monroe Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Kingdom Baptist Church",
+      "lat": 41.88595,
+      "lon": -87.764591,
+      "address": "301 N. Central",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "American System-Built Houses",
+      "lat": 41.701592,
+      "lon": -87.673826,
+      "address": "10541 S Hoyne Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Municipal Tuberculosis Sanitarium Complex",
+      "lat": 41.986266,
+      "lon": -87.722096,
+      "address": "5801 N. Pullaski Road",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "On Leong Merchants Association",
+      "lat": 41.852374,
+      "lon": -87.632315,
+      "address": "2216 S Wentworth Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Greater Union Baptist Church",
+      "lat": 41.8825,
+      "lon": -87.676416,
+      "address": "1956 W. Warren Boulevard",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Spiegel Administration Building",
+      "lat": 41.830932,
+      "lon": -87.652001,
+      "address": "1038 W. 35th Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Myron Bachman House",
+      "lat": 41.974888,
+      "lon": -87.661682,
+      "address": "1244 W Carmen Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Augustus Warner House",
+      "lat": 41.906901,
+      "lon": -87.629688,
+      "address": "1337 N. Dearborn Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Quinn Chapel",
+      "lat": 41.849073,
+      "lon": -87.625076,
+      "address": "2401 S Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Auditorium Building",
+      "lat": 41.87613,
+      "lon": -87.625188,
+      "address": "430 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Kenwood United Church of Christ",
+      "lat": 41.811229,
+      "lon": -87.599782,
+      "address": "4600-4608 South Greenwood Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Lorraine Hansberry House",
+      "lat": 41.782739,
+      "lon": -87.61242,
+      "address": "6140 S. Rhodes Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago, Milwaukee & St Paul Rwy Bridge No. Z-2",
+      "lat": 41.910372,
+      "lon": -87.655522,
+      "address": "N Branch Chgo River, Cherry St, S of North Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Continental And Commercial National Bank Building",
+      "lat": 41.879072,
+      "lon": -87.633012,
+      "address": "208 South LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Graeme  Stewart Public School Building",
+      "lat": 41.964446,
+      "lon": -87.655793,
+      "address": "4505-4545 North Kenmore Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Daley Center",
+      "lat": 41.883847,
+      "lon": -87.630183,
+      "address": "50 West Washington St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Wendell Phillips High School",
+      "lat": 41.824851,
+      "lon": -87.619809,
+      "address": "244 E Pershing Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Edwin Colvin House",
+      "lat": 41.990397,
+      "lon": -87.655819,
+      "address": "5940 N Sheridan Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Portage Park Theatre Building",
+      "lat": 41.954197,
+      "lon": -87.749295,
+      "address": "4240-60 N. Milwaukee Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Belle Shore Apartment Hotel",
+      "lat": 41.983826,
+      "lon": -87.657624,
+      "address": "1062 W Bryn Mawr Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Henry B Clarke House",
+      "lat": 41.857068,
+      "lon": -87.621865,
+      "address": "1855 S Indiana Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Engine Company 59, Truck 47",
+      "lat": 41.985702,
+      "lon": -87.66405,
+      "address": "5714 N Ridge Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Stephen A. Douglas Memorial",
+      "lat": 41.831655,
+      "lon": -87.608411,
+      "address": "35th St and Cottage Grove Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Harriet F. Rees House",
+      "lat": 41.853922,
+      "lon": -87.621135,
+      "address": "2110 S. Prairie Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Ramova Theater",
+      "lat": 41.830273,
+      "lon": -87.646487,
+      "address": "3508-3520 S. Halsted Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Mars Candy Factory",
+      "lat": 41.917719,
+      "lon": -87.792923,
+      "address": "2001-2199 North Oak Park Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Central YMCA Headquarters",
+      "lat": 41.881481,
+      "lon": -87.631847,
+      "address": "19 S LaSalle ST",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "One North LaSalle Building",
+      "lat": 41.882322,
+      "lon": -87.632006,
+      "address": "1 N LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "McGill House",
+      "lat": 41.8048,
+      "lon": -87.604824,
+      "address": "4938 S Drexel Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Charles M. Netterstrom House",
+      "lat": 41.941506,
+      "lon": -87.650642,
+      "address": "833 W. Aldine Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Marie Schock House",
+      "lat": 41.889759,
+      "lon": -87.769717,
+      "address": "5749 W Race Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "August Dewes House",
+      "lat": 41.930278,
+      "lon": -87.641769,
+      "address": "509 W Wrightwood Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "42nd Presinct / Town Hall Police Station",
+      "lat": 41.947624,
+      "lon": -87.64991,
+      "address": "3600 N. Halsted St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John J. Glessner House",
+      "lat": 41.857711,
+      "lon": -87.62121,
+      "address": "1800 S Prairie Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Mid-City Trust & Savings Bank Buildings",
+      "lat": 41.881457,
+      "lon": -87.647694,
+      "address": "2 S. Halsted Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz BreweryTied-House@3456SWestern",
+      "lat": 41.830399,
+      "lon": -87.685444,
+      "address": "3456 S. Western Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "White Castle # 16",
+      "lat": 41.852638,
+      "lon": -87.62533,
+      "address": "43 E Cermak Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Dr. Philip Weintraub House",
+      "lat": 41.985937,
+      "lon": -87.711051,
+      "address": "3252 W. Victoria St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "American School of Correspondence",
+      "lat": 41.789754,
+      "lon": -87.604104,
+      "address": "850 E 58th St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Congress Theater",
+      "lat": 41.920258,
+      "lon": -87.692242,
+      "address": "2117-39 N Milwaukee Av / 2117-39 N Rockwell St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "McCormick Double House",
+      "lat": 41.894279,
+      "lon": -87.625721,
+      "address": "660 N Rush St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "City Hall-County Building",
+      "lat": 41.883843,
+      "lon": -87.631655,
+      "address": "121 N LaSalle St / 118 N Clark St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Old Dearborn Bank Building",
+      "lat": 41.886057,
+      "lon": -87.62602,
+      "address": "203 N Wabash Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "860-880 Lake Shore Drive",
+      "lat": 41.898975,
+      "lon": -87.618901,
+      "address": "860-880 N Lake Shore Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Ebenezer Missionary Baptist Church Building",
+      "lat": 41.812836,
+      "lon": -87.613575,
+      "address": "4501 S. Vincennes Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Peoples Gas-South Chicago Neighborhood Store",
+      "lat": 41.732648,
+      "lon": -87.550921,
+      "address": "8935 S Commercial Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Brooks Building",
+      "lat": 41.877876,
+      "lon": -87.634778,
+      "address": "233 W Jackson Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Jessie and William Adams House",
+      "lat": 41.723978,
+      "lon": -87.67019,
+      "address": "9326 S Pleasant Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "333 North Michigan Building",
+      "lat": 41.887765,
+      "lon": -87.624201,
+      "address": "333 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Mutual Insurance Building",
+      "lat": 41.968651,
+      "lon": -87.655239,
+      "address": "4750 N Sheridan Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz Brewery Tied-House@11400S.Front",
+      "lat": 41.687136,
+      "lon": -87.6124,
+      "address": "11400 S. Front Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Richard Wright House",
+      "lat": 41.80667,
+      "lon": -87.613497,
+      "address": "4831 S Vincennes Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Marquette Building",
+      "lat": 41.87978,
+      "lon": -87.62974,
+      "address": "140 S Dearborn St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Robert W. Roloson Houses",
+      "lat": 41.836053,
+      "lon": -87.617868,
+      "address": "3213-19 S Calumet Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz Brewery-Tied House",
+      "lat": 41.724742,
+      "lon": -87.537704,
+      "address": "9401 S Ewing Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Johnson Publishing Company Building",
+      "lat": 41.87106,
+      "lon": -87.624735,
+      "address": "820 S. Michigan Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "West Town State Bank Building",
+      "lat": 41.881431,
+      "lon": -87.686735,
+      "address": "2400 W Madison St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Steger Building",
+      "lat": 41.878401,
+      "lon": -87.626491,
+      "address": "28 E. Jackson Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Abraham Lincoln Monument (\"Standing Lincoln\")",
+      "lat": 41.912599,
+      "lon": -87.630258,
+      "address": "Lincoln Park at Dearborn Parkway",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Fine Arts Building",
+      "lat": 41.876468,
+      "lon": -87.624846,
+      "address": "410 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Page Brothers Building",
+      "lat": 41.885489,
+      "lon": -87.62759,
+      "address": "177-191 N State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Lake Shore & Michigan Southern Rwy Bridges (pair)",
+      "lat": 41.719847,
+      "lon": -87.543017,
+      "address": "Calumet River, N of 98th St & E of Chicago Skyway",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Woman's Athletic Club",
+      "lat": 41.893526,
+      "lon": -87.6246,
+      "address": "626 N Michigan av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Powhatan Apartments",
+      "lat": 41.804608,
+      "lon": -87.584472,
+      "address": "4950 S Chicago Beach Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Dr. Wallace C. Abbott House",
+      "lat": 41.965489,
+      "lon": -87.672062,
+      "address": "4605 N Hermitage Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Immaculata High School & Convent Buildings",
+      "lat": 41.955133,
+      "lon": -87.646357,
+      "address": "640 W Irving Park Rd & 4030 N Marine Dr",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "James Charnley House",
+      "lat": 41.907648,
+      "lon": -87.627478,
+      "address": "1365 N Astor st",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Du Sable High School",
+      "lat": 41.804586,
+      "lon": -87.625149,
+      "address": "4934 S. Wabash Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Engine Company 42 Firehouse",
+      "lat": 41.891007,
+      "lon": -87.635282,
+      "address": "228 W Illinois St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Claremont Cottage District",
+      "lat": 41.868009,
+      "lon": -87.684865,
+      "address": "1016 S Claremont Ave & 2342 W Grenshaw St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Humboldt Park Boathouse Pavilion",
+      "lat": 41.905734,
+      "lon": -87.700792,
+      "address": "1301 N Humboldt Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Samuel H. Gunder House and Coach House",
+      "lat": 41.99522,
+      "lon": -87.654817,
+      "address": "6219 N. Sheridan Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Palmer House Hotel",
+      "lat": 41.88037,
+      "lon": -87.626935,
+      "address": "17 E Monroe St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Brewster Apartments",
+      "lat": 41.933164,
+      "lon": -87.641583,
+      "address": "2800 N Pine Grove Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Union Park Hotel",
+      "lat": 41.882131,
+      "lon": -87.666154,
+      "address": "1519 West Warren Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Roanoke Building and Tower",
+      "lat": 41.881744,
+      "lon": -87.63193,
+      "address": "11 S LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "DuPont-Whitehouse House",
+      "lat": 41.828582,
+      "lon": -87.686594,
+      "address": "3558 S Artesian Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Robert Lindblom Technical High Schoool building",
+      "lat": 41.782098,
+      "lon": -87.672165,
+      "address": "6130 S. Wolcott Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Daniel O.Hill House/SerbianAmericanMuseumSt.Sava",
+      "lat": 41.938092,
+      "lon": -87.641378,
+      "address": "448 W. Barry Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "6901 Oglesby Cooperative Apartment Building",
+      "lat": 41.769661,
+      "lon": -87.567787,
+      "address": "6901 S Oglesby Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "James A. Sexton School",
+      "lat": 41.901531,
+      "lon": -87.633837,
+      "address": "160 W Wendell St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Pioneer Trust & Savings Bank Building",
+      "lat": 41.910192,
+      "lon": -87.726617,
+      "address": "4000 W. North Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Wood-Maxey-Boyd House",
+      "lat": 41.843289,
+      "lon": -87.619977,
+      "address": "2801 S Prarie Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Drake Fountain",
+      "lat": 41.728062,
+      "lon": -87.552734,
+      "address": "92nd St @ South Chicago & Exchange Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pittsfield Building",
+      "lat": 41.882914,
+      "lon": -87.625715,
+      "address": "55 E Washington st",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "63rd Street Bathing Pavilion",
+      "lat": 41.781457,
+      "lon": -87.573779,
+      "address": "South Lake Shore Dr and 63rd St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chess Records Office and Studio",
+      "lat": 41.853606,
+      "lon": -87.62422,
+      "address": "2120 S Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz BreweryTied-House@1944 N.Oakley",
+      "lat": 41.917484,
+      "lon": -87.685256,
+      "address": "1944 N. Oakley Ave.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Board of Trade Building",
+      "lat": 41.877837,
+      "lon": -87.632274,
+      "address": "141 W Jackson Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Veseman Building",
+      "lat": 41.890479,
+      "lon": -87.632889,
+      "address": "444 N LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Reliance Building",
+      "lat": 41.883029,
+      "lon": -87.628242,
+      "address": "32 N State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Northwestern University Settlement House",
+      "lat": 41.900043,
+      "lon": -87.662874,
+      "address": "1400 W Augusta Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Three Arts Club",
+      "lat": 41.905992,
+      "lon": -87.630468,
+      "address": "1300 N Dearborn St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Monadnock Block",
+      "lat": 41.877531,
+      "lon": -87.629546,
+      "address": "53 W Jackson Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "St. Gelasius Church Building",
+      "lat": 41.778448,
+      "lon": -87.59573,
+      "address": "6401-09 S Woodlawn Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Lake-Franklin Group",
+      "lat": 41.885383,
+      "lon": -87.635103,
+      "address": "227-35 W Lake St & 173-91 N Franklin St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago & Western Indiana Railroad Bridge",
+      "lat": 41.669328,
+      "lon": -87.558965,
+      "address": "Calumet River, 126th St, W of Torrence Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Leiter II Building",
+      "lat": 41.876369,
+      "lon": -87.627187,
+      "address": "403 S State St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Engine Company 86",
+      "lat": 41.955192,
+      "lon": -87.689228,
+      "address": "2414 W Cuyler Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Belmont-Sheffield Trust & Savings Bldg",
+      "lat": 41.939679,
+      "lon": -87.654449,
+      "address": "3150 N Sheffield Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Abraham Groesbeck House",
+      "lat": 41.883181,
+      "lon": -87.660044,
+      "address": "1304 W  Washington Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Cook County Hospital Administration Building",
+      "lat": 41.873839,
+      "lon": -87.672657,
+      "address": "1835 West Harrison Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Site of the John & Mary Jones House",
+      "lat": 41.869142,
+      "lon": -87.629442,
+      "address": "SW Corner of W 9th St & Plymouth Ct",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Theurer-Wrigley House",
+      "lat": 41.92754,
+      "lon": -87.639556,
+      "address": "2466 N Lakeview Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Charles D. Iglehart House",
+      "lat": 41.691183,
+      "lon": -87.682769,
+      "address": "11118 S Artesian Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Anshe Sholom Synagogue Building",
+      "lat": 41.870975,
+      "lon": -87.72073,
+      "address": "754 S. Independence Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Fisher Studio Houses",
+      "lat": 41.904276,
+      "lon": -87.628294,
+      "address": "1209 N State Pkwy",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Site of the Origin of the Chicago Fire of 1871",
+      "lat": 41.869245,
+      "lon": -87.64199,
+      "address": "Dekoven (1050s) & Jefferson (600w) St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Laramie State Bank Building",
+      "lat": 41.895208,
+      "lon": -87.755838,
+      "address": "5200 W Chicago Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Engine Company 35, Truck 28",
+      "lat": 41.911238,
+      "lon": -87.677142,
+      "address": "1625 N Damen Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Garfield Boulevard \"L\" Station and Overpass",
+      "lat": 41.793875,
+      "lon": -87.618306,
+      "address": "319 E Garfield Blvd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Blackstone Library",
+      "lat": 41.805862,
+      "lon": -87.590315,
+      "address": "4904 S. Lake Park Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Wheeler-Kohn House",
+      "lat": 41.854912,
+      "lon": -87.619534,
+      "address": "2016-20 S Calumet Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Tree Studios, Annexes and Courtyard",
+      "lat": 41.892881,
+      "lon": -87.627802,
+      "address": "601-23 N State St/4-10 E Ohio St/3-7 E Ontario St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Lyman Trumbull Public School Building",
+      "lat": 41.976619,
+      "lon": -87.670159,
+      "address": "5200-24 N. Ashland Avenue/1600-1612 W. Foster",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John Lathrop Motley Public school",
+      "lat": 41.895613,
+      "lon": -87.661121,
+      "address": "729-759 N.Ada St. 1337-1347 W. Chicago  Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Site of the 1st...Nuclear Chain Reaction",
+      "lat": 41.792483,
+      "lon": -87.601024,
+      "address": "East Side of S Ellis Ave between 56th & 57th St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Bryn Mawr Apartment Hotel",
+      "lat": 41.983311,
+      "lon": -87.657003,
+      "address": "5550 N Kenmore Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Navy Pier (Headhouse and East End Building)",
+      "lat": 41.891737,
+      "lon": -87.604371,
+      "address": "Grand Av and Streeter Dr at Lake Michigan",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Old Republic Building",
+      "lat": 41.887086,
+      "lon": -87.624181,
+      "address": "307 N Michigan Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "New York Life Building",
+      "lat": 41.880845,
+      "lon": -87.631746,
+      "address": "37-43 S LaSalle St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Schlitz BreweryTied-House@958W.69th St.",
+      "lat": 41.769048,
+      "lon": -87.649202,
+      "address": "958 W. 69th St.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Village Theatre",
+      "lat": 41.910846,
+      "lon": -87.632088,
+      "address": "1546-1550 N Clark St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Miracle House",
+      "lat": 41.916463,
+      "lon": -87.801835,
+      "address": "2001 N. Nordica Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Charles Turzak House",
+      "lat": 42.009563,
+      "lon": -87.813252,
+      "address": "7059 N Olcott Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Yale Apartments",
+      "lat": 41.77467,
+      "lon": -87.631295,
+      "address": "6565 S Yale Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John Raber House",
+      "lat": 41.789219,
+      "lon": -87.626953,
+      "address": "5760 S LaFayette Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Wrigley Field",
+      "lat": 41.948385,
+      "lon": -87.655547,
+      "address": "1060 W Addison St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John Jacob Walser House",
+      "lat": 41.881528,
+      "lon": -87.765374,
+      "address": "42 N Central Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago Public Library/Cultural Center",
+      "lat": 41.883865,
+      "lon": -87.624996,
+      "address": "78 E Washington St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Chicago & North Western Railway Powerhouse",
+      "lat": 41.886209,
+      "lon": -87.640931,
+      "address": "211 N Clinton St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "American Book Company Building",
+      "lat": 41.853225,
+      "lon": -87.619517,
+      "address": "320 E. Cermak Rd & 2132 S. Calumet Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "John and Clara Merchant House",
+      "lat": 41.951483,
+      "lon": -87.738491,
+      "address": "3854 N Kostner Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Hyde Park Union Church",
+      "lat": 41.79301,
+      "lon": -87.596942,
+      "address": "5600-5610 South Woodlawn Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "(Former) Chicago Historical Society Building",
+      "lat": 41.893483,
+      "lon": -87.630063,
+      "address": "632 N Dearborn St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Elks National Memorial Headquarters Building",
+      "lat": 41.932326,
+      "lon": -87.639911,
+      "address": "2750 N Lakeview Ave",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "West Side YMCA/YWCA Complex",
+      "lat": 41.87988,
+      "lon": -87.665612,
+      "address": "1513-1539 W.Monroe& 101-109 S.Ashland",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Richard Nickel Studio",
+      "lat": 41.916341,
+      "lon": -87.673243,
+      "address": "1810 W Cortland St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Wrigley Building",
+      "lat": 41.889652,
+      "lon": -87.624626,
+      "address": "400-410 North Michigan Avenue",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Indian Boundary Park Fieldhouse",
+      "lat": 42.008876,
+      "lon": -87.692599,
+      "address": "2500 W Lunt Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Thalia Hall",
+      "lat": 41.85771,
+      "lon": -87.657294,
+      "address": "1215-25 W 18th St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "R.R. Donnelley & Sons Co. Calumet Plant",
+      "lat": 41.853712,
+      "lon": -87.618293,
+      "address": "350 E Cermak Rd",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Pennsylvania Railroad \"Eight Track\" Bridge",
+      "lat": 41.837057,
+      "lon": -87.687656,
+      "address": "San & Ship Canal, S of 31st & W of Western Av",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Illinois Bell Building",
+      "lat": 41.883985,
+      "lon": -87.634807,
+      "address": "225 W. Randolph Street",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Getty Tomb",
+      "lat": 41.961227,
+      "lon": -87.661213,
+      "address": "Graceland Cemetery, 4011 N Clark St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Illinois-Indiana State Line Boundary Marker",
+      "lat": 41.708907,
+      "lon": -87.526308,
+      "address": "Avenue G, near 103rd St",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Heyworth Building",
+      "lat": 41.88186,
+      "lon": -87.626687,
+      "address": "29 E Madison st",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Germania Club Building",
+      "lat": 41.910613,
+      "lon": -87.632078,
+      "address": "108 W. Germania Place / 1538-1542 N. Clark St.",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Fred C. Beeson House #4",
+      "lat": 41.889313,
+      "lon": -87.771067,
+      "address": "5830 W. Midway Park",
+      "_source": "cdp_landmarks"
+    },
+    {
+      "category": "landmarks",
+      "subcategory": null,
+      "name": "Original Providence Baptist Church",
+      "lat": 41.889238,
+      "lon": -87.763034,
+      "address": "515 N Pine Avenue",
+      "_source": "cdp_landmarks"
     }
   ]
 }
