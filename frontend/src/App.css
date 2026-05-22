@@ -1726,10 +1726,14 @@
 
 /* ── Mobile shell (MobileLayout) ─────────────────────────────────────────── */
 
+/* `--app-vh` is the live visible-viewport height published by
+   useViewportStable — it shrinks while the iOS keyboard is up so the shell
+   (and the sheet anchored inside it) stays within view. Falls back to the
+   static dynamic-viewport unit before the hook runs / where unsupported. */
 .mobile-shell {
   position: fixed;
   inset: 0;
-  height: 100dvh;
+  height: var(--app-vh, 100dvh);
   width: 100vw;
   overflow: hidden;
   background: var(--paper);

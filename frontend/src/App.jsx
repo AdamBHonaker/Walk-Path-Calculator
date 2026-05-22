@@ -31,6 +31,7 @@ import { StepHero } from "./components/StepHero.jsx";
 import { RecentSearches } from "./components/RecentSearches.jsx";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary.jsx";
 import { useMediaQuery } from "./lib/useMediaQuery.js";
+import { useViewportStable } from "./lib/useViewportStable.js";
 import { loadSheetSnap } from "./lib/sheetSnap.js";
 import { resolveCurrentLocation } from "./lib/geolocation.js";
 import { WPIcon } from "./wayfarer/walkpath-icons.jsx";
@@ -309,6 +310,10 @@ export default function App() {
   // crosses the 1024 px threshold on rotation.
   const isMobile = useMediaQuery(MQ_MOBILE);
   const isTablet = useMediaQuery(MQ_TABLET);
+  // Hold the position:fixed mobile shell steady against the iOS keyboard —
+  // see useViewportStable. Gated to the mobile branch (the only one that
+  // renders `.mobile-shell`).
+  useViewportStable(isMobile);
   const [sheetSnap, setSheetSnap] = useState(() => loadSheetSnap() ?? 0);
   const [mapPadding, setMapPadding] = useState(null);
   const lastResultRef = useRef(null);
