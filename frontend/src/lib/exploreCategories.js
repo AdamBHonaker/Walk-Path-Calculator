@@ -48,10 +48,16 @@ export const EXPLORE_GROUPS = [
         ],
       },
       {
-        key: "train_stations",
-        label: "Train stations",
+        key: "el_train_stations",
+        label: "El Train Stations",
         color: "var(--ink)",
-        glyph: "T",
+        glyph: "E",
+      },
+      {
+        key: "metra_stations",
+        label: "Metra Stations",
+        color: "var(--harbor)",
+        glyph: "M",
       },
       {
         key: "gyms_fitness",
