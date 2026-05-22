@@ -328,7 +328,7 @@ def _bake_green_signals(
     if tree_path.exists():
         try:
             tree_data = json.loads(tree_path.read_text(encoding="utf-8"))
-            cell_size_m = float((tree_data.get("metadata") or {}).get("cell_size_m") or 50.0)
+            cell_size_m = float((tree_data.get("metadata") or {}).get("cell_size_m") or 100.0)
             cells = tree_data.get("cells") or []
             valid_cells = [
                 (float(c["lon"]), float(c["lat"]), float(c["density"]))
@@ -336,6 +336,7 @@ def _bake_green_signals(
                 if isinstance(c.get("lon"), (int, float))
                 and isinstance(c.get("lat"), (int, float))
                 and isinstance(c.get("density"), (int, float))
+                and _math.isfinite(float(c["density"]))
             ]
             if valid_cells:
                 cell_xy        = _np.array(

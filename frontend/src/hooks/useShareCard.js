@@ -73,8 +73,12 @@ export function useShareCard({
       params.set("from", stopsArr[0]);
       params.set("to", stopsArr[1]);
     }
-    if (heightFt !== null) params.set("hft", String(heightFt));
-    if (heightIn !== null) params.set("hin", String(heightIn));
+    // hft/hin travel as an atomic pair — write both or neither, so a
+    // recipient never lands on a half-set height (see usePersonalization).
+    if (heightFt !== null && heightIn !== null) {
+      params.set("hft", String(heightFt));
+      params.set("hin", String(heightIn));
+    }
     return `${window.location.origin}/?${params.toString()}`;
   }, [viewResult, stopValues, heightFt, heightIn]);
 

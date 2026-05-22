@@ -14,13 +14,17 @@ export function usePersonalization(initialUrlParams) {
   if (initialAccessRef.current === null) initialAccessRef.current = loadAccessPrefs();
   const initialAccess = initialAccessRef.current;
 
+  // `hft`/`hin` are an atomic pair — a well-formed share link carries both or
+  // neither. Adopt the URL height only when both are present; a lone or
+  // invalid param must not partially override (or, via the mount-time
+  // save effect below, wipe) the visitor's own saved height.
+  const urlHasHeight = initialUrlParams.hft != null && initialUrlParams.hin != null;
   const [heightFt, setHeightFt] = useState(() =>
-    initialUrlParams.hft ?? loadStoredHeightFt(),
+    urlHasHeight ? initialUrlParams.hft : loadStoredHeightFt(),
   );
-  const [heightIn, setHeightIn] = useState(() => {
-    if (initialUrlParams.hft != null) return initialUrlParams.hin;
-    return loadStoredHeightIn();
-  });
+  const [heightIn, setHeightIn] = useState(() =>
+    urlHasHeight ? initialUrlParams.hin : loadStoredHeightIn(),
+  );
   const [weightKg, setWeightKg] = useState(loadStoredWeightKg);
   const [dailyGoal, setDailyGoalState] = useState(() => loadDailyGoal());
   const [walkPace, setWalkPace] = useState(loadStoredPace);

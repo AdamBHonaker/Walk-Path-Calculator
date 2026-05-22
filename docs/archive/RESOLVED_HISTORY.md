@@ -62,6 +62,84 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
+### 2026-05-22 · Shareable link carrying `hft` without a valid `hin` deleted the visitor's saved height-inches (BUG-001, fourth scan)
+
+**Files:** `frontend/src/hooks/usePersonalization.js`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useShareCard.js`, `frontend/src/hooks/usePersonalization.test.jsx` (new)
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `usePersonalization` initialized `heightFt` and `heightIn` from the incoming URL asymmetrically. `heightFt` fell back to the stored value when the URL omitted it; `heightIn` did not — when the URL carried `hft` at all, the `heightIn` initializer returned `initialUrlParams.hin` verbatim, which is `null` whenever the URL omits `hin` or carries an out-of-range one (`urlParams.js` nulls any `hin` outside `0–11`). A mount-time effect then persisted that `null` via `saveStoredHeightIn(null)` → `safeRemove`, **deleting the visitor's `walkpath:heightIn` localStorage key**. This was reachable in normal use, not just hand-edited URLs: both URL writers (`useRouteFetch`, `useShareCard`) emitted `hft` and `hin` under independent guards, so any sharer whose inches field was blank produced a `?hft=…` link with no `hin`. A recipient with their own saved height opened that link and lost their stored inches.
+
+**How it was resolved:** Made the `hft`/`hin` pair atomic — both-or-neither — the correct realization of "replace" share semantics. The reader (`usePersonalization`) now adopts the URL height only when *both* params are present (`urlHasHeight`); otherwise it falls back to the stored value for *both* `heightFt` and `heightIn`, so a lone or invalid param can no longer initialize `heightIn` to `null` and the mount effect re-saves the loaded stored value instead of removing it. Both writers (`useRouteFetch`, `useShareCard`) now emit `hft` and `hin` together, guarded on *both* being non-null — the same condition `useRouteFetch` already uses to decide whether to send `height_inches`. A fully-personalized sender's link therefore carries the complete pair and the recipient sees identical step counts (true replace); a partially-set sender writes no height params, so the recipient keeps their own saved height and no `localStorage` is mutated. The BUGS.md-suggested `hin ?? 0` reader fix was rejected during implementation: it would have made a `?hft=6` recipient route at 72 in while the sender — who left inches blank — was un-personalized at the 30 in default, *introducing* a sender/recipient mismatch. New `usePersonalization.test.jsx` pins the behavior (lone `hft`, out-of-range `hin`, complete pair, no params).
+
+---
+
+### 2026-05-22 · Tree-canopy cell-size fallback constant was 50 m but the shipped grid is 100 m (BUG-003, fourth scan)
+
+**Files:** `backend/tree_canopy.py`, `backend/fetch_street_graph.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The tree-canopy artifact `tree_canopy_kde.json` is a 100 m grid (`metadata.cell_size_m == 100`), but both runtime consumers defaulted to 50 m when the metadata key was absent — `tree_canopy.py`'s `_DEFAULT_CELL_SIZE_M = 50.0` and `fetch_street_graph.py`'s `_bake_green_signals` `... or 50.0`. The `tree_canopy.py` comment also still described a "50 m cell footprint." Harmless while the shipped artifact carries the metadata, but a metadata-less or legacy artifact would render every heatmap cell as a quarter-area square (gappy heatmap) and mis-classify edge midpoints during the greenest-routing bake.
+
+**How it was resolved:** Changed both fallback constants from `50.0` to `100.0` so the fallback matches the only grid the project ships, and corrected the `tree_canopy.py` comment to "100 m cell footprint" with a pointer to the TD-033 50 m → 100 m NLCD migration. Code-only; the shipped artifact's behavior is unchanged (metadata always present). `test_tree_canopy.py` / `test_fetch_bake.py` still green.
+
+---
+
+### 2026-05-22 · Greenest edge-weight discount did not sanitize non-finite canopy/park scores (BUG-004, fourth scan)
+
+**Files:** `backend/walking.py`, `backend/fetch_street_graph.py`, `backend/tests/test_walking_greenest.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The greenest flavor's per-edge weight is `lengths * discount`. A `NaN`/`inf` baked `edge_tree_canopy_f32` / `edge_park_proximity_f32` value made `discount` become `NaN` (`np.maximum` propagates `NaN`), giving the edge a `NaN` weight. A `NaN` weight silently corrupts the shortest-path priority queue — `NaN` comparisons are always false, so the queue mis-orders. Neither the v3-pickle guard (presence/length only) nor the bake's `isinstance(..., float)` cell filter nor `np.clip` stripped non-finite values. No occurrence in the shipped pickle — a latent robustness gap.
+
+**How it was resolved:** Defense in depth at both ends. Source: `_bake_green_signals`'s `valid_cells` comprehension now also requires `_math.isfinite(float(c["density"]))`, so a bad value never gets baked. Consumption: the greenest branch in `_build_flavor_weights` now calls `np.nan_to_num(discount, copy=False, nan=1.0, posinf=1.0, neginf=_GREEN_DETOUR_FLOOR)` after the detour-floor `np.maximum`, so a corrupt column degrades an edge to a length-only weight rather than a `NaN` that breaks the search. New `TestGreenestNonFiniteSanitization` in `test_walking_greenest.py` injects `NaN` and `inf` into synthetic canopy/park columns and asserts the greenest weight vector stays finite (corrupt edges → length-only weight, the `inf` edge → floored).
+
+---
+
+### 2026-05-22 · Reverse-geocode neighborhood KDTree ranked candidates in raw degree space (BUG-005, fourth scan)
+
+**Files:** `backend/geocoding.py`, `backend/tests/test_geocoding.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** `_get_neighborhood_kdtree()` built a `cKDTree` over neighborhood centroids in raw `[lon, lat]` degrees. `reverse_geocode_point` queried it for the `k=5` nearest centroids, then re-ranked just those 5 by true `haversine_miles`. Because one degree of longitude is shorter than one of latitude (≈0.745× at Chicago's latitude), the KDTree's Euclidean-in-degrees ordering was not the true geographic ordering — in principle the genuinely-nearest neighborhood could rank 6th by degree distance and be excluded from the candidate set before the haversine re-rank ever saw it. Latent: real Chicago neighborhood centroids are kilometres apart, so no misbehavior was observed.
+
+**How it was resolved:** Made the KDTree metric-consistent. Added `import math` and a module-level `_KDTREE_LON_SCALE = cos(radians(41.85))` (Chicago reference latitude, the same projection pattern `local_search.py` already uses). `_get_neighborhood_kdtree` now scales each centroid's longitude by that factor before building the tree, and `reverse_geocode_point` scales the query point's longitude the same way, so the pre-filter ranks by true distance and cannot drop the nearest neighborhood. The final `haversine_miles` re-rank + 200 m threshold are unchanged. New `TestReverseNeighborhoodKDTreeProjection` builds a synthetic six-neighborhood layout where the true nearest sits one pure-longitude step away and five decoys one pure-latitude step away — an unprojected k=5 pre-filter evicts the true nearest, the projected one keeps it rank 1 (both variants verified during implementation).
+
+---
+
+### 2026-05-22 · `/explore` `source` enum omitted three curated source keys (BUG-002, fourth scan)
+
+**Files:** `CLAUDE.md`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** The `/explore` API section of CLAUDE.md documented the response `source` field as one of `osm`, `cpl_locations`, `farmers_markets_2013`, `cdp_divvy`, `cdp_landmarks`. The fourth-scan audit recorded this as wrong in both directions — listing two values that could not occur and omitting three that the data contained. By the time of the fix, `places_curated.json` had been re-ingested and now carries 2,434 records across all seven curated sources (`cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy` 1,157, `cdp_landmarks` 407), so the audit's Divvy/Landmarks data-absence concern was already moot — only the enum half remained.
+
+**How it was resolved:** Corrected the `/explore` `source` enum in CLAUDE.md to the actually-emitted set — `osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy`, `cdp_landmarks`. The `backend/data/` `places_curated.json` description was already accurate (it names every curated source) and needed no change; `test_places.py`'s `cdp_divvy`/`cdp_landmarks` assertions now execute rather than skip, since the data is present.
+
+---
+
+### 2026-05-22 · CLAUDE.md documentation drift — dead link, miscredited field, stale counts, missing entries (BUG-006–BUG-012, fourth scan)
+
+**Files:** `CLAUDE.md`
+
+**Priority:** 🟢 Low
+
+**What the bugs were & how they were resolved:** Seven low-severity documentation-vs-code mismatches in CLAUDE.md from the fourth-scan audit, all fixed in one pass:
+
+- **BUG-006** — line 7 linked to `frontend/handoff/HANDOFF.md`, which has never existed in the repo. Removed the dead parenthetical link, kept the inline Phase 1 summary.
+- **BUG-007** — the Porting Notes claimed `main.py` computes `distance_miles` from `minutes`. Reworded: each step's `distance_miles` is derived from `distance_meters` (`seg_miles = distance_meters / METERS_PER_MILE`); only route-level `total_miles` comes from `minutes` × `WALKING_SPEED_MPH`.
+- **BUG-008** — line 7 presented "296/296 as of 2026-05-14" as a near-current frontend test count, inconsistent with figures in FEATURE_HISTORY/Technical_Debt. Dropped the hard count, kept "142/142 at the close of Phase 1, 2026-05-05" as a dated milestone snapshot, and pointed readers to `npm test`. Also dropped the stale "14 should pass" hardcoded count from the greenest-routing deploy-checklist step. (FEATURE_HISTORY's counts sit inside dated feature entries — already frozen snapshots — and TD-032 already self-labels its baseline, so neither needed editing.)
+- **BUG-009** — the backend `tests/` enumeration omitted four modules; added `test_fetch_bake`, `test_heatmap_clipper`, `test_walking_eviction`, and `test_build_places_osm` (the audit said three — `test_build_places_osm` had landed since).
+- **BUG-010** — added `backend/scripts/_curated_common.py` to the Project Structure tree (its `merge_and_write` is the replace-by-`_source` merge layer shared by every curated-ingest script).
+- **BUG-011** — added `Pillow` to the `requirements-dev.txt` dev-deps line.
+- **BUG-012** — changed the bare kind word "golf" to "golf courses" / `golf_course` in the green-space prose and structure-tree comment so it matches the `green_space.py` `kind` enum.
+
+---
+
 ### 2026-05-21 · Explorer subcategory selection still showed the whole parent category
 
 **Files:** `frontend/src/App.jsx`, `frontend/src/components/ExploreCategoryPanel.jsx`

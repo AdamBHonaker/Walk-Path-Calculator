@@ -95,8 +95,12 @@ export function useRouteFetch({
         urlP.set("from", cleanStops[0]);
         urlP.set("to",   cleanStops[1]);
       }
-      if (heightFt !== null) urlP.set("hft", String(heightFt));
-      if (heightIn !== null) urlP.set("hin", String(heightIn));
+      // hft/hin travel as an atomic pair — write both or neither, so a
+      // recipient never lands on a half-set height (see usePersonalization).
+      if (heightFt !== null && heightIn !== null) {
+        urlP.set("hft", String(heightFt));
+        urlP.set("hin", String(heightIn));
+      }
       history.replaceState(null, "", `?${urlP.toString()}`);
 
       await ensureMinLoadingDuration(loadStart);

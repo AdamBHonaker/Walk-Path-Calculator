@@ -4,7 +4,7 @@ A walking route calculator for Chicago that shows exact step counts alongside tu
 
 > **Note on naming.** Several internal identifiers (localStorage keys prefixed `walkpath:`, the `WPIcon` component, the `walkpath-icons.jsx` filename, MapLibre `walk-path` source IDs) keep the old prefix to avoid orphaning user data and cascading import churn. **User-facing surfaces are fully rebranded:** PWA icons (`frontend/public/passage-icon-*`), the manifest, the page title, and the share-card host all read "Passage."
 
-> **Wayfarer design-system migration: Phase 1 complete as of 2026-05-05.** All checkpoints landed (foundation, primary components extracted, share card, loading/error states, map paint, project rename, voice rewrites, Cream/Dusk theme toggle, a11y sweep, final verification — 142/142 tests passing at the close of Phase 1; the frontend suite has since grown to **296/296** as of 2026-05-14 with Mobility profile, Chicago Data Portal, Tree Canopy, and Parks + Green-Space heatmap additions). See [`frontend/handoff/HANDOFF.md`](frontend/handoff/HANDOFF.md) "Phase 1 Progress" for completed checkpoints, spec departures, and decisions made outside the original spec.
+> **Wayfarer design-system migration: Phase 1 complete as of 2026-05-05.** All checkpoints landed (foundation, primary components extracted, share card, loading/error states, map paint, project rename, voice rewrites, Cream/Dusk theme toggle, a11y sweep, final verification — 142/142 frontend tests passing at the close of Phase 1, 2026-05-05). The suite has grown well beyond that since with the Mobility profile, Chicago Data Portal, Tree Canopy, and Parks + Green-Space heatmap additions — run `npm test` in `frontend/` for the current count rather than relying on a figure here.
 
 ## Project Structure
 
@@ -51,7 +51,7 @@ Passage/
 │   │                     #   residential_polygons.json,
 │   │                     #   tree_canopy_kde.json [sparse 100 m NLCD canopy-fraction grid],
 │   │                     #   parks_polygons.json [CPD park boundaries — name + acres + outer ring],
-│   │                     #   green_space_polygons.json [OSM cemeteries/golf/nature_reserve/rec_ground].
+│   │                     #   green_space_polygons.json [OSM cemetery/golf_course/nature_reserve/recreation_ground].
 │   │                     #   Built locally and shipped as a `street-graph` GitHub release
 │   │                     #   asset (gitignored due to size; production curls it at build time
 │   │                     #   alongside street_graph_igraph.pkl): chicago_geocode.db [SQLite/FTS5
@@ -64,7 +64,9 @@ Passage/
 │   │                     #   build_community_area_centroids, build_places_osm,
 │   │                     #   build_libraries / _farmers_markets / _schools_cps /
 │   │                     #     _police_stations / _fire_stations / _parks / _divvy / _landmarks
-│   │                     #     (share _cdp_client),
+│   │                     #     (share _cdp_client + _curated_common — the latter's
+│   │                     #     merge_and_write does the replace-by-_source merge into
+│   │                     #     places_curated.json),
 │   │                     #   build_residential, build_tree_canopy, build_green_space,
 │   │                     #   build_chicago_boundary,
 │   │                     #   build_address_points, build_intersections (share _geocode_db schema),
@@ -72,14 +74,15 @@ Passage/
 │   │                     #     entries into cached_forward / cached_reverse; the JSON file then
 │   │                     #     gets renamed to .deprecated)
 │   ├── requirements.txt  # Production deps
-│   ├── requirements-dev.txt      # Adds pytest + pytest-asyncio + httpx + osmnx + freezegun + psutil
+│   ├── requirements-dev.txt      # Adds pytest + pytest-asyncio + httpx + osmnx + freezegun + psutil + Pillow
 │   ├── Dockerfile / railway.toml # Railway deployment (fetches the prebuilt street graph at build)
 │   ├── .env.example      # Includes LOCATIONIQ_API_KEY + CDP credentials (see Running Locally)
 │   └── tests/            # pytest modules + conftest: test_main, test_steps, test_utils,
 │                         #   test_geocoding, test_geocode_text, test_community_areas, test_places,
 │                         #   test_explore, test_explore_endpoint, test_explore_perf, test_cdp_client,
 │                         #   test_local_search, test_autocomplete_endpoint, test_tree_canopy,
-│                         #   test_parks, test_green_space, test_walking_greenest
+│                         #   test_parks, test_green_space, test_walking_greenest, test_fetch_bake,
+│                         #   test_heatmap_clipper, test_walking_eviction, test_build_places_osm
 │
 ├── docs/                 # Living feature/bug/debt logs (BUGS, Technical_Debt,
 │                         #   Efficiency_Improvements, FEATURE_PLANS, FEATURE_HISTORY,
@@ -215,7 +218,7 @@ For testing on a real phone — especially for behaviors browsers gate on a secu
 - **No transit data.** This project has zero dependency on GTFS, CTA APIs, or the transit graph. The pedestrian street graph and OSM-tag-derived place data are the only spatial inputs.
 - **Geocoding (local-first cascade).** Every forward lookup runs through, in order: coord-pair regex → exact `NEIGHBORHOOD_COORDS` → fuzzy `NEIGHBORHOOD_COORDS` → `local_search.forward` (FTS5 over ~519k Chicago OSM addresses + ~45k cross-streets + curated POIs in `backend/data/chicago_geocode.db`) → LocationIQ `/v1/search`. Reverse mirrors the same shape: cached → KDTree-nearest neighborhood within ~200 m → `local_search.nearest_address` within ~50 m → LocationIQ `/v1/reverse` → coord-string fallback. LocationIQ results — both hits and misses — persist to the SQLite cache (`cached_forward` / `cached_reverse`), so a query that ever resolves once never re-bills the hosted service. A 429 from LocationIQ trips a shared circuit breaker (60 → 120 → 240 s, capped at 300 s); during cool-off the hosted tier is skipped entirely and the local cascade still serves neighborhood + address + intersection queries. The hosted fallback is optional — without `LOCATIONIQ_API_KEY` set, free-text queries that miss every local tier simply return `None`. Shipped 2026-05-12; entry in [`docs/FEATURE_HISTORY.md`](docs/FEATURE_HISTORY.md) "Local-First Geocoding + LocationIQ Fallback". Live-key behavior pending sign-off as PV-002 in [`docs/Pending_Verification.md`](docs/Pending_Verification.md).
 - **Tree canopy heatmap.** Per-pixel canopy fractions from the **NLCD Tree Canopy Cover 2021** raster (CONUS, 30 m native, published by USFS as a companion product to NLCD; pulled from the MRLC GeoServer WCS endpoint `mrlc_download__nlcd_tcc_conus_2021_v2021-4`) block-averaged onto a 100 m output grid and emitted as a sparse cell list (`backend/data/tree_canopy_kde.json`, ~2.7 MB / ~56k cells). The ingest (`scripts/build_tree_canopy.py`) fetches the bbox in three longitudinal chunks — requesting the full Chicago bbox in one shot trips a silent truncation that zeroes out everything east of about lon -87.65 on MRLC's server — and accumulates per-cell sums + counts directly into the output grid, so chunk boundaries don't seam. At runtime `tree_canopy.py` returns a GeoJSON FeatureCollection of up to three unioned-square density bands (`low` ≥ 0.05, `mid` ≥ 0.15, `high` ≥ 0.40 — bands now denote true canopy fraction, not the old OSM-relative max-normalized density); the frontend paints them as three moss-toned opacity steps (`--moss-100/300/500` tokens). Toggle defaults OFF in `walkpath:explorePrefs`. Pivoted from an OSM `natural=tree` Overpass + KDE bake on 2026-05-19 (TD-033) — OSM's ~30k Chicago-bbox points clustered around Grant/Millennium where mappers were most active and left dense residential neighborhoods reading sparse; NLCD gives uniform raster coverage. Original ship 2026-05-14; entry in [`docs/FEATURE_HISTORY.md`](docs/FEATURE_HISTORY.md). Real-device mobile sign-off pending as PV-005 in [`docs/Pending_Verification.md`](docs/Pending_Verification.md).
-- **Parks + green-space heatmaps.** Two coexisting overlays for the Neighborhood Explorer's isochrone. **CPD parks** (`backend/parks.py` → `parks_polygons.json`, 982 KB / 617 parks baked from Chicago Data Portal `ejsh-fztr.geojson` via `scripts/build_parks.py`) — saturated `--field` green, sharp edges, each Feature carries `name` + `acres`; authoritative for Park District jurisdiction and the source artifact the Greenest Routing feature consumes for park-proximity edge weights. **Non-CPD green space** (`backend/green_space.py` → `green_space_polygons.json`, 303 KB / 533 polygons baked from OSM via `scripts/build_green_space.py`) — softer `--moss-500` wash, one Feature per `kind` ∈ {cemetery, golf_course, nature_reserve, recreation_ground}; covers cemeteries / golf / Cook County Forest Preserves that CPD's dataset excludes. Both toggle independently in the **Outdoors** group; default OFF in `walkpath:explorePrefs`. Z-order: green-space below CPD parks so a polygon tagged as both wins as the authoritative source. Shipped 2026-05-14; entry in [`docs/FEATURE_HISTORY.md`](docs/FEATURE_HISTORY.md). Real-device mobile sign-off pending as PV-004 in [`docs/Pending_Verification.md`](docs/Pending_Verification.md).
+- **Parks + green-space heatmaps.** Two coexisting overlays for the Neighborhood Explorer's isochrone. **CPD parks** (`backend/parks.py` → `parks_polygons.json`, 982 KB / 617 parks baked from Chicago Data Portal `ejsh-fztr.geojson` via `scripts/build_parks.py`) — saturated `--field` green, sharp edges, each Feature carries `name` + `acres`; authoritative for Park District jurisdiction and the source artifact the Greenest Routing feature consumes for park-proximity edge weights. **Non-CPD green space** (`backend/green_space.py` → `green_space_polygons.json`, 303 KB / 533 polygons baked from OSM via `scripts/build_green_space.py`) — softer `--moss-500` wash, one Feature per `kind` ∈ {cemetery, golf_course, nature_reserve, recreation_ground}; covers cemeteries / golf courses / Cook County Forest Preserves that CPD's dataset excludes. Both toggle independently in the **Outdoors** group; default OFF in `walkpath:explorePrefs`. Z-order: green-space below CPD parks so a polygon tagged as both wins as the authoritative source. Shipped 2026-05-14; entry in [`docs/FEATURE_HISTORY.md`](docs/FEATURE_HISTORY.md). Real-device mobile sign-off pending as PV-004 in [`docs/Pending_Verification.md`](docs/Pending_Verification.md).
 - **Address autocomplete.** Route stop inputs and the Explorer's community-area picker share `AddressAutocomplete.jsx` — a generic typeahead combobox with pluggable data source. Route stops point at `GET /autocomplete` via `lib/autocompleteApi.js` (debounced 150 ms, abort-on-keystroke, soft-fail on error); the Explorer's community-area picker passes a local filter over the 77 names. Implements the WAI-ARIA combobox 1.1 inline pattern (`role="combobox"`, `aria-controls`, `aria-expanded`, `aria-activedescendant`). Shipped 2026-05-12 as part of "Local-First Geocoding + LocationIQ Fallback"; real-device mobile sign-off pending as PV-001 in [`docs/Pending_Verification.md`](docs/Pending_Verification.md).
 
 ## API
@@ -288,7 +291,7 @@ Response:
   "residential_heatmap": { "type": "MultiPolygon", "coordinates": [...] }
 }
 ```
-`source` is one of `osm`, `cpl_locations`, `farmers_markets_2013`, `cdp_divvy`, `cdp_landmarks` (curated source keys). `residential_heatmap` is `null` for isochrones with no `landuse=residential` overlap.
+`source` is one of `osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy`, `cdp_landmarks` (curated source keys). `residential_heatmap` is `null` for isochrones with no `landuse=residential` overlap.
 
 The response also carries `tree_canopy_heatmap`: a GeoJSON FeatureCollection of up to three density bands (`low` ≥ 0.05, `mid` ≥ 0.15, `high` ≥ 0.40 — true canopy fraction) baked from the NLCD Tree Canopy Cover 2021 raster (MRLC GeoServer WCS, 30 m native → 100 m output grid; see TD-033 in RESOLVED_HISTORY.md). Each band is a unioned MultiPolygon of 100 m cell squares clipped to the isochrone. `null` when the canopy artifact (`backend/data/tree_canopy_kde.json`) is missing or no cells overlap the isochrone. Shape:
 ```json
@@ -505,14 +508,14 @@ Rollbacks (A)/(B)/(C) above are code-only — they don't require touching the re
 1. Locally: `python fetch_street_graph.py` (pick "1" — rebuild pickle from cached graphml). Confirm the histogram step prints non-zero canopy + parks distributions and the pickle ends `format_version: 3`.
 2. **Upload the new `.pkl` to the `street-graph` GitHub release tag** (https://github.com/AdamBHonaker/Passage/releases/tag/street-graph → Edit release → drag-replace `street_graph_igraph.pkl`). Asset name must remain exactly `street_graph_igraph.pkl` — the Dockerfile `curl` is hardcoded to that filename.
 3. **Recompute the pickle SHA-256** (`Get-FileHash -Algorithm SHA256 backend\street_graph_igraph.pkl` or `shasum -a 256 backend/street_graph_igraph.pkl`). Update `STREET_GRAPH_SHA256` in `backend/.env` locally **and** in the Railway service variables. Do steps 2–3 *before* pushing — if Railway rebuilds while the release asset is stale or the Railway hash doesn't match the uploaded bytes, the service will degrade to haversine until the gap is closed. Details: "Pickle integrity check (SEC-001)" above.
-4. `pytest tests/test_walking_greenest.py -v` — 14 should pass.
+4. `pytest tests/test_walking_greenest.py -v` — all tests should pass (the suite is artifact-gated; the `requires_artifact` cases run only when `street_graph_igraph.pkl` is present locally).
 5. Push to main. Railway rebuilds; tail the build for the `Fetching street-graph release artifacts` log line (plus `street_graph_igraph.pkl SHA-256 verified at build time`, when `STREET_GRAPH_SHA256` reaches the build args) and the boot for both `street_graph_igraph.pkl SHA-256 verified` and `igraph loaded:` (no "Refusing to load" error).
 6. Spot-check the Lakeview East → Lincoln Park fixture in prod (`POST /route` with `origin=41.9405,-87.6420`, `destination=41.9210,-87.6500`, compare `routes[fastest]` vs `routes[greenest]` — greenest should diverge to a footway-heavy path).
 
 ## Porting Notes
 
 `walking.py` and `utils.py` are direct ports from `CTA-Transit-PWA/backend/` with minor additions:
-- `walking.py` adds `distance_meters` to each direction step (passed through to the response; `main.py` computes `distance_miles` from `minutes` independently)
+- `walking.py` adds `distance_meters` to each direction step; `main.py` derives each step's `distance_miles` from that `distance_meters` (`main.py` `seg_miles = distance_meters / METERS_PER_MILE`), while the route-level `total_miles` is derived independently from `minutes` × `WALKING_SPEED_MPH`
 - `utils.py` defines `WALKING_SPEED_MPH`; `walking.py` imports it from there (single source of truth)
 - `utils.py` removes the CTA-specific `TRANSFER_PENALTY_MINUTES` constant
 

@@ -393,3 +393,37 @@ class TestPickleIntegrity:
 
         # Cleanup so the module stays usable after this test.
         walking._graph_load_failed = False
+
+
+# ---------------------------------------------------------------------------
+# Non-finite score sanitization (BUG-004) — a NaN/inf baked canopy or park
+# score must never produce a NaN edge weight. A NaN weight silently corrupts
+# the shortest-path priority queue (NaN comparisons are always false), so the
+# greenest branch clamps non-finite discounts before returning. This runs
+# without the artifact: `_build_flavor_weights` reads the module's edge cache
+# columns and ignores its graph argument on the numpy path.
+# ---------------------------------------------------------------------------
+
+class TestGreenestNonFiniteSanitization:
+    def test_nan_and_inf_scores_yield_a_finite_weight_vector(self, monkeypatch):
+        lengths = np.array([100.0, 200.0, 300.0, 400.0], dtype=np.float64)
+        # canopy[1]=NaN and parks[2]=NaN are the corruption under test;
+        # canopy[3]=inf checks the floored-but-still-finite path.
+        canopy = np.array([0.5, np.nan, 0.3, np.inf], dtype=np.float32)
+        parks  = np.array([0.2, 0.4, np.nan, 0.1], dtype=np.float32)
+        monkeypatch.setattr(walking, "_edge_lengths", lengths)
+        monkeypatch.setattr(walking, "_edge_highways", ["", "", "", ""])
+        monkeypatch.setattr(walking, "_edge_tree_canopy", canopy)
+        monkeypatch.setattr(walking, "_edge_park_proximity", parks)
+
+        weights = walking._build_flavor_weights(None, "greenest")
+        w = np.asarray(weights, dtype=np.float64)
+
+        assert np.all(np.isfinite(w)), \
+            "greenest weight vector must stay finite even with NaN/inf scores"
+        # A corrupt (NaN) edge degrades to a length-only weight (discount 1.0).
+        assert w[1] == pytest.approx(lengths[1])
+        assert w[2] == pytest.approx(lengths[2])
+        # A clean edge still gets a real discount; the inf edge is floored.
+        assert w[0] < lengths[0]
+        assert w[3] == pytest.approx(lengths[3] * walking._GREEN_DETOUR_FLOOR)
