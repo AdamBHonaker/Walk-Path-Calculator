@@ -324,38 +324,6 @@
   cursor: wait;
 }
 
-/* Personalize accordion trigger */
-
-.personalize-trigger {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  width: 100%;
-  padding: 10px 12px;
-  background: transparent;
-  border: 1px solid var(--mute-fog);
-  text-align: left;
-  cursor: pointer;
-  margin: 8px 0;
-}
-
-.personalize-trigger-eyebrow {
-  font-family: var(--wf-sans);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 2px;
-  text-transform: uppercase;
-  color: var(--mute);
-}
-
-.personalize-trigger-summary {
-  font-family: var(--wf-serif);
-  font-style: italic;
-  font-size: 14px;
-  color: var(--ink);
-}
-
 /* Inline icon+label clusters inside form buttons */
 
 .add-stop-btn-inner,
@@ -1211,6 +1179,13 @@
   padding: 8px 12px 10px;
 }
 
+/* Inside the particulars modal the section wrapper already groups the
+ * control, so the pace selector drops its own border + padding. */
+.personalize-section-final .pace-selector {
+  border: none;
+  padding: 0;
+}
+
 .pace-selector-label {
   display: inline-flex;
   align-items: center;
@@ -1856,6 +1831,33 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.masthead-eyebrow-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.masthead-settings {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--mute-fog);
+  color: var(--ink);
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.masthead-settings:hover {
+  background: var(--ink);
+  color: var(--paper);
 }
 
 .masthead-rule {

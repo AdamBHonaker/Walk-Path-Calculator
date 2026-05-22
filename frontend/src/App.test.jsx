@@ -157,7 +157,7 @@ describe("height-to-inches conversion in App", () => {
     await user.type(toInput, "Logan Square");
 
     // Open the Personalize modal and select 5 ft 9 in
-    await user.click(screen.getByRole("button", { name: /add your particulars/i }));
+    await user.click(screen.getByRole("button", { name: /open personalize particulars/i }));
 
     const ftSelect = screen.getByRole("combobox", { name: /height feet/i });
     const inSelect = screen.getByRole("combobox", { name: /height inches/i });
@@ -417,7 +417,7 @@ describe("WeightInput sends weight_kg in kg", () => {
     await user.type(toInput, "Logan Square");
 
     // Open the Personalize modal and enter 154 lbs
-    await user.click(screen.getByRole("button", { name: /add your particulars/i }));
+    await user.click(screen.getByRole("button", { name: /open personalize particulars/i }));
 
     const weightInput = screen.getByRole("spinbutton", { name: /weight in pounds/i });
     await user.clear(weightInput);
@@ -538,7 +538,7 @@ describe("URL-Encoded Route Sharing", () => {
     await user.type(fromInput, "Wrigleyville");
     await user.type(toInput, "Logan Square");
 
-    await user.click(screen.getByRole("button", { name: /add your particulars/i }));
+    await user.click(screen.getByRole("button", { name: /open personalize particulars/i }));
     await user.selectOptions(screen.getByRole("combobox", { name: /height feet/i }), "5");
     await user.selectOptions(screen.getByRole("combobox", { name: /height inches/i }), "9");
     await user.click(screen.getByRole("button", { name: /keep these particulars/i }));
@@ -551,11 +551,14 @@ describe("URL-Encoded Route Sharing", () => {
     expect(params.get("hin")).toBe("9");
   });
 
-  it("pre-populates height from URL params hft and hin", () => {
+  it("pre-populates height from URL params hft and hin", async () => {
+    const user = userEvent.setup();
     window.history.replaceState(null, "", "?from=Wrigleyville&to=Logan+Square&hft=5&hin=9");
     render(<App />);
-    // Height toggle should reflect the height from URL
-    expect(screen.getByRole("button", { name: /5′ 9″/i })).toBeInTheDocument();
+    // Opening the modal should reflect the height carried in the URL.
+    await user.click(screen.getByRole("button", { name: /open personalize particulars/i }));
+    expect(screen.getByRole("combobox", { name: /height feet/i })).toHaveValue("5");
+    expect(screen.getByRole("combobox", { name: /height inches/i })).toHaveValue("9");
   });
 });
 

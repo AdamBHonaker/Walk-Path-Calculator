@@ -26,7 +26,6 @@ import { LoadingSkeleton } from "./components/LoadingSkeleton.jsx";
 import { ErrorDispatch } from "./components/ErrorDispatch.jsx";
 import { WeeklySummaryPanel } from "./components/WeeklySummaryPanel.jsx";
 import { MobileLayout } from "./components/MobileLayout.jsx";
-import { PaceSelector } from "./components/PaceSelector.jsx";
 import { StepHero } from "./components/StepHero.jsx";
 import { RecentSearches } from "./components/RecentSearches.jsx";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary.jsx";
@@ -964,32 +963,6 @@ export default function App() {
         </div>
 
         <button
-          type="button"
-          className="personalize-trigger"
-          onClick={() => setPersonalizeOpen(true)}
-        >
-          <span className="personalize-trigger-eyebrow">Personalize</span>
-          <span className="personalize-trigger-summary">
-            {(() => {
-              const parts = [];
-              if (heightFt != null && heightIn != null) parts.push(`${heightFt}′ ${heightIn}″`);
-              if (weightKg != null) parts.push(`${Math.round(weightKg * 2.20462)} lb`);
-              if (dailyGoal != null) parts.push(`${dailyGoal.toLocaleString()} step measure`);
-              return parts.length > 0
-                ? parts.join(", ") + " ▸"
-                : "Add your particulars for a more honest count ▸";
-            })()}
-          </span>
-        </button>
-
-        {!isWheeled && (
-          <PaceSelector
-            pace={walkPace}
-            onChange={setWalkPace}
-          />
-        )}
-
-        <button
           type="submit"
           className="btn-route"
           disabled={loading}
@@ -1044,6 +1017,15 @@ export default function App() {
 
       {viewResult && !loading && (
         <RouteErrorBoundary>
+          <DirectionLedger
+            directions={viewResult.directions}
+            result={viewResult}
+            activeTurnIndex={activeTurnIndex}
+            onStepClick={setActiveTurnIndex}
+            legs={isMultiStop ? (result.legs ?? null) : null}
+            formatDirectionsText={(d, r) => formatDirectionsText(d, r, mobilityProfile)}
+          />
+
           {!isMultiStop && (
             <RouteFlavorTabs
               routes={result.routes}
@@ -1086,15 +1068,6 @@ export default function App() {
           <div className="motivation">
             {motivationMessage(viewResult.total_steps, mobilityProfile)}
           </div>
-
-          <DirectionLedger
-            directions={viewResult.directions}
-            result={viewResult}
-            activeTurnIndex={activeTurnIndex}
-            onStepClick={setActiveTurnIndex}
-            legs={isMultiStop ? (result.legs ?? null) : null}
-            formatDirectionsText={(d, r) => formatDirectionsText(d, r, mobilityProfile)}
-          />
         </RouteErrorBoundary>
       )}
     </>
@@ -1147,7 +1120,7 @@ export default function App() {
         </MobileLayout>
       ) : (
         <>
-          <Masthead />
+          <Masthead onSettings={() => setPersonalizeOpen(true)} />
           <div className="layout">
             <div className="panel-cards">
               <main className="main">
@@ -1172,12 +1145,14 @@ export default function App() {
         mobilityProfile={mobilityProfile}
         avoidStairs={avoidStairs}
         preferPedestrian={preferPedestrian}
+        pace={walkPace}
         onChangeHeight={handleHeightChange}
         onChangeWeight={handleWeightChange}
         onChangeGoal={handleGoalChange}
         onChangeMobilityProfile={handleMobilityProfileChange}
         onChangeAvoidStairs={setAvoidStairs}
         onChangePreferPedestrian={setPreferPedestrian}
+        onChangePace={setWalkPace}
       />
 
       {/* ── Share modal ── */}
