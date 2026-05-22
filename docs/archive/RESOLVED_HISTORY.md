@@ -110,6 +110,36 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ---
 
+### 2026-05-22 · `/explore` `source` enum omitted three curated source keys (BUG-002, fourth scan)
+
+**Files:** `CLAUDE.md`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** The `/explore` API section of CLAUDE.md documented the response `source` field as one of `osm`, `cpl_locations`, `farmers_markets_2013`, `cdp_divvy`, `cdp_landmarks`. The fourth-scan audit recorded this as wrong in both directions — listing two values that could not occur and omitting three that the data contained. By the time of the fix, `places_curated.json` had been re-ingested and now carries 2,434 records across all seven curated sources (`cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy` 1,157, `cdp_landmarks` 407), so the audit's Divvy/Landmarks data-absence concern was already moot — only the enum half remained.
+
+**How it was resolved:** Corrected the `/explore` `source` enum in CLAUDE.md to the actually-emitted set — `osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy`, `cdp_landmarks`. The `backend/data/` `places_curated.json` description was already accurate (it names every curated source) and needed no change; `test_places.py`'s `cdp_divvy`/`cdp_landmarks` assertions now execute rather than skip, since the data is present.
+
+---
+
+### 2026-05-22 · CLAUDE.md documentation drift — dead link, miscredited field, stale counts, missing entries (BUG-006–BUG-012, fourth scan)
+
+**Files:** `CLAUDE.md`
+
+**Priority:** 🟢 Low
+
+**What the bugs were & how they were resolved:** Seven low-severity documentation-vs-code mismatches in CLAUDE.md from the fourth-scan audit, all fixed in one pass:
+
+- **BUG-006** — line 7 linked to `frontend/handoff/HANDOFF.md`, which has never existed in the repo. Removed the dead parenthetical link, kept the inline Phase 1 summary.
+- **BUG-007** — the Porting Notes claimed `main.py` computes `distance_miles` from `minutes`. Reworded: each step's `distance_miles` is derived from `distance_meters` (`seg_miles = distance_meters / METERS_PER_MILE`); only route-level `total_miles` comes from `minutes` × `WALKING_SPEED_MPH`.
+- **BUG-008** — line 7 presented "296/296 as of 2026-05-14" as a near-current frontend test count, inconsistent with figures in FEATURE_HISTORY/Technical_Debt. Dropped the hard count, kept "142/142 at the close of Phase 1, 2026-05-05" as a dated milestone snapshot, and pointed readers to `npm test`. Also dropped the stale "14 should pass" hardcoded count from the greenest-routing deploy-checklist step. (FEATURE_HISTORY's counts sit inside dated feature entries — already frozen snapshots — and TD-032 already self-labels its baseline, so neither needed editing.)
+- **BUG-009** — the backend `tests/` enumeration omitted four modules; added `test_fetch_bake`, `test_heatmap_clipper`, `test_walking_eviction`, and `test_build_places_osm` (the audit said three — `test_build_places_osm` had landed since).
+- **BUG-010** — added `backend/scripts/_curated_common.py` to the Project Structure tree (its `merge_and_write` is the replace-by-`_source` merge layer shared by every curated-ingest script).
+- **BUG-011** — added `Pillow` to the `requirements-dev.txt` dev-deps line.
+- **BUG-012** — changed the bare kind word "golf" to "golf courses" / `golf_course` in the green-space prose and structure-tree comment so it matches the `green_space.py` `kind` enum.
+
+---
+
 ### 2026-05-21 · Explorer subcategory selection still showed the whole parent category
 
 **Files:** `frontend/src/App.jsx`, `frontend/src/components/ExploreCategoryPanel.jsx`
