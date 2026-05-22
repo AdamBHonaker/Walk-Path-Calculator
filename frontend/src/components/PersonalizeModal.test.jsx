@@ -10,6 +10,7 @@ function Harness({ initialProfile = "walking", initialPP = false, initialAvoid =
   const [mobilityProfile, setMobilityProfile] = useState(initialProfile);
   const [preferPedestrian, setPreferPedestrian] = useState(initialPP);
   const [avoidStairs, setAvoidStairs] = useState(initialAvoid);
+  const [pace, setPace] = useState("normal");
   return (
     <PersonalizeModal
       open
@@ -21,6 +22,7 @@ function Harness({ initialProfile = "walking", initialPP = false, initialAvoid =
       mobilityProfile={mobilityProfile}
       avoidStairs={avoidStairs}
       preferPedestrian={preferPedestrian}
+      pace={pace}
       onChangeHeight={() => {}}
       onChangeWeight={() => {}}
       onChangeGoal={() => {}}
@@ -30,6 +32,7 @@ function Harness({ initialProfile = "walking", initialPP = false, initialAvoid =
       }}
       onChangeAvoidStairs={setAvoidStairs}
       onChangePreferPedestrian={setPreferPedestrian}
+      onChangePace={setPace}
     />
   );
 }

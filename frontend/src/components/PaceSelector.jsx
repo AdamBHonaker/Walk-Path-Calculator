@@ -66,14 +66,16 @@ function PaceSegmented({ pace, onChange }) {
   );
 }
 
-export const PaceSelector = memo(function PaceSelector({ pace, onChange }) {
+export const PaceSelector = memo(function PaceSelector({ pace, onChange, hideLabel = false }) {
   const isCompact = useMediaQuery(MQ_MOBILE);
   return (
     <div className="pace-selector">
-      <div className="pace-selector-label">
-        <WPIcon name="pace" size={12} />
-        <span>Manner of walking</span>
-      </div>
+      {!hideLabel && (
+        <div className="pace-selector-label">
+          <WPIcon name="pace" size={12} />
+          <span>Manner of walking</span>
+        </div>
+      )}
       {isCompact ? (
         <PaceSegmented pace={pace} onChange={onChange} />
       ) : (

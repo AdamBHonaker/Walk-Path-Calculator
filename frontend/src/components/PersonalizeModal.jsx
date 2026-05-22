@@ -3,6 +3,7 @@ import { lbToKg, kgToLb } from "../lib/units.js";
 import { loadWeightUnit, saveWeightUnit } from "../lib/personaPrefs.js";
 import { loadTheme, applyTheme } from "../lib/theme.js";
 import { WFCheck } from "../wayfarer/forms.jsx";
+import { PaceSelector } from "./PaceSelector.jsx";
 
 // Range matches loadStoredHeightFt + the backend's 36–108 in validator.
 // Capped at 8 — 9 ft is the backend upper bound but isn't a realistic value.
@@ -30,12 +31,14 @@ export function PersonalizeModal({
   mobilityProfile,
   avoidStairs,
   preferPedestrian,
+  pace,
   onChangeHeight,
   onChangeWeight,
   onChangeGoal,
   onChangeMobilityProfile,
   onChangeAvoidStairs,
   onChangePreferPedestrian,
+  onChangePace,
 }) {
   const [unit, setUnit] = useState(loadWeightUnit);
   const [theme, setTheme] = useState(() => loadTheme());
@@ -321,6 +324,17 @@ export function PersonalizeModal({
             Wheeled keeps stairs avoided and pedestrian ways preferred. Your saved walking prefs return when you switch back.
           </p>
         </section>
+
+        {/* Manner of walking */}
+        {mobilityProfile !== "wheeled" && (
+          <section className="personalize-section-final">
+            <div className="personalize-section-label">Manner of walking</div>
+            <PaceSelector pace={pace} onChange={onChangePace} hideLabel />
+            <p className="personalize-section-hint">
+              Sets your walking speed — rescales the time estimate and the calorie count.
+            </p>
+          </section>
+        )}
 
         {/* Display */}
         <section className="personalize-section-final">

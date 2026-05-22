@@ -1211,6 +1211,13 @@
   padding: 8px 12px 10px;
 }
 
+/* Inside the particulars modal the section wrapper already groups the
+ * control, so the pace selector drops its own border + padding. */
+.personalize-section-final .pace-selector {
+  border: none;
+  padding: 0;
+}
+
 .pace-selector-label {
   display: inline-flex;
   align-items: center;
