@@ -277,7 +277,7 @@ Response:
   "places": [
     {
       "category": "coffee_bakery",
-      "subcategory": null,
+      "subcategory": "coffee_shop",
       "name": "Heritage Outpost",
       "lat": 41.9213,
       "lon": -87.6987,
