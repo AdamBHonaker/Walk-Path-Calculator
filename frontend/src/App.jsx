@@ -957,27 +957,6 @@ export default function App() {
           </div>
         </div>
 
-        {!isMobile && (
-          <button
-            type="button"
-            className="personalize-trigger"
-            onClick={() => setPersonalizeOpen(true)}
-          >
-            <span className="personalize-trigger-eyebrow">Personalize</span>
-            <span className="personalize-trigger-summary">
-              {(() => {
-                const parts = [];
-                if (heightFt != null && heightIn != null) parts.push(`${heightFt}′ ${heightIn}″`);
-                if (weightKg != null) parts.push(`${Math.round(weightKg * 2.20462)} lb`);
-                if (dailyGoal != null) parts.push(`${dailyGoal.toLocaleString()} step measure`);
-                return parts.length > 0
-                  ? parts.join(", ") + " ▸"
-                  : "Add your particulars for a more honest count ▸";
-              })()}
-            </span>
-          </button>
-        )}
-
         <button
           type="submit"
           className="btn-route"
@@ -1136,7 +1115,7 @@ export default function App() {
         </MobileLayout>
       ) : (
         <>
-          <Masthead />
+          <Masthead onSettings={() => setPersonalizeOpen(true)} />
           <div className="layout">
             <div className="panel-cards">
               <main className="main">

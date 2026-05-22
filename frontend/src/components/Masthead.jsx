@@ -43,7 +43,20 @@ export function Masthead({ compact = false, onSettings = null }) {
           <WPIcon name="chicago-mark" size={14} />
           Passage
         </span>
-        <span>Vol. I · No. {issueNumber()} · {formatDate()}</span>
+        <span className="masthead-eyebrow-meta">
+          <span>Vol. I · No. {issueNumber()} · {formatDate()}</span>
+          {onSettings && (
+            <button
+              type="button"
+              onClick={onSettings}
+              aria-label="Open personalize particulars"
+              className="masthead-settings"
+            >
+              <WPIcon name="stride" size={12} />
+              Particulars
+            </button>
+          )}
+        </span>
       </div>
       <div className="masthead-rule" />
       <div className="masthead-rule masthead-rule--thick" />
