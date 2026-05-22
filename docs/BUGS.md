@@ -16,7 +16,6 @@ items (latent-hardening + documentation drift).
 
 | ID | Priority | Summary |
 | --- | --- | --- |
-| BUG-001 | 🟡 Medium | Shareable link with `hft` but no `hin` deletes the visitor's saved height-inches |
 | BUG-002 | 🟡 Medium | Docs claim Divvy + Landmarks data that `places_curated.json` does not contain; `source` enum wrong both ways |
 | BUG-003 | 🟢 Low | Tree-canopy cell-size fallback constant is 50 m; the shipped grid is 100 m (+ stale comment) |
 | BUG-004 | 🟢 Low | Greenest edge-weight discount does not sanitize non-finite canopy/park scores |
@@ -28,55 +27,6 @@ items (latent-hardening + documentation drift).
 | BUG-010 | 🟢 Low | `backend/scripts/_curated_common.py` absent from the CLAUDE.md structure tree |
 | BUG-011 | 🟢 Low | `requirements-dev.txt` ships `Pillow`; CLAUDE.md's dev-deps line omits it |
 | BUG-012 | 🟢 Low | CLAUDE.md green-space prose says "golf" where the code/API key is `golf_course` |
-
----
-
-### BUG-001 (fourth scan) · Shareable link carrying `hft` without a valid `hin` deletes the visitor's saved height-inches
-
-**Files:** `frontend/src/hooks/usePersonalization.js:17-23,44`, `frontend/src/lib/urlParams.js:31-44`, `frontend/src/hooks/useRouteFetch.js:98-99`, `frontend/src/hooks/useShareCard.js:76-77`, `frontend/src/lib/personaPrefs.js:57-60`
-
-**Priority:** 🟡 Medium
-
-**What the bug is:** `usePersonalization` initializes `heightFt` and `heightIn` from the incoming URL params asymmetrically.
-
-- `heightFt` falls back to the stored value when the URL omits it — `usePersonalization.js:17-19`: `initialUrlParams.hft ?? loadStoredHeightFt()`.
-- `heightIn` does **not** — `usePersonalization.js:20-23`:
-  ```js
-  const [heightIn, setHeightIn] = useState(() => {
-    if (initialUrlParams.hft != null) return initialUrlParams.hin;  // ← no fallback
-    return loadStoredHeightIn();
-  });
-  ```
-  When the URL carries `hft` at all, the initializer returns `initialUrlParams.hin` verbatim. That value is `null` whenever the URL has no `hin` param, or carries an out-of-range `hin` — `urlParams.js:44` nulls any `hin` outside `0–11`. So opening a link of the form `?hft=6` (no `hin`) leaves `heightIn === null`.
-
-A mount-time effect then persists that null: `usePersonalization.js:44` — `useEffect(() => { saveStoredHeightIn(heightIn); }, [heightIn])`. `saveStoredHeightIn(null)` calls `safeRemove(HEIGHT_IN_KEY)` (`personaPrefs.js:57-59`), so **visiting the link deletes the `walkpath:heightIn` localStorage key** — discarding the visitor's own saved height-inches.
-
-**How it manifests / reachability:** Reachable in normal use, not just hand-edited URLs. Both URL writers emit `hft` and `hin` under *independent* guards — `useRouteFetch.js:98-99` and `useShareCard.js:76-77`:
-```js
-if (heightFt !== null) urlP.set("hft", String(heightFt));
-if (heightIn !== null) urlP.set("hin", String(heightIn));
-```
-Any sharer whose inches field is blank/unset has `heightIn === null` (`handleHeightChange`'s `toNum("")` → `null`), so their shared route/share-card URL carries `hft` but not `hin`. A recipient who had their own height saved (e.g. 5'8") opens that link and: (a) their session height becomes `6 ft + null in`, and (b) their stored `walkpath:heightIn` key is removed — after they navigate away and return, their saved height reads `6 ft / (unset)` instead of `5'8"`.
-
-Note on step counts: because JS coerces `null` to `0` in numeric `+`, `heightFt*12 + heightIn` still yields a sane number, so the route's step counts mostly survive. The concrete damage is the **silent localStorage deletion** plus the unintended `heightFt`/`heightIn` asymmetry. (`heightFt` is also overwritten to the link's value — that is the documented "share carries the sender's height" intent; the bug is specifically the inches half collapsing to a non-value that the effect then removes.)
-
-**Root cause:** `usePersonalization.js:20-23` — `heightIn`'s initializer lacks the `?? loadStoredHeightIn()` fallback that `heightFt`'s initializer has, and treats "URL has `hft`" as "trust `hin` verbatim even if `null`."
-
-**Recommended fix — requires one product decision first:** should a share link's height *fully replace* the recipient's saved height, or *merge* with it? `urlParams.js:1-6` states the intent — "`hft`/`hin` carry the personalize-modal height so a recipient computes the same step counts the sender saw" — which implies *replace*. Under that intent, make the `hft`/`hin` pair atomic:
-
-1. **Reader hardening** (`usePersonalization.js:21`): `if (initialUrlParams.hft != null) return initialUrlParams.hin ?? 0;` — a present `hft` with an absent/invalid `hin` resolves deterministically to `0` inches (matching a sender who set feet and left inches blank). `heightIn` then never initializes to `null` from a height-bearing URL, so the mount effect never calls `safeRemove`.
-2. **Writer pairing** (`useRouteFetch.js:98-99`, `useShareCard.js:76-77`): when `heightFt` is written, always write `hin` too, coercing null→0:
-   ```js
-   if (heightFt !== null) {
-     urlP.set("hft", String(heightFt));
-     urlP.set("hin", String(heightIn ?? 0));
-   }
-   ```
-   App-generated links then never carry `hft` without `hin`; step 1 covers hand-edited URLs.
-
-*Alternative (merge semantics):* change line 21 to `return initialUrlParams.hin ?? loadStoredHeightIn();` — mirrors `heightFt` exactly and preserves the recipient's stored inches, but the recipient's step counts then differ slightly from the sender's. Not recommended given the stated share intent, but acceptable if the team prefers "a link must never mutate my saved settings."
-
-**Verification:** Add a `usePersonalization` (or `urlParams`) unit test for `?hft=6` with no `hin` and for `?hft=6&hin=20` (out-of-range): assert `heightIn` resolves to `0` (or the stored value, per the chosen fix) and that `walkpath:heightIn` is **not** removed when a stored value pre-exists. Manually: set height 5'8" in the Personalize modal, load `/?hft=6&from=A&to=B`, and confirm `localStorage["walkpath:heightIn"]` survives. Run `npm test` in `frontend/`.
 
 ---
 

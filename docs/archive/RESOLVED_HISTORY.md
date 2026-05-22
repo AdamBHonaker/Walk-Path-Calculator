@@ -62,6 +62,18 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
+### 2026-05-22 · Shareable link carrying `hft` without a valid `hin` deleted the visitor's saved height-inches (BUG-001, fourth scan)
+
+**Files:** `frontend/src/hooks/usePersonalization.js`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useShareCard.js`, `frontend/src/hooks/usePersonalization.test.jsx` (new)
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `usePersonalization` initialized `heightFt` and `heightIn` from the incoming URL asymmetrically. `heightFt` fell back to the stored value when the URL omitted it; `heightIn` did not — when the URL carried `hft` at all, the `heightIn` initializer returned `initialUrlParams.hin` verbatim, which is `null` whenever the URL omits `hin` or carries an out-of-range one (`urlParams.js` nulls any `hin` outside `0–11`). A mount-time effect then persisted that `null` via `saveStoredHeightIn(null)` → `safeRemove`, **deleting the visitor's `walkpath:heightIn` localStorage key**. This was reachable in normal use, not just hand-edited URLs: both URL writers (`useRouteFetch`, `useShareCard`) emitted `hft` and `hin` under independent guards, so any sharer whose inches field was blank produced a `?hft=…` link with no `hin`. A recipient with their own saved height opened that link and lost their stored inches.
+
+**How it was resolved:** Made the `hft`/`hin` pair atomic — both-or-neither — the correct realization of "replace" share semantics. The reader (`usePersonalization`) now adopts the URL height only when *both* params are present (`urlHasHeight`); otherwise it falls back to the stored value for *both* `heightFt` and `heightIn`, so a lone or invalid param can no longer initialize `heightIn` to `null` and the mount effect re-saves the loaded stored value instead of removing it. Both writers (`useRouteFetch`, `useShareCard`) now emit `hft` and `hin` together, guarded on *both* being non-null — the same condition `useRouteFetch` already uses to decide whether to send `height_inches`. A fully-personalized sender's link therefore carries the complete pair and the recipient sees identical step counts (true replace); a partially-set sender writes no height params, so the recipient keeps their own saved height and no `localStorage` is mutated. The BUGS.md-suggested `hin ?? 0` reader fix was rejected during implementation: it would have made a `?hft=6` recipient route at 72 in while the sender — who left inches blank — was un-personalized at the 30 in default, *introducing* a sender/recipient mismatch. New `usePersonalization.test.jsx` pins the behavior (lone `hft`, out-of-range `hin`, complete pair, no params).
+
+---
+
 ### 2026-05-21 · Explorer subcategory selection still showed the whole parent category
 
 **Files:** `frontend/src/App.jsx`, `frontend/src/components/ExploreCategoryPanel.jsx`
