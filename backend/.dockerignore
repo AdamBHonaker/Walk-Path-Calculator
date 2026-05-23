@@ -6,12 +6,18 @@
 geocode_cache.json
 geocode_cache.json.deprecated
 
-# Prebuilt street-graph artifacts. The Dockerfile fetches the .graphml
-# from the GitHub release and rebuilds the .pkl inside the image, so
-# copying the local 28 MB pickle (or any .preFEAT4-style backup) only
-# bloats the build context.
+# Prebuilt release artifacts. The Dockerfile fetches all three from the
+# `street-graph` GitHub release in a layer that sits BEFORE `COPY . .`
+# (OPT-027), so any local copy of these files in the build context would
+# overlay the curl-fetched bytes on the COPY step — including overwriting
+# the SEC-001-verified pickle. Exclude them defensively so the developer's
+# local copies cannot diverge from what the release produced.
 street_graph.graphml
 street_graph_igraph.pkl*
+data/chicago_geocode.db
+data/chicago_geocode.db-shm
+data/chicago_geocode.db-wal
+data/chicago_boundary.json
 
 # OSMnx / routing cache (large files)
 cache/

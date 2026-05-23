@@ -298,6 +298,10 @@ def _close_cache_db() -> None:
     if db is None:
         return
     try:
+        db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except sqlite3.Error:
+        pass
+    try:
         db.close()
     except Exception:
         pass
@@ -602,6 +606,9 @@ def _word_index() -> dict[str, frozenset[str]]:
 def fuzzy_match_neighborhood(query: str) -> "tuple[tuple[float, float] | None, str | None]":
     """Fuzzy-match a lowercased, stripped query against NEIGHBORHOOD_COORDS."""
     q_words = set(query.split()) - _FUZZY_STOP_WORDS
+
+    if not q_words:
+        return None, None
 
     if len(q_words) > 1:
         idx = _word_index()

@@ -436,3 +436,108 @@ carries a matching `category/subcategory` key yet.
 **When to delete this entry:** the ingest has run, the regenerated
 `places_osm.json` is committed, and both filter checks pass on desktop.
 Any failure → paste into BUGS.md, keep this entry.
+
+---
+
+## PV-011 · Multi-worker uvicorn — production load-test sign-off
+**Shipped:** 2026-05-23 (CHUNK-08 of the 2026-05-22 efficiency audit —
+OPT-035 / OPT-043 / OPT-044 / OPT-069).
+**Why pending:** the Dockerfile now launches uvicorn with
+`--workers ${UVICORN_WORKERS:-2}`, the `/explore` heatmap fan-out runs
+through a dedicated `ThreadPoolExecutor(max_workers=8)`, CORS is now
+outermost, and the rate-limiter key reads `request.state.client_ip` set
+by a stash middleware. Local TestClient passes 319/319, but the real
+trade-off (memory headroom, p95 stability under concurrent traffic,
+proxy-header semantics) only surfaces on Railway with multiple workers
+holding their own pickle + STRtree footprint.
+
+**Quick summary of what to check** (after the next deploy on a worker
+count that matches the Railway plan):
+
+- [ ] **Memory headroom.** Tail Railway's container memory graph for
+  ~15 min of normal traffic. Each worker holds ~200–300 MB of pickle +
+  STRtrees after the CHUNK-07 lifespan warm-up. `workers × footprint`
+  must stay under the plan ceiling with headroom for transient
+  allocations during shapely intersection work. If memory pressure
+  climbs into OOM territory, drop `UVICORN_WORKERS` in the Railway
+  service variables and redeploy.
+- [ ] **Concurrent /route p95.** Run `hey -c 4 -n 100` against
+  `/route` for a real 2-stop Chicago path (Wrigleyville → Logan Square
+  is a good fixture). p95 of the concurrent run should stay close to
+  the single-request p95 — multi-worker uvicorn should absorb the
+  load without head-of-line blocking. If p95 spikes, profile which
+  worker is queueing.
+- [ ] **Concurrent /explore p95.** Same sustained load against
+  `/explore` (Logan Square / 20 min). The dedicated heatmap pool
+  (8 threads) should keep the five clip futures from queueing behind
+  unrelated work — latency should stay even across requests instead of
+  alternating fast/slow.
+- [ ] **OPTIONS preflight short-circuit.** Hit `/route` with an
+  `Origin: https://passage-frontend.up.railway.app` OPTIONS request and
+  confirm the response is 200 with CORS headers but *no*
+  `X-Content-Type-Options` / `X-Frame-Options` / `Strict-Transport-Security`
+  headers. That confirms CORS is wrapping outside the security-headers
+  middleware (OPT-043). If those headers leak into the OPTIONS
+  response, the registration order regressed.
+- [ ] **TRUSTED_PROXY_HOPS smoke.** With the real Railway proxy depth
+  set (typically 1; 2 if Cloudflare is in front), forge an
+  `X-Forwarded-For: 1.2.3.4` and confirm the rate limiter keys on
+  `1.2.3.4` rather than the proxy peer — flood with 31 `/route` calls
+  in a minute, confirm the 31st returns 429. Repeat from a different
+  forged IP to confirm the bucket is per-client.
+
+**When to delete this entry:** every checkbox passes on a live Railway
+deploy with `UVICORN_WORKERS ≥ 2`. Any failure → paste into BUGS.md and
+either revert `UVICORN_WORKERS` to 1 (which still benefits from the
+heatmap pool + CORS reorder) or roll back the offending OPT.
+
+---
+
+## PV-012 · Greenest-routing pickle rebuild after vectorized bake (CHUNK-10)
+**Shipped:** 2026-05-23 (CHUNK-10 of the 2026-05-22 efficiency audit —
+OPT-029 / OPT-030 / OPT-052 / OPT-053).
+**Why pending:** CHUNK-10 rewrote `_bake_green_signals` in
+`backend/fetch_street_graph.py` (OPT-053 flattens edge geometry into a
+single vectorized arc-length-midpoint pass; OPT-030 swaps the per-edge
+`STRtree.nearest()` loop for shapely 2.x's batched
+`STRtree.nearest(point_array)` + `shapely.distance`). The local
+apples-to-apples comparison shows the new bake is bit-identical to the
+old on `edge_park_proximity_f32` (max diff 3.7e-9) and matches on
+`edge_tree_canopy_f32` to within float32 noise mean (max diff 1.6% on
+a handful of canopy-cell-boundary edges where a slightly-different
+midpoint flips which cell's density wins). The new pickle was rebuilt
+locally and its SHA-256 (`3d10cfbf1c9bafe87c53dde365efd05d6854c81f094d4cfe8993990ebadf37f6`)
+is in `backend/.env`. Production must still pick it up.
+
+**Operator pre-deploy steps:**
+
+- [ ] Upload `backend/street_graph_igraph.pkl` to the `street-graph`
+  GitHub release tag (overwrite the existing asset). Asset filename
+  must remain exactly `street_graph_igraph.pkl`.
+- [ ] Set the `STREET_GRAPH_SHA256` Railway service variable to
+  `3d10cfbf1c9bafe87c53dde365efd05d6854c81f094d4cfe8993990ebadf37f6`.
+- [ ] Push CHUNK-10's code changes. Railway rebuilds; tail the build
+  log for `street_graph_igraph.pkl SHA-256 verified at build time` and
+  the boot for `street_graph_igraph.pkl SHA-256 verified` followed by
+  `igraph loaded: 208,008 vertices, 232,759 edges` (no "Refusing to
+  load" error).
+
+**Post-deploy spot check on the greenest fixture** (matches the
+existing CLAUDE.md "Deploy checklist" step 6):
+
+- [ ] `POST /route` with `origin=Lakeview East`,
+  `destination=Lincoln Park` (or coords `41.9405,-87.6420` →
+  `41.9210,-87.6500`). Compare `routes[?flavor=='fastest'].path` vs
+  `routes[?flavor=='greenest'].path`. Greenest should still diverge to
+  a footway-heavy path through Lincoln Park's interior trails — same
+  qualitative shape as the pre-CHUNK-10 pickle produced. The 1.6%
+  canopy-score diff on a handful of edges should not visibly change
+  the routing.
+
+**When to delete this entry:** the new pickle is live on Railway and
+the Lakeview East → Lincoln Park greenest route is qualitatively
+unchanged from the pre-rebuild behavior. Any unexpected route shape →
+paste into BUGS.md, keep this entry, and consider rolling back the
+pickle to the prior bytes (the prior SHA-256
+`415d8be872887b6e0cfc3456954c26101d420584726aed0ae309d50e948b3eba` is
+recoverable from git history of `backend/.env`).

@@ -1,12 +1,15 @@
 import asyncio
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -37,7 +40,7 @@ from geocoding import (
 import local_search
 from utils import (
     CHICAGO_SOUTH, CHICAGO_NORTH, CHICAGO_WEST, CHICAGO_EAST,
-    haversine_miles, METERS_PER_MILE, quantize_coord,
+    haversine_miles, METERS_PER_MILE, quantize_coord, quantize_geojson,
 )
 from steps import (
     step_length_from_height,
@@ -48,6 +51,11 @@ from steps import (
     DEFAULT_PACE,
     PACE_TO_MET,
 )
+import explore
+import places
+import parks
+import green_space
+import tree_canopy
 from explore import explore as compute_explore
 from community_areas import lookup_centroid
 from places import places_in_polygon, residential_heatmap
@@ -122,11 +130,46 @@ def _preload_graph() -> None:
     _load_graph()
 
 
+# Dedicated thread pool for /explore's five heatmap clips (OPT-069). The
+# default loop executor (min(32, cpu_count + 4) threads) would otherwise queue
+# the five futures behind unrelated work under load; 8 threads gives slack for
+# two concurrent /explore requests plus headroom for short bursts. Multi-worker
+# uvicorn (OPT-035) gives each process its own pool, so concurrent load scales
+# with worker count × 8 heatmap threads.
+_heatmap_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="heatmap")
+
+
+_WARMERS = (
+    ("places.STRtree",        places._ensure_index),
+    ("residential.STRtree",   places._ensure_residential_index),
+    ("parks.STRtree",         parks._ensure_index),
+    ("green_space.STRtree",   green_space._ensure_index),
+    ("tree_canopy.STRtree",   tree_canopy._ensure_index),
+    ("chicago_boundary",      explore._get_chicago_boundary),
+)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_running_loop()
-    logger.info("Scheduling background graph preload ...")
-    asyncio.ensure_future(loop.run_in_executor(None, _preload_graph))
+    # OPT-050: await the graph load so the first /route after deploy doesn't
+    # race the lifespan-scheduled future for `_graph_lock`. The container's
+    # start-up pays this cost once; `/health` then returns immediately.
+    logger.info("Preloading street graph ...")
+    await loop.run_in_executor(None, _preload_graph)
+    # OPT-034 + OPT-054: warm heatmap STRtrees + the boundary clip in parallel
+    # so the first /explore lands at warm latency instead of paying 200–500 ms
+    # of cold-start STRtree builds and a boundary JSON parse. Failures here
+    # are logged but do not block boot — each module's lazy path still
+    # handles load-on-demand if its warmer raised.
+    logger.info("Street graph ready; warming heatmap indexes + boundary ...")
+    results = await asyncio.gather(
+        *(loop.run_in_executor(None, fn) for _, fn in _WARMERS),
+        return_exceptions=True,
+    )
+    for (name, _), result in zip(_WARMERS, results):
+        if isinstance(result, BaseException):
+            logger.warning("warm-up failed for %s: %r", name, result)
     _start_eviction_daemon()
     yield
 
@@ -184,22 +227,43 @@ def _client_ip(request: Request) -> str:
     return get_remote_address(request)
 
 
-limiter = Limiter(key_func=_client_ip, default_limits=[], enabled=_RATE_LIMIT_ENABLED)
+# OPT-044: rate-limiter key reads the cached IP off `request.state.client_ip`
+# (stashed by the middleware below) so the X-Forwarded-For parse only runs
+# once per request instead of once per `@limiter.limit(...)` decorator invocation.
+# Falls back to the direct parse for callers that bypass the middleware path
+# (the rate-limit-exceeded handler, defensive only — the middleware always runs
+# for HTTP requests in practice).
+def _client_ip_key(request: Request) -> str:
+    cached = getattr(request.state, "client_ip", None)
+    if cached is not None:
+        return cached
+    return _client_ip(request)
 
-app = FastAPI(lifespan=lifespan)
+
+limiter = Limiter(key_func=_client_ip_key, default_limits=[], enabled=_RATE_LIMIT_ENABLED)
+
+app = FastAPI(lifespan=lifespan, default_response_class=ORJSONResponse)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
+# ── Middleware registration ─────────────────────────────────────────────────
+# Starlette runs registered-last-as-outermost (the last `add_middleware`/
+# `@app.middleware` call wraps everything before it). So request flow is:
+#
+#     CORS (outermost)  →  GZip  →  security headers  →  client-IP stash
+#         (responses flow back in reverse)
+#
+# OPT-043 puts CORS outermost so OPTIONS preflights short-circuit at CORS
+# before paying the inner-middleware cost. The IP-stash middleware is
+# innermost so `request.state.client_ip` is set just before the route handler
+# (and its `@limiter.limit(...)` decorator) reads it.
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=_DEV_TUNNEL_ORIGIN_REGEX,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "Accept"],
-)
+
+@app.middleware("http")
+async def stash_client_ip(request: Request, call_next):
+    request.state.client_ip = _client_ip(request)
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -213,6 +277,18 @@ async def add_security_headers(request: Request, call_next):
     ):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=_DEV_TUNNEL_ORIGIN_REGEX,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept"],
+)
 
 
 _MAX_STOPS = 8
@@ -413,14 +489,14 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         return fn(_shape(geojson_polygon), *args)
 
     places, heatmap, canopy, parks, green = await asyncio.gather(
-        loop.run_in_executor(None, _clip, places_in_polygon, payload.categories),
-        loop.run_in_executor(None, _clip, residential_heatmap),
-        loop.run_in_executor(None, _clip, tree_canopy_in_polygon),
-        loop.run_in_executor(None, _clip, parks_in_polygon),
-        loop.run_in_executor(None, _clip, green_space_in_polygon),
+        loop.run_in_executor(_heatmap_pool, _clip, places_in_polygon, payload.categories),
+        loop.run_in_executor(_heatmap_pool, _clip, residential_heatmap),
+        loop.run_in_executor(_heatmap_pool, _clip, tree_canopy_in_polygon),
+        loop.run_in_executor(_heatmap_pool, _clip, parks_in_polygon),
+        loop.run_in_executor(_heatmap_pool, _clip, green_space_in_polygon),
     )
 
-    return {
+    return quantize_geojson({
         "origin_coords": [origin_lat, origin_lon],
         "max_minutes": payload.max_minutes,
         "polygon": result["polygon"],
@@ -443,7 +519,7 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         # (kind ∈ {cemetery, golf_course, nature_reserve, recreation_ground}),
         # or null when none overlap.
         "green_space_heatmap": green,
-    }
+    })
 
 
 @app.get("/reverse-geocode")
@@ -465,8 +541,8 @@ def _looks_like_free_text_address(q: str) -> bool:
     typed by hand. Used to gate the LocationIQ supplement so that partial
     neighborhood / POI lookups never burn quota.
     """
-    head = q.lstrip().split(None, 1)[0] if q.strip() else ""
-    return bool(head) and head[0].isdigit()
+    head = next((c for c in q if not c.isspace()), "")
+    return head.isdigit()
 
 
 @app.get("/autocomplete")
@@ -695,11 +771,12 @@ async def route(request: Request, payload: RouteRequest):
             "daily_goal_pct":  daily_goal_pct(total_steps, daily_goal),
         }
 
-    # Coordinate shapes shared across both response branches.
-    stops_out        = list(stops)
-    stop_coords_out  = [list(c) for c in resolved]
-    origin_out       = list(resolved[0])
-    dest_out         = list(resolved[-1])
+    # Coordinate shapes shared across both response branches. Tuples encode
+    # identically to lists in both stdlib json and orjson, so no rewrap.
+    stops_out        = stops
+    stop_coords_out  = resolved
+    origin_out       = resolved[0]
+    dest_out         = resolved[-1]
     step_length_in   = round(step_len * 12, 1)
     personalized     = payload.height_inches is not None
 
@@ -718,7 +795,7 @@ async def route(request: Request, payload: RouteRequest):
                 # tuples and lists identically, so the per-point `list(pt)`
                 # rebuild is redundant.
                 "path": path,
-                "directions": list(directions),
+                "directions": directions,
                 "minutes": minutes,
             }]
         else:
@@ -727,8 +804,8 @@ async def route(request: Request, payload: RouteRequest):
             )
         routes = [_summarize_alt(alt) for alt in alternatives]
         default = next((r for r in routes if r["flavor"] == DEFAULT_FLAVOR), routes[0])
-        available_flavors = ["custom"] if has_routing_prefs else list(FLAVORS)
-        return {
+        available_flavors = ["custom"] if has_routing_prefs else FLAVORS
+        return quantize_geojson({
             "stops":              stops_out,
             "stop_coords":        stop_coords_out,
             "origin_coords":      origin_out,
@@ -748,7 +825,7 @@ async def route(request: Request, payload: RouteRequest):
             "daily_goal_pct":     default["daily_goal_pct"],
             "path":               default["path"],
             "directions":         default["directions"],
-        }
+        })
 
     # Multi-stop (3–8): force `fastest` flavor; alternative routes are 2-stop only.
     async def _compute_leg(i: int) -> dict:
@@ -769,7 +846,7 @@ async def route(request: Request, payload: RouteRequest):
             # with these points directly (same JSON output, no per-point
             # rebuild).
             "path":       path,
-            "directions": list(directions),
+            "directions": directions,
             "minutes":    minutes,
             "from_label": stops[i],
             "to_label":   stops[i + 1],
@@ -800,7 +877,7 @@ async def route(request: Request, payload: RouteRequest):
             "minutes":         round(leg_minutes, 1),
             "steps":           leg_steps,
             "calories_approx": leg_cal,
-            "path_slice":      list(leg_slices[i]),
+            "path_slice":      leg_slices[i],
         })
 
     # Compute totals from the unrounded sums so multi-stop matches 2-stop's
@@ -823,7 +900,7 @@ async def route(request: Request, payload: RouteRequest):
         "legs":            legs_out,
     }
 
-    return {
+    return quantize_geojson({
         "stops":              stops_out,
         "stop_coords":        stop_coords_out,
         # Legacy mirrors of stops[0] / stops[-1] so 2-stop clients still work.
@@ -844,4 +921,4 @@ async def route(request: Request, payload: RouteRequest):
         "daily_goal_pct":     full_route["daily_goal_pct"],
         "path":               full_path,
         "directions":         all_directions,
-    }
+    })

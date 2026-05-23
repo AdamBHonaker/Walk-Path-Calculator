@@ -85,6 +85,8 @@ Passage/
 │                         #   test_heatmap_clipper, test_walking_eviction, test_build_places_osm
 │
 ├── docs/                 # Living feature/bug/debt logs (BUGS, Technical_Debt,
+│                         #   Technical_Debt_Roadmap [dep graph + chunk-completion
+│                         #     checklist governing TD resolutions],
 │                         #   Efficiency_Improvements, FEATURE_PLANS, FEATURE_HISTORY,
 │                         #   MOBILE_TESTING, Pending_Verification; archive/RESOLVED_HISTORY)
 │
@@ -185,8 +187,16 @@ cp .env.example .env   # add LOCATIONIQ_API_KEY only if you want the hosted
                        # one bucket). Typical values: 0 (default, direct / local
                        # dev), 1 (Railway), 2 (Cloudflare → Railway). See
                        # .env.example for the full security note.
+                       # UVICORN_WORKERS controls the production process count
+                       # (CMD in backend/Dockerfile reads it; defaults to 2).
+                       # Each worker holds its own pickle + STRtrees (~200–300
+                       # MB after lifespan warm-up), so the container plan must
+                       # fit `workers × footprint`. Local `uvicorn --reload`
+                       # below ignores it.
 uvicorn main:app --reload
 ```
+
+The production Docker image launches uvicorn with `--workers ${UVICORN_WORKERS:-2}` so routing + isochrone work scales across vCPUs. Local dev still runs single-process (`--reload` is incompatible with multi-worker). The dev-vs-prod gap matters only under sustained load — single-process p95 is fine for one-at-a-time testing.
 
 At runtime `walking.py` loads `backend/street_graph_igraph.pkl` — the prebuilt pickle that carries the greenest-routing edge attributes (`tree_canopy_score`, `park_proximity_score`) baked from `data/tree_canopy_kde.json` + `data/parks_polygons.json`. Production fetches the `.pkl` (~28 MB) directly from this repo's GitHub `street-graph` release tag — see "Greenest-routing graph release runbook" below for the build chain and the SEC-001 integrity check. For local dev, `fetch_street_graph.py` rebuilds the `.pkl` from `street_graph.graphml`, a ~314 MB OSM snapshot kept off-repo as a local working file (not on the release); re-fetch it via `python fetch_street_graph.py --force` if you don't have a copy. A pickle built before greenest routing will refuse to load.
 
@@ -441,7 +451,7 @@ The Dockerfile `curl`s all three at build time. The rest of this runbook focuses
 
 ### What this means for refreshes
 
-**Whenever you overwrite a release asset, also bump `ARTIFACT_REV` in [backend/Dockerfile](backend/Dockerfile)** (or set a Railway `ARTIFACT_REV` build variable). The Dockerfile fetches all three artifacts in one `RUN curl` layer, and BuildKit caches that layer on the command string alone — without a changed `ARTIFACT_REV`, a deploy after an in-place asset overwrite re-uses the cached layer and ships stale bytes. A `.pkl` refresh also rotates `STREET_GRAPH_SHA256` (interpolated into the same `RUN`, so it busts the cache on its own), but a geocode-DB or boundary refresh changes nothing else — there, `ARTIFACT_REV` is the only knob that forces a fresh download.
+**Whenever you overwrite a release asset, also bump `ARTIFACT_REV` in [backend/Dockerfile](backend/Dockerfile)** (or set a Railway `ARTIFACT_REV` build variable). The Dockerfile fetches all three artifacts in one `RUN curl` layer, and BuildKit caches that layer on the command string alone — without a changed `ARTIFACT_REV`, a deploy after an in-place asset overwrite re-uses the cached layer and ships stale bytes. As of OPT-027 (2026-05-23) that `RUN curl` sits **before** `COPY . .`, so code changes no longer invalidate the artifact layer at all — `ARTIFACT_REV` is now the only knob that busts the cache for a `.db` or boundary refresh. A `.pkl` refresh also rotates `STREET_GRAPH_SHA256` (interpolated into the same `RUN`, so it busts the cache on its own), but the principle is the same: change one of those two ARGs, or the layer reuses stale bytes.
 
 - **Tree-canopy / parks data refresh** (yearly, per the heatmap ingest scripts): re-run `python fetch_street_graph.py` to rebuild the `.pkl`. **Upload the new `.pkl` to the `street-graph` release** (overwrite). **Rotate `STREET_GRAPH_SHA256`** in both `backend/.env` and the Railway service variable — see "Pickle integrity check" below.
 - **OSM street-network refresh**: re-run `fetch_street_graph.py --force` to redownload the `.graphml`, then `python fetch_street_graph.py` (no flag) to rebuild the `.pkl`. Upload the new `.pkl` to the release. **Rotate `STREET_GRAPH_SHA256`** as above.

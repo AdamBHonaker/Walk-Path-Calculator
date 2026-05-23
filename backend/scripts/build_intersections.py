@@ -205,6 +205,12 @@ def main() -> int:
     conn = connect()
     try:
         cur = conn.cursor()
+        # OPT-029: build-time-only PRAGMAs (see build_address_points.py for the
+        # full rationale). Net effect across both FTS5 ingests: ~4-7 min faster
+        # geocode-DB rebuild.
+        cur.execute("PRAGMA journal_mode=OFF")
+        cur.execute("PRAGMA synchronous=OFF")
+        cur.execute("PRAGMA temp_store=MEMORY")
         cur.execute("DELETE FROM intersections")
         cur.execute("DELETE FROM intersections_fts")
         cur.executemany(

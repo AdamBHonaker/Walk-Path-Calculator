@@ -62,6 +62,9 @@ export default function MapView({
 }) {
   const containerRef = useRef(null);
   const mapRef       = useRef(null);
+  // Init effect calls lockMapGestures first, so the gesture state is locked
+  // by the time the gesture-sync effect below runs.
+  const gestureLockedRef = useRef(true);
   const [mapReady, setMapReady]     = useState(false);
   const [unlocked, setUnlocked]     = useState(false);
   const [styleError, setStyleError] = useState(false);
@@ -119,11 +122,18 @@ export default function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    let targetLocked;
     if (mode === "explore") {
-      unlockMapGestures(map);
+      targetLocked = false;
     } else if (!unlocked && !pickMode) {
-      lockMapGestures(map);
+      targetLocked = true;
+    } else {
+      return;
     }
+    if (gestureLockedRef.current === targetLocked) return;
+    gestureLockedRef.current = targetLocked;
+    if (targetLocked) lockMapGestures(map);
+    else unlockMapGestures(map);
   }, [mode, unlocked, pickMode, mapReady]);
 
   // ── User-location pin (live fix) ──────────────────────────────────────
@@ -235,7 +245,10 @@ export default function MapView({
   function handleUnlock() {
     const map = mapRef.current;
     if (!map) return;
-    unlockMapGestures(map);
+    if (gestureLockedRef.current) {
+      gestureLockedRef.current = false;
+      unlockMapGestures(map);
+    }
     setUnlocked(true);
   }
 

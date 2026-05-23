@@ -25,6 +25,24 @@ def quantize_coord(lat: float, lon: float) -> tuple[int, int]:
     return (round(lat * 1e5), round(lon * 1e5))
 
 
+def quantize_geojson(obj, decimals: int = 5):
+    """Recursively round every float to `decimals` places.
+
+    Applied at the /route and /explore response boundary so the lat/lon coords
+    that dominate response byte count don't ship 15+ digits of float64 noise.
+    Five decimals = ~1.1 m precision, well below what any map rendering will
+    show. Already-rounded fields (total_miles, distance_miles, etc.) are
+    untouched because their precision is below `decimals`.
+    """
+    if isinstance(obj, float):
+        return round(obj, decimals)
+    if isinstance(obj, dict):
+        return {k: quantize_geojson(v, decimals) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [quantize_geojson(v, decimals) for v in obj]
+    return obj
+
+
 def haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Return the great-circle distance in miles between two lat/lon points."""
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])

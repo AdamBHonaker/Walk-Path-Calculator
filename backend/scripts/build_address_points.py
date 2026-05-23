@@ -177,6 +177,15 @@ def main() -> int:
     conn = connect()
     try:
         cur = conn.cursor()
+        # OPT-029: build-time-only PRAGMAs. The runtime cache connection
+        # (`geocoding._cache_connect`) reopens with WAL + synchronous=NORMAL,
+        # so these settings don't leak into prod. `journal_mode=OFF` skips
+        # the rollback journal entirely; `synchronous=OFF` skips fsync after
+        # every page; `temp_store=MEMORY` keeps the FTS5 SELECT-INTO scratch
+        # in RAM. Together: ~4-7 min off the 519k-address build.
+        cur.execute("PRAGMA journal_mode=OFF")
+        cur.execute("PRAGMA synchronous=OFF")
+        cur.execute("PRAGMA temp_store=MEMORY")
         cur.execute("DELETE FROM addresses")
         cur.execute("DELETE FROM addresses_fts")
         cur.executemany(

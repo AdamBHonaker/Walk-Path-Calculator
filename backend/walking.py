@@ -25,6 +25,7 @@ import os
 import pickle
 import threading
 import time as _time
+from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
@@ -127,7 +128,18 @@ _vertex_lats: "np.ndarray | None" = None
 _vertex_lons: "np.ndarray | None" = None
 _kdtree_to_vertex: "np.ndarray | None" = None
 _graph_load_failed: bool = False
-_flavor_weights: dict[str, list[float]] = {}
+
+# Monotonic counter bumped every time the edge caches are repopulated (load,
+# eviction-then-reload, etc.). Cached weight vectors carry the version they
+# were built against in their key, so a stale cache hit after a graph swap is
+# impossible without a length check on every lookup. See OPT-068.
+_graph_version: int = 0
+
+# Versioned LRU of flavor weight vectors, keyed by (flavor, _graph_version).
+# Bounded so old-version entries get evicted across graph reloads instead of
+# accumulating. See OPT-045 / OPT-068.
+_FLAVOR_WEIGHTS_MAXSIZE: int = 8
+_flavor_weights: "OrderedDict[tuple[str, int], np.ndarray | list[float]]" = OrderedDict()
 
 # Per-edge attribute columns, normalized once at graph load. igraph stores
 # attributes column-wise internally; bulk reads avoid per-edge Python↔igraph
@@ -149,6 +161,12 @@ _edge_targets:    "np.ndarray        | None" = None   # int32 (v2) or list[int] 
 # legacy footway-only discount (`_GREEN_DISCOUNT`).
 _edge_tree_canopy:    "np.ndarray | None" = None
 _edge_park_proximity: "np.ndarray | None" = None
+
+# uint8 mask: 1 where the edge's highway tag is in `_GREEN_HIGHWAYS`, else 0.
+# Baked once at load (OPT-032) so the greenest weight build does not rebuild
+# it from `_edge_highways` strings on every cache miss. None in the v1
+# graphml fallback — the v1 greenest path stays list-comprehension shaped.
+_edge_green_mask: "np.ndarray | None" = None
 
 # Cache of weight vectors used by routing variants that layer extra penalties
 # on top of a flavor (currently only avoid_stairs). Keyed by (flavor, variant).
@@ -237,6 +255,7 @@ def _populate_edge_caches(G: "ig.Graph") -> None:
     instead of doing per-edge igraph attribute lookups."""
     global _edge_names, _edge_highways, _edge_footways, _edge_lengths, _edge_geometries
     global _edge_sources, _edge_targets, _edge_tree_canopy, _edge_park_proximity
+    global _edge_green_mask, _graph_version
     n = G.ecount()
     attrs = G.es.attributes()
     raw_names    = G.es["name"]     if "name"     in attrs else [""]   * n
@@ -249,16 +268,20 @@ def _populate_edge_caches(G: "ig.Graph") -> None:
     _edge_footways   = [_normalize_edge_str(v) for v in raw_footways]
     _edge_lengths    = [float(v) if v else 0.0 for v in raw_lengths]
     _edge_geometries = list(raw_geoms)
-    edgelist = G.get_edgelist()
-    _edge_sources = [u for u, _ in edgelist]
-    _edge_targets = [v for _, v in edgelist]
+    # Bulk numpy slice over a single (E, 2) int32 array — one C-level walk
+    # rather than two Python passes over an O(E) list of tuples (OPT-048).
+    el = np.asarray(G.get_edgelist(), dtype=np.int32)
+    _edge_sources = el[:, 0]
+    _edge_targets = el[:, 1]
     # v1 graphml does not carry greenest-routing edge attributes; greenest
-    # falls back to the legacy footway-only discount.
+    # falls back to the legacy footway-only discount via list comprehension.
     _edge_tree_canopy    = None
     _edge_park_proximity = None
+    _edge_green_mask     = None
     # Invalidate any cached weight vectors derived from a prior graph load.
     _flavor_weights.clear()
     _combined_weights.clear()
+    _graph_version += 1
 
 
 def _populate_edge_caches_v2(G: "ig.Graph", data: dict) -> None:
@@ -276,6 +299,7 @@ def _populate_edge_caches_v2(G: "ig.Graph", data: dict) -> None:
     """
     global _edge_names, _edge_highways, _edge_footways, _edge_lengths, _edge_geometries
     global _edge_sources, _edge_targets, _edge_tree_canopy, _edge_park_proximity
+    global _edge_green_mask, _graph_version
     hw_vocab = data["highway_vocab"]
     fw_vocab = data["footway_vocab"]
     _edge_names      = data["edge_names"]
@@ -285,10 +309,22 @@ def _populate_edge_caches_v2(G: "ig.Graph", data: dict) -> None:
     _edge_sources    = data["edge_sources_i32"]    # numpy int32
     _edge_targets    = data["edge_targets_i32"]    # numpy int32
     _edge_geometries = data["edge_geoms"]          # list[None | np.ndarray int32 (N,2)]
-    _edge_tree_canopy    = data.get("edge_tree_canopy_f32")    # v3+ only
-    _edge_park_proximity = data.get("edge_park_proximity_f32") # v3+ only
+    # OPT-031: enforce float32 once at load so the greenest weight build does
+    # not pay a defensive `.astype(np.float32)` copy on every cache miss.
+    # `np.asarray` is a no-op for arrays already at the target dtype.
+    canopy_raw = data.get("edge_tree_canopy_f32")    # v3+ only
+    parks_raw  = data.get("edge_park_proximity_f32") # v3+ only
+    _edge_tree_canopy    = np.asarray(canopy_raw, dtype=np.float32) if canopy_raw is not None else None
+    _edge_park_proximity = np.asarray(parks_raw,  dtype=np.float32) if parks_raw  is not None else None
+    # OPT-032: bake the uint8 footway/path/cycleway membership mask once
+    # instead of rebuilding it from `_edge_highways` strings per cache miss.
+    _edge_green_mask = np.fromiter(
+        (1 if h in _GREEN_HIGHWAYS else 0 for h in _edge_highways),
+        dtype=np.uint8, count=len(_edge_highways),
+    )
     _flavor_weights.clear()
     _combined_weights.clear()
+    _graph_version += 1
 
 
 def _parse_geometry_inplace(G: ig.Graph) -> None:
@@ -456,7 +492,7 @@ def _evict_graph() -> None:
     global _graph_cache, _coord_kdtree, _vertex_lats, _vertex_lons, _kdtree_to_vertex
     global _edge_names, _edge_highways, _edge_footways, _edge_lengths, _edge_geometries
     global _edge_sources, _edge_targets, _graph_load_failed
-    global _edge_tree_canopy, _edge_park_proximity
+    global _edge_tree_canopy, _edge_park_proximity, _edge_green_mask
 
     with _graph_lock:
         if _graph_cache is None:
@@ -478,6 +514,7 @@ def _evict_graph() -> None:
         _edge_targets = None
         _edge_tree_canopy = None
         _edge_park_proximity = None
+        _edge_green_mask = None
         _flavor_weights.clear()
         _combined_weights.clear()
         _graph_load_failed = False  # eviction is deliberate; allow reload on next request
@@ -569,17 +606,29 @@ def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "np.ndarray | list[floa
         if flavor == "fewest_turns":
             return lengths + _TURN_PENALTY_M
         if flavor == "greenest":
-            highways = _edge_highways or [""] * len(lengths)
-            green_mask = np.array([h in _GREEN_HIGHWAYS for h in highways], dtype=bool)
+            # OPT-032: `_edge_green_mask` is baked at load (uint8). Fall back
+            # to rebuilding when it is absent (defensive) or when its size no
+            # longer matches `lengths` (under test, callers monkey-patch the
+            # edge columns to small fixture arrays without touching the mask).
+            green_mask = _edge_green_mask
+            if green_mask is None or len(green_mask) != len(lengths):
+                highways = _edge_highways or [""] * len(lengths)
+                green_mask = np.fromiter(
+                    (1 if h in _GREEN_HIGHWAYS else 0 for h in highways),
+                    dtype=np.uint8, count=len(highways),
+                )
             canopy = _edge_tree_canopy
             parks  = _edge_park_proximity
             if canopy is not None and parks is not None \
                     and len(canopy) == len(lengths) and len(parks) == len(lengths):
                 # v3: combined discount, with a per-edge 0.5× detour floor.
+                # OPT-031: canopy/parks are already float32 from
+                # `_populate_edge_caches_v2`; multiplying by a Python float
+                # preserves their dtype.
                 discount = 1.0 \
                     - _GREEN_FOOTWAY_WEIGHT * green_mask.astype(np.float32) \
-                    - _GREEN_CANOPY_WEIGHT  * canopy.astype(np.float32) \
-                    - _GREEN_PARK_WEIGHT    * parks.astype(np.float32)
+                    - _GREEN_CANOPY_WEIGHT  * canopy \
+                    - _GREEN_PARK_WEIGHT    * parks
                 np.maximum(discount, _GREEN_DETOUR_FLOOR, out=discount)
                 # A non-finite baked canopy/park score would yield a NaN
                 # weight, which silently corrupts the shortest-path ordering
@@ -589,7 +638,7 @@ def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "np.ndarray | list[floa
                               posinf=1.0, neginf=_GREEN_DETOUR_FLOOR)
                 return lengths * discount
             # v2 fallback: legacy footway-only discount.
-            return np.where(green_mask, lengths * _GREEN_DISCOUNT, lengths)
+            return np.where(green_mask.astype(bool), lengths * _GREEN_DISCOUNT, lengths)
         return lengths
 
     # v1 graphml fallback — list[float] path. Greenest signals never present.
@@ -614,17 +663,26 @@ def _get_flavor_weights(flavor: str) -> "np.ndarray | list[float] | str":
     # materialising a full weight list for the most-common flavor.
     if flavor == "fastest" and not isinstance(_edge_lengths, np.ndarray):
         return "length"
-    cached = _flavor_weights.get(flavor)
-    if cached is not None and len(cached) == G.ecount():
+    # OPT-068: cache key includes `_graph_version`, so a hit guarantees the
+    # entry was built against the currently-loaded graph — no `len(cached) ==
+    # G.ecount()` length check needed in the hot path.
+    key = (flavor, _graph_version)
+    cached = _flavor_weights.get(key)
+    if cached is not None:
         return cached
     with _weights_lock:
         # Double-checked: another thread may have built it while we waited.
-        cached = _flavor_weights.get(flavor)
-        if cached is not None and len(cached) == G.ecount():
+        cached = _flavor_weights.get(key)
+        if cached is not None:
             return cached
         weights = _build_flavor_weights(G, flavor)
         if isinstance(weights, (list, np.ndarray)):
-            _flavor_weights[flavor] = weights
+            _flavor_weights[key] = weights
+            # OPT-045: bounded LRU — drop the oldest entry on overflow. The
+            # eight-slot cap fits the steady state (3 flavors × 1–2 variants)
+            # plus a couple of stale-version entries across an eviction cycle.
+            while len(_flavor_weights) > _FLAVOR_WEIGHTS_MAXSIZE:
+                _flavor_weights.popitem(last=False)
     return weights
 
 

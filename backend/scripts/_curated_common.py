@@ -61,7 +61,7 @@ def merge_and_write(source: str, source_url: str, fresh: list[dict[str, Any]]) -
                 },
                 "places": merged,
             },
-            indent=2,
+            separators=(",", ":"),
             ensure_ascii=False,
         ),
         encoding="utf-8",

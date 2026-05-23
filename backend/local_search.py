@@ -27,7 +27,6 @@ import sqlite3
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from geocode_text import normalize_address, normalize_street_name
 from utils import chicago_bbox_contains, haversine_miles, quantize_coord
@@ -85,6 +84,7 @@ def _connect() -> sqlite3.Connection | None:
         try:
             conn.execute("PRAGMA mmap_size = 134217728")  # 128 MB
             conn.execute("PRAGMA temp_store = MEMORY")
+            conn.execute("PRAGMA query_only = 1")
         except sqlite3.OperationalError:
             pass
         conn.row_factory = sqlite3.Row
@@ -235,31 +235,16 @@ def _score(source: str, lat: float, lon: float, *, exact: bool) -> float:
     return base
 
 
-def _dedupe(suggestions: Iterable[Suggestion]) -> list[Suggestion]:
-    """Drop later suggestions that collide on label or quantized coord (~1 m).
-
-    Label-level dedupe matters for intersections: OSM often models a single
-    real-world crossroads as 2–4 graph nodes a few meters apart, so the same
-    "Belmont & Clark" string would otherwise appear multiple times in the list.
-    """
-    seen_keys: set[tuple[int, int]] = set()
-    seen_labels: set[tuple[str, str]] = set()
-    out: list[Suggestion] = []
-    for s in suggestions:
-        key = quantize_coord(s.lat, s.lon)
-        label_key = (s.source, s.label.lower())
-        if key in seen_keys or label_key in seen_labels:
-            continue
-        seen_keys.add(key)
-        seen_labels.add(label_key)
-        out.append(s)
-    return out
-
-
 # ── Autocomplete ────────────────────────────────────────────────────────────
 
 def autocomplete(query: str, limit: int = 8) -> list[Suggestion]:
-    """Return up to `limit` ranked suggestions across all local sources."""
+    """Return up to `limit` ranked suggestions across all local sources.
+
+    Dedupes at merge time on quantized coord (~1 m) and (source, label_lower).
+    Label-level dedupe matters for intersections: OSM often models a single
+    real-world crossroads as 2–4 graph nodes a few meters apart, so the same
+    "Belmont & Clark" string would otherwise appear multiple times.
+    """
     if not query or not query.strip():
         return []
     q = query.strip()
@@ -267,6 +252,17 @@ def autocomplete(query: str, limit: int = 8) -> list[Suggestion]:
 
     _ensure_in_mem_index()
     suggestions: list[Suggestion] = []
+    seen_keys: set[tuple[int, int]] = set()
+    seen_labels: set[tuple[str, str]] = set()
+
+    def _add(s: Suggestion) -> None:
+        key = quantize_coord(s.lat, s.lon)
+        label_key = (s.source, s.label.lower())
+        if key in seen_keys or label_key in seen_labels:
+            return
+        seen_keys.add(key)
+        seen_labels.add(label_key)
+        suggestions.append(s)
 
     # 1. Neighborhoods -- exact + prefix. The index is sorted by `name`, so
     # `bisect` finds the prefix window in O(log N + k) and we only iterate
@@ -275,25 +271,28 @@ def autocomplete(query: str, limit: int = 8) -> list[Suggestion]:
     for j in range(n_lo, n_hi):
         name, display, lat, lon = _neighborhood_index[j]
         exact = name == q_lower
-        suggestions.append(Suggestion(display, lat, lon, "neighborhood",
-                                      _score("neighborhood", lat, lon, exact=exact)))
+        _add(Suggestion(display, lat, lon, "neighborhood",
+                        _score("neighborhood", lat, lon, exact=exact)))
 
     # 2. Cross-street parse (highest-confidence intersection lookup)
     parsed = parse_cross_street(q)
     if parsed is not None:
         a, b = parsed
-        suggestions.extend(_query_intersections_exact(a, b))
+        for s in _query_intersections_exact(a, b):
+            _add(s)
 
     # 3. Address normalized prefix -- only if the query has a leading number
     norm_addr = normalize_address(q)
     if norm_addr and norm_addr[0].isdigit():
-        suggestions.extend(_query_addresses_prefix(norm_addr, limit=limit * 2))
+        for s in _query_addresses_prefix(norm_addr, limit=limit * 2):
+            _add(s)
 
     # 4. Single-name intersection FTS (e.g. user typed "clark" -- show some
     #    Clark intersections so they can refine).
     norm_street = normalize_street_name(q)
     if norm_street and " " not in norm_street and parsed is None and not (norm_addr and norm_addr[0].isdigit()):
-        suggestions.extend(_query_intersections_prefix(norm_street, limit=limit))
+        for s in _query_intersections_prefix(norm_street, limit=limit):
+            _add(s)
 
     # 5. POI exact + prefix match (downtown Chicago landmarks etc.). Same
     # bisect-window trick as the neighborhood scan — the POI index can be
@@ -304,14 +303,14 @@ def autocomplete(query: str, limit: int = 8) -> list[Suggestion]:
     for j in range(p_lo, p_hi):
         name_lower, display, lat, lon = _poi_index[j]
         exact = name_lower == q_lower
-        suggestions.append(Suggestion(display, lat, lon, "place",
-                                      _score("place", lat, lon, exact=exact)))
+        _add(Suggestion(display, lat, lon, "place",
+                        _score("place", lat, lon, exact=exact)))
         # Capping so a common prefix like "the" doesn't run the whole window.
         if len(suggestions) >= suggestion_cap:
             break
 
     suggestions.sort(key=lambda s: -s.score)
-    return _dedupe(suggestions)[:limit]
+    return suggestions[:limit]
 
 
 def _query_intersections_exact(a: str, b: str) -> list[Suggestion]:

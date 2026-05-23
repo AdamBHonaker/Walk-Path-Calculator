@@ -44,6 +44,11 @@ GREEN_SPACE_PATH = Path(__file__).resolve().parent / "data" / "green_space_polyg
 
 VALID_KINDS = frozenset({"cemetery", "golf_course", "nature_reserve", "recreation_ground"})
 
+# Douglas–Peucker tolerance applied to clipped green-space polygons before
+# `mapping()`. ~0.0005° ≈ 5 m at Chicago latitude — well below the resolution
+# the UI renders at zoom 12–15.
+GREEN_SPACE_SIMPLIFY_TOLERANCE: float = 0.0005
+
 _lock = threading.Lock()
 _kinds: list[str] | None = None
 _polys: list[Polygon] | None = None
@@ -119,4 +124,5 @@ def green_space_in_polygon(polygon) -> dict[str, Any] | None:
         tree=tree,
         group_key=lambda i: kinds[i],
         properties_for=lambda kind, _members: {"kind": kind},
+        simplify_tolerance=GREEN_SPACE_SIMPLIFY_TOLERANCE,
     )

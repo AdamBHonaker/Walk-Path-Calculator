@@ -69,7 +69,11 @@ def _reachable_indices(orig_idx: int, budget_m: float) -> np.ndarray:
     rows = G.distances(source=orig_idx, weights=weights)
     if not rows:
         return np.empty(0, dtype=np.int64)
-    dists = np.asarray(rows[0], dtype=np.float64)
+    # `np.fromiter` with an explicit count pre-allocates the output buffer and
+    # skips the intermediate-list copy that `np.asarray(list_of_python_floats)`
+    # walks internally. Saves a few ms per `/explore` on cold-cache requests.
+    row = rows[0]
+    dists = np.fromiter(row, dtype=np.float64, count=len(row))
     # Unreachable vertices come back as inf; the budget filter excludes them.
     mask = np.isfinite(dists) & (dists <= budget_m)
     return np.where(mask)[0].astype(np.int64)

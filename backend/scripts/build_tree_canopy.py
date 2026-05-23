@@ -56,6 +56,7 @@ import logging
 import math
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -204,17 +205,32 @@ def fetch_and_bake() -> list[dict[str, float]]:
     chunk_edges = np.linspace(STREET_GRAPH_WEST, STREET_GRAPH_EAST, CHUNK_COUNT + 1)
     total_bytes = 0
     t0 = time.perf_counter()
-    for i in range(CHUNK_COUNT):
-        lon_w, lon_e = float(chunk_edges[i]), float(chunk_edges[i + 1])
-        t_chunk = time.perf_counter()
-        native, pixel_w_deg, pixel_h_deg = _fetch_chunk(lon_w, lon_e)
+    # OPT-052: fetch all three longitudinal chunks in parallel — they're I/O
+    # bound against MRLC's WCS endpoint, and parallelism cuts the fetch step
+    # from ~3× the slowest chunk to ~1× the slowest. Accumulation stays
+    # sequential because `_accumulate` writes to shared sum_flat/cnt_flat
+    # arrays with `+=`, which is not atomic across threads even when the
+    # underlying numpy ops release the GIL.
+    chunk_bounds = [
+        (float(chunk_edges[i]), float(chunk_edges[i + 1]))
+        for i in range(CHUNK_COUNT)
+    ]
+    with ThreadPoolExecutor(max_workers=CHUNK_COUNT) as pool:
+        futures = [
+            pool.submit(_fetch_chunk, lon_w, lon_e)
+            for lon_w, lon_e in chunk_bounds
+        ]
+        results = [f.result() for f in futures]
+
+    for i, ((lon_w, lon_e), (native, pixel_w_deg, pixel_h_deg)) in enumerate(
+        zip(chunk_bounds, results)
+    ):
         chunk_bytes = native.size  # rough proxy for transfer size after decode
         total_bytes += chunk_bytes
         logger.info(
-            "Chunk %d/%d: Long(%.4f, %.4f) → %d × %d (~%.0fm × %.0fm) in %.1f s",
+            "Chunk %d/%d: Long(%.4f, %.4f) → %d × %d (~%.0fm × %.0fm)",
             i + 1, CHUNK_COUNT, lon_w, lon_e, native.shape[1], native.shape[0],
             pixel_w_deg * METERS_PER_DEG_LON, pixel_h_deg * METERS_PER_DEG_LAT,
-            time.perf_counter() - t_chunk,
         )
         _accumulate(
             native, lon_w, pixel_w_deg, pixel_h_deg,

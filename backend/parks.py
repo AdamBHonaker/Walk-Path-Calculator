@@ -47,6 +47,11 @@ logger = logging.getLogger(__name__)
 
 PARKS_PATH = Path(__file__).resolve().parent / "data" / "parks_polygons.json"
 
+# Douglas–Peucker tolerance applied to clipped park footprints before
+# `mapping()`. ~0.0005° ≈ 5 m at Chicago latitude — well below the resolution
+# the UI renders at zoom 12–15.
+PARKS_SIMPLIFY_TOLERANCE: float = 0.0005
+
 _lock = threading.Lock()
 _parks: list[dict[str, Any]] | None = None
 _polys: list[Polygon] | None = None
@@ -133,4 +138,5 @@ def parks_in_polygon(polygon) -> dict[str, Any] | None:
         tree=tree,
         group_key=lambda i: parks[i]["name"],
         properties_for=_props,
+        simplify_tolerance=PARKS_SIMPLIFY_TOLERANCE,
     )

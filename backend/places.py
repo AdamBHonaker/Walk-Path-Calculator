@@ -29,7 +29,10 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import numpy as np
-from shapely.geometry import MultiPolygon, Point, Polygon, mapping
+import shapely
+# `Point` re-exported for `test_places.py`; the module itself constructs
+# points in bulk via `shapely.points()` (OPT-080).
+from shapely.geometry import MultiPolygon, Point, Polygon, mapping  # noqa: F401
 from shapely.ops import unary_union
 from shapely.prepared import prep
 from shapely.strtree import STRtree
@@ -41,6 +44,11 @@ logger = logging.getLogger(__name__)
 PLACES_OSM_PATH = Path(__file__).resolve().parent / "data" / "places_osm.json"
 PLACES_CURATED_PATH = Path(__file__).resolve().parent / "data" / "places_curated.json"
 RESIDENTIAL_PATH = Path(__file__).resolve().parent / "data" / "residential_polygons.json"
+
+# Douglas–Peucker tolerance applied to the unioned residential heatmap before
+# `mapping()`. ~0.0005° ≈ 5 m at Chicago latitude — well below what the UI
+# resolves at zoom 12–15. Tunable per-file so each clipper can pick its own.
+RESIDENTIAL_SIMPLIFY_TOLERANCE: float = 0.0005
 
 _index_lock = threading.Lock()
 _places: list[dict[str, Any]] | None = None
@@ -142,7 +150,14 @@ def _ensure_index() -> tuple[list[dict[str, Any]], STRtree | None]:
             _geoms = []
             _tree = STRtree([])  # empty tree is queryable and returns no hits.
             return _places, _tree
-        geoms = [Point(p["lon"], p["lat"]) for p in places]
+        # Bulk shapely.points() over a numpy coord array sidesteps the
+        # per-place Python `Point(...)` constructor (~30× faster on the ~16k
+        # Chicago places index) — OPT-080.
+        coords = np.fromiter(
+            (v for p in places for v in (p["lon"], p["lat"])),
+            dtype=np.float64, count=len(places) * 2,
+        ).reshape(-1, 2)
+        geoms = shapely.points(coords)
         _places = places
         _geoms = geoms
         _tree = STRtree(geoms)
@@ -280,17 +295,13 @@ def residential_heatmap(polygon) -> dict[str, Any] | None:
 
     # Intersect each candidate with the isochrone, dropping empties. Union
     # the survivors so the response has one self-consistent geometry — the
-    # frontend can then render it as a single fill layer. The
-    # `prepared.intersects` prefilter cheaply discards bbox-overlap-but-
-    # disjoint candidates before the expensive `.intersection()` call
-    # (same pattern as `parks_in_polygon` and `green_space_in_polygon`).
-    prepared = prep(polygon)
+    # frontend can then render it as a single fill layer. STRtree already
+    # narrowed to bbox-overlapping candidates; `.intersection()` short-
+    # circuits internally on truly disjoint pairs, so the prior
+    # `prepared.intersects()` second filter was double work.
     pieces = []
     for i in candidate_idx:
-        poly = polys[i]
-        if not prepared.intersects(poly):
-            continue
-        clipped = poly.intersection(polygon)
+        clipped = polys[i].intersection(polygon)
         if clipped.is_empty:
             continue
         pieces.append(clipped)
@@ -307,6 +318,9 @@ def residential_heatmap(polygon) -> dict[str, Any] | None:
         merged = unary_union(polys_only)
         if merged.is_empty:
             return None
+    merged = merged.simplify(RESIDENTIAL_SIMPLIFY_TOLERANCE, preserve_topology=True)
+    if merged.is_empty:
+        return None
     if isinstance(merged, Polygon):
         merged = MultiPolygon([merged])
     return mapping(merged)

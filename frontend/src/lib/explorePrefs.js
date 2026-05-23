@@ -154,7 +154,7 @@ export function saveExplorePrefs(prefs) {
   saveJSON(PREFS_KEY, sanitize(prefs));
 }
 
-export const EXPLORE_DEFAULTS = JSON.parse(JSON.stringify(DEFAULT_PREFS));
+export const EXPLORE_DEFAULTS = Object.freeze(DEFAULT_PREFS);
 export const EXPLORE_BUDGET_MIN = MAX_MINUTES_MIN;
 export const EXPLORE_BUDGET_MAX = MAX_MINUTES_MAX;
 

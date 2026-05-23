@@ -353,7 +353,7 @@ def main() -> int:
                 },
                 "places": places,
             },
-            indent=2,
+            separators=(",", ":"),
             ensure_ascii=False,
         ),
         encoding="utf-8",

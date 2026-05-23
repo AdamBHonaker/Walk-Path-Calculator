@@ -273,8 +273,9 @@ def _bake_green_signals(
     import math as _math
 
     import numpy as _np
+    import shapely as _shapely
     from scipy.spatial import cKDTree as _cKDTree
-    from shapely.geometry import Point as _Point, Polygon as _Polygon
+    from shapely.geometry import Polygon as _Polygon
     from shapely.strtree import STRtree as _STRtree
 
     data_dir   = Path(__file__).resolve().parent / "data"
@@ -294,35 +295,107 @@ def _bake_green_signals(
         return canopy_scores, park_scores
 
     # ---- 1. Edge midpoints (arc-length) in projected metres ---------------
-    mid_xy = _np.zeros((n, 2), dtype=_np.float64)
-    for i, ((u, v), geom) in enumerate(zip(edges, attr_geometry)):
-        if geom and len(geom) >= 2:
-            pts = list(geom)
-            segs: list[float] = []
-            total = 0.0
-            for (lon0, lat0), (lon1, lat1) in zip(pts, pts[1:]):
-                dx = (lon1 - lon0) * m_per_deg_lon
-                dy = (lat1 - lat0) * _M_PER_DEG_LAT
-                seg = _math.hypot(dx, dy)
-                segs.append(seg)
-                total += seg
-            target = total / 2.0
-            acc = 0.0
-            mid_lon, mid_lat = pts[-1]
-            for j in range(len(segs)):
-                if acc + segs[j] >= target:
-                    f = (target - acc) / segs[j] if segs[j] > 0 else 0.0
-                    lon0, lat0 = pts[j]
-                    lon1, lat1 = pts[j + 1]
-                    mid_lon = lon0 + f * (lon1 - lon0)
-                    mid_lat = lat0 + f * (lat1 - lat0)
-                    break
-                acc += segs[j]
-            mid_xy[i] = _proj(mid_lon, mid_lat)
-        else:
-            u_lon, u_lat = vx_lons[u], vx_lats[u]
-            v_lon, v_lat = vx_lons[v], vx_lats[v]
-            mid_xy[i] = _proj((u_lon + v_lon) / 2.0, (u_lat + v_lat) / 2.0)
+    # OPT-053: flatten every edge's geometry into one (M, 2) coord array, then
+    # compute segment lengths and the arc-length midpoint of each edge in a
+    # single vectorized pass. Cross-edge "diff" rows (the seam between the
+    # last coord of edge k and the first coord of edge k+1) get zeroed out so
+    # they don't pollute the global cumulative arc-length array. Edges with
+    # no geometry (or fewer than 2 coords) fall back to the endpoint
+    # midpoint via the same vectorized projection at the end of this block.
+    geom_lens = _np.array(
+        [len(g) if g is not None else 0 for g in attr_geometry],
+        dtype=_np.int64,
+    )
+    has_geom = geom_lens >= 2
+    geom_idx = _np.flatnonzero(has_geom)
+
+    vx_lons_arr = _np.asarray(vx_lons, dtype=_np.float64)
+    vx_lats_arr = _np.asarray(vx_lats, dtype=_np.float64)
+
+    mid_lon_arr = _np.zeros(n, dtype=_np.float64)
+    mid_lat_arr = _np.zeros(n, dtype=_np.float64)
+
+    # No-geometry edges → endpoint midpoint (vectorized).
+    no_geom_idx = _np.flatnonzero(~has_geom)
+    if no_geom_idx.size:
+        edge_us = _np.fromiter(
+            (edges[i][0] for i in no_geom_idx), dtype=_np.int64, count=no_geom_idx.size,
+        )
+        edge_vs = _np.fromiter(
+            (edges[i][1] for i in no_geom_idx), dtype=_np.int64, count=no_geom_idx.size,
+        )
+        mid_lon_arr[no_geom_idx] = (vx_lons_arr[edge_us] + vx_lons_arr[edge_vs]) / 2.0
+        mid_lat_arr[no_geom_idx] = (vx_lats_arr[edge_us] + vx_lats_arr[edge_vs]) / 2.0
+
+    if geom_idx.size:
+        g_lens = geom_lens[geom_idx]
+        # Per-edge coord offsets into the flat array. edge k owns coords
+        # [edge_coord_offsets[k], edge_coord_offsets[k+1]).
+        edge_coord_offsets = _np.empty(geom_idx.size + 1, dtype=_np.int64)
+        edge_coord_offsets[0] = 0
+        _np.cumsum(g_lens, out=edge_coord_offsets[1:])
+        total_coords = int(edge_coord_offsets[-1])
+
+        flat = _np.empty((total_coords, 2), dtype=_np.float64)
+        for k, i in enumerate(geom_idx):
+            s = int(edge_coord_offsets[k])
+            e = int(edge_coord_offsets[k + 1])
+            flat[s:e] = attr_geometry[i]
+
+        # Per-segment vectors in projected metres.
+        diff = _np.diff(flat, axis=0)
+        seg_lens_all = _np.hypot(
+            diff[:, 0] * m_per_deg_lon,
+            diff[:, 1] * _M_PER_DEG_LAT,
+        )
+        # Zero out the cross-edge "diff" between consecutive edges so they
+        # contribute 0 to any edge's cumulative arc length.
+        if geom_idx.size > 1:
+            cross_indices = edge_coord_offsets[1:-1] - 1
+            seg_lens_all[cross_indices] = 0.0
+
+        # Global cumulative arc length over the flattened coords, with a
+        # leading 0 so cum_global[i] = arc length up to coord i.
+        cum_global = _np.empty(total_coords, dtype=_np.float64)
+        cum_global[0] = 0.0
+        _np.cumsum(seg_lens_all, out=cum_global[1:])
+
+        edge_starts = edge_coord_offsets[:-1]
+        edge_ends   = edge_coord_offsets[1:] - 1
+        edge_total  = cum_global[edge_ends] - cum_global[edge_starts]
+        edge_target = cum_global[edge_starts] + edge_total / 2.0
+
+        # Find the coord pair containing each edge's midpoint via a single
+        # searchsorted. The cross-edge diffs are zero, so cum_global has flat
+        # plateaus at the seam — searchsorted with `side='left'` lands at or
+        # before the plateau, never inside the next edge's segments.
+        search_idx = _np.searchsorted(cum_global, edge_target, side="left")
+        # When edge_target equals cum_global[start] (degenerate zero-length edge),
+        # searchsorted returns `start`, but we need at least `start + 1` so that
+        # `j = search_idx - 1 = start` is a valid lower bound.
+        search_idx = _np.maximum(search_idx, edge_starts + 1)
+        # Also clamp to the upper bound — the last coord of any edge can be the
+        # answer when target lies exactly on it.
+        search_idx = _np.minimum(search_idx, edge_ends)
+
+        j = search_idx - 1
+        seg_len_j = cum_global[j + 1] - cum_global[j]
+        # f = (target - cum[j]) / seg_len_j, with 0 used for zero-length segs.
+        safe_seg = _np.where(seg_len_j > 0, seg_len_j, 1.0)
+        f = _np.where(seg_len_j > 0, (edge_target - cum_global[j]) / safe_seg, 0.0)
+
+        lon_a = flat[j, 0]
+        lat_a = flat[j, 1]
+        lon_b = flat[j + 1, 0]
+        lat_b = flat[j + 1, 1]
+        mid_lon_arr[geom_idx] = lon_a + f * (lon_b - lon_a)
+        mid_lat_arr[geom_idx] = lat_a + f * (lat_b - lat_a)
+
+    # Project all midpoints in one bulk multiply.
+    mid_xy = _np.column_stack([
+        mid_lon_arr * m_per_deg_lon,
+        mid_lat_arr * _M_PER_DEG_LAT,
+    ])
 
     # ---- 2. Tree canopy: per-edge KDE density lookup ----------------------
     if tree_path.exists():
@@ -384,23 +457,33 @@ def _bake_green_signals(
                     park_acres.append(0.0)
 
             if projected_polys:
+                # OPT-030: shapely 2.x batched STRtree.nearest + shapely.distance.
+                # The catalog's "KDTree(park_centroids)" recipe would change the
+                # math (centroid distance for a big park like Lincoln Park is
+                # hundreds of metres even for edges that touch its boundary),
+                # so we keep the original "distance to polygon edge" semantics
+                # via shapely's vectorized API.
                 strtree = _STRtree(projected_polys)
-                for i in range(n):
-                    pt = _Point(float(mid_xy[i, 0]), float(mid_xy[i, 1]))
-                    nearest_idx = int(strtree.nearest(pt))
-                    nearest_poly = projected_polys[nearest_idx]
-                    dist = float(pt.distance(nearest_poly))
-                    if dist >= _PARK_CUTOFF_M:
-                        continue
-                    base = 1.0 - dist / _PARK_CUTOFF_M
-                    acres = park_acres[nearest_idx]
-                    log_acres = _math.log10(max(1.0, acres)) if acres > 0 else 0.0
-                    factor = log_acres / _PARK_ACRES_LOG_SAT  # 0 at 1 acre, 1 at 100 acres
-                    multiplier = min(
-                        _PARK_MULT_MAX,
-                        _PARK_MULT_MIN + (_PARK_MULT_MAX - _PARK_MULT_MIN) * factor,
-                    )
-                    park_scores[i] = _np.float32(min(1.0, max(0.0, base * multiplier)))
+                mid_pts = _shapely.points(mid_xy)
+                nearest_idx_arr = strtree.nearest(mid_pts)
+                polys_arr = _np.asarray(projected_polys)
+                nearest_polys = polys_arr[nearest_idx_arr]
+                dists = _shapely.distance(mid_pts, nearest_polys)
+
+                acres_arr = _np.asarray(park_acres, dtype=_np.float64)
+                near_acres = acres_arr[nearest_idx_arr]
+
+                # base = max(0, 1 - dist / CUTOFF). Edges beyond CUTOFF get 0.
+                base = _np.clip(1.0 - dists / _PARK_CUTOFF_M, 0.0, 1.0)
+                # log10 acres saturating at _PARK_ACRES_LOG_SAT, clamped >= 0.
+                with _np.errstate(divide="ignore", invalid="ignore"):
+                    log_acres = _np.where(near_acres > 0, _np.log10(_np.maximum(1.0, near_acres)), 0.0)
+                factor = log_acres / _PARK_ACRES_LOG_SAT  # 0 at 1 acre, 1 at 100 acres
+                multiplier = _np.minimum(
+                    _PARK_MULT_MAX,
+                    _PARK_MULT_MIN + (_PARK_MULT_MAX - _PARK_MULT_MIN) * factor,
+                )
+                park_scores[:] = _np.clip(base * multiplier, 0.0, 1.0).astype(_np.float32)
             else:
                 print(f"  [warn] {parks_path.name} contained no usable polygons — park_proximity_score=0 for every edge")
         except (OSError, ValueError, KeyError, TypeError) as e:

@@ -41,6 +41,11 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 OUTPUT_PATH = Path(__file__).resolve().parent.parent / "data" / "chicago_boundary.json"
 USER_AGENT = "Passage isochrone ingest (https://github.com/AdamBHonaker/Passage)"
 
+# Douglas–Peucker tolerance for the boundary polygon. ~0.0001° ≈ 10 m, far
+# below the resolution at which `/explore` clips isochrones — sub-meter ring
+# detail is wasted at that step.
+BOUNDARY_SIMPLIFY_TOLERANCE: float = 0.0001
+
 logger = logging.getLogger("build_chicago_boundary")
 
 
@@ -101,6 +106,9 @@ def assemble(elements: list[dict]) -> Polygon | MultiPolygon:
 def main() -> int:
     elements = fetch()
     boundary = assemble(elements)
+    boundary = boundary.simplify(BOUNDARY_SIMPLIFY_TOLERANCE, preserve_topology=True)
+    if not isinstance(boundary, (Polygon, MultiPolygon)) or boundary.is_empty:
+        raise RuntimeError(f"simplify produced unexpected geometry: {boundary.geom_type}")
     geom = mapping(boundary)
     member_count = sum(1 for el in elements if el.get("type") == "way")
 

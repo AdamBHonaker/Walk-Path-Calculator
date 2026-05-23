@@ -74,7 +74,7 @@ def main() -> int:
 
     OUTPUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_JSON.write_text(
-        json.dumps({k: list(v) for k, v in sorted(centroids.items())}, indent=2),
+        json.dumps({k: list(v) for k, v in sorted(centroids.items())}, separators=(",", ":")),
         encoding="utf-8",
     )
     print(f"Wrote {OUTPUT_JSON} ({len(centroids)} entries)\n")

@@ -1815,6 +1815,262 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 
 ## Efficiency Improvements Implemented
 
+### 2026-05-23 · Build-script speedups + greenest bake vectorization (OPT-029, OPT-030, OPT-052, OPT-053 from CHUNK-10 of 2026-05-22 audit)
+
+**Files:** [backend/scripts/build_address_points.py](../../backend/scripts/build_address_points.py), [backend/scripts/build_intersections.py](../../backend/scripts/build_intersections.py), [backend/scripts/build_tree_canopy.py](../../backend/scripts/build_tree_canopy.py), [backend/fetch_street_graph.py](../../backend/fetch_street_graph.py), [backend/street_graph_igraph.pkl](../../backend/street_graph_igraph.pkl) (regenerated), [backend/.env](../../backend/.env) (`STREET_GRAPH_SHA256` rotated)
+
+**Impact:** 🔴 High (OPT-029, OPT-030) + 🟡 Medium (OPT-052, OPT-053)
+
+**Category:** Build time / Vectorization
+
+**What was inefficient:** None of the four touch runtime behavior — they all live in scripts that run periodically (FTS5 geocode-index refresh, yearly tree-canopy ingest, yearly graph bake). The two SQLite FTS5 builds journaled every page write and fsync'd after each one (OPT-029). The MRLC tree-canopy bake fetched its three longitudinal chunks sequentially despite each one being I/O-bound (OPT-052). The greenest-routing bake walked ~233k edges through a pure-Python arc-length midpoint loop (OPT-053), then walked them again calling `STRtree.nearest()` once per edge with the per-call Python overhead (OPT-030).
+
+**Implemented:**
+- **OPT-029** — Both `build_address_points.py` and `build_intersections.py` now set `PRAGMA journal_mode=OFF`, `PRAGMA synchronous=OFF`, `PRAGMA temp_store=MEMORY` immediately after `connect()` and before the FTS5 bulk inserts. The runtime cache connection in `geocoding._cache_connect` reopens with WAL + `synchronous=NORMAL`, so the build-only PRAGMAs don't leak into production. Catalog target: ~4–7 min off the 519k-address + 45k-intersection rebuild.
+- **OPT-052** — `build_tree_canopy.fetch_and_bake` now submits all three `_fetch_chunk` calls to a `ThreadPoolExecutor(max_workers=CHUNK_COUNT)` and accumulates the results sequentially. Fetch is I/O bound (MRLC GeoServer round-trip ~3–10 s each), so 3-way parallelism cuts the fetch step from ~3× the slowest chunk to ~1×. Accumulation stays sequential because `_accumulate` writes to shared `sum_flat`/`cnt_flat` arrays via `+=`, which is not atomic across threads.
+- **OPT-053** — `_bake_green_signals` in `fetch_street_graph.py` now flattens all edge geometries into one `(M, 2)` coord array with per-edge offsets, computes per-segment lengths via `np.hypot` + `np.diff` in one C pass, zeros out the cross-edge "seam" diffs so they don't pollute the cumulative-arc-length, then resolves each edge's midpoint via a single `np.searchsorted(cum_global, edge_target)` and vectorized interpolation. No-geometry edges (rare — endpoint-only routing edges) get a vectorized endpoint midpoint via `vx_lons/vx_lats` numpy slices.
+- **OPT-030** — The catalog's specific recipe ("`scipy.spatial.KDTree(park_centroids)`, query all edge midpoints in one numpy call") was course-corrected: switching from polygon-distance to centroid-distance would change the math for large parks (e.g. Lincoln Park's centroid is ~1 km from edges that actually touch its boundary). Shipped the same intent — batch the lookup — via shapely 2.x's vectorized `STRtree.nearest(point_array)` followed by `shapely.distance(points, nearest_polys)`, preserving the original "distance to polygon edge" semantics exactly. The downstream log10(acres) / multiplier / clip pipeline is now a vectorized numpy chain.
+
+**Verification:** Apples-to-apples comparison of OLD vs NEW `_bake_green_signals` on the same int32-roundtripped inputs (extracted from the pre-rebuild pickle so both functions see identical bytes):
+
+| Output | Max abs diff | Mean abs diff | Notes |
+|--------|--------------|---------------|-------|
+| `edge_park_proximity_f32`  | 3.7e-9 | 6.1e-14 | bit-identical (float32 noise) |
+| `edge_tree_canopy_f32`     | 1.6e-2 | 1.6e-7  | mean is float32 noise; max of 1.6% affects a handful of edges that sit exactly on a canopy-cell boundary where the slightly-different vectorized midpoint shifts which cell wins |
+
+Old bake: 22.4 s. New bake: 7.4 s on the same input. **~3× speedup** (catalog target: 2–5 min off the yearly graph bake, which dominates the bake step; the FTS5 + MRLC speedups stack on top). Backend suite (319 tests) green against the rebuilt pickle.
+
+**Artifact rotation:** Rebuilt `backend/street_graph_igraph.pkl` (~28 MB) via `_rebuild_pickle_from_graphml()` in 115 s end-to-end. New SHA-256: `3d10cfbf1c9bafe87c53dde365efd05d6854c81f094d4cfe8993990ebadf37f6` (previous: `415d8be872887b6e0cfc3456954c26101d420584726aed0ae309d50e948b3eba`). Updated `backend/.env` `STREET_GRAPH_SHA256` locally.
+
+**Operator follow-up (CHUNK-10 deploy):**
+1. Upload the new `backend/street_graph_igraph.pkl` to the `street-graph` GitHub release tag (overwrite the existing asset).
+2. Update the `STREET_GRAPH_SHA256` Railway service variable to `3d10cfbf1c9bafe87c53dde365efd05d6854c81f094d4cfe8993990ebadf37f6`.
+3. Then push CHUNK-10's code changes. Railway rebuilds: the curl fetches the new pickle, the build-time hash check matches, and the worker loads cleanly. Failure to do steps 1–2 before pushing will degrade routing to haversine until corrected (see CLAUDE.md "Pickle integrity check").
+
+`ARTIFACT_REV` is already at `2026-05-23` from CHUNK-03, so no extra cache-busting needed — the SHA-256 change interpolated into the curl RUN busts the artifact-layer cache on its own.
+
+PV-012 covers the production sign-off (Lakeview East → Lincoln Park greenest fixture after the new pickle deploys).
+
+---
+
+### 2026-05-23 · Dockerfile artifact `curl` reordered before `COPY . .` (OPT-027 from CHUNK-09 of 2026-05-22 audit)
+
+**Files:** [backend/Dockerfile](../../backend/Dockerfile), [backend/.dockerignore](../../backend/.dockerignore), [CLAUDE.md](../../CLAUDE.md)
+
+**Impact:** 🔴 High
+
+**Category:** Docker layer caching / Deploy time
+
+**What was inefficient:** The `ARG ARTIFACT_REV` + `ARG STREET_GRAPH_SHA256` + curl `RUN` block sat after `COPY . .` in the Dockerfile. BuildKit keys each layer on the command string + the cumulative state of its parent layers, so any code change invalidated `COPY . .` and every layer downstream — including the ~100 MB curl that fetched `street_graph_igraph.pkl` (~28 MB), `chicago_geocode.db` (~72 MB), and `chicago_boundary.json`. A code-only Railway deploy paid the full re-download (~2–5 min) every time.
+
+**Implemented:** Moved the artifact section in [backend/Dockerfile](../../backend/Dockerfile) so the `RUN curl ...` (and its `ARG` declarations) sit immediately after `RUN pip install` and before `COPY . .`. Added `mkdir -p data` at the top of the curl `RUN` since the `data/` directory now doesn't exist yet at that point (it lived in the source tree and arrived with `COPY . .`). The build-time SEC-001 SHA-256 check still fires — `STREET_GRAPH_SHA256` is still interpolated into the same `RUN`, so a hash rotation busts the layer's cache on its own and `ARTIFACT_REV` is now the only knob for a `.db` / boundary refresh.
+
+Defensively expanded [backend/.dockerignore](../../backend/.dockerignore) to exclude the three release-fetched artifacts (`data/chicago_geocode.db*`, `data/chicago_boundary.json`) so a local `docker build` cannot overlay the curl-fetched bytes with a developer's local copies on the subsequent `COPY . .`. `street_graph_igraph.pkl*` was already excluded. Without this, the developer's local `data/chicago_boundary.json` (regenerable via the build script) would silently replace the curl-fetched copy; that's the kind of "wait, why does my prod look different from my local image" foot-gun the layer reorder would otherwise introduce.
+
+Updated the matching paragraph in [CLAUDE.md](../../CLAUDE.md) "Greenest-routing graph release runbook" → "What this means for refreshes" to reflect that `ARTIFACT_REV` is now the **only** knob that busts the artifact-layer cache for a `.db` / boundary refresh (code changes used to bust it incidentally; they no longer do).
+
+**Verification:** Backend suite (319 tests) green (Python code unchanged). The actual deploy-time savings (~2–5 min on code-only Railway pushes) materialize on the next push to main — the first deploy after the reorder will still pay the full curl since `ARTIFACT_REV` was bumped to `2026-05-23` in CHUNK-03; subsequent code-only deploys reuse the cached artifact layer.
+
+---
+
+### 2026-05-23 · Multi-worker uvicorn + dedicated heatmap pool + middleware reorder (OPT-035, OPT-043, OPT-044, OPT-069 from CHUNK-08 of 2026-05-22 audit)
+
+**Files:** [backend/Dockerfile](../../backend/Dockerfile), [backend/main.py](../../backend/main.py), [backend/.env.example](../../backend/.env.example), [CLAUDE.md](../../CLAUDE.md), [docs/Pending_Verification.md](../Pending_Verification.md)
+
+**Impact:** 🔴 High (OPT-035) + 🟡 Medium (OPT-043, OPT-044, OPT-069)
+
+**Category:** Throughput / Concurrency / Middleware ordering / Per-request CPU
+
+**What was inefficient:** uvicorn launched as a single worker, leaving Railway's vCPUs idle on CPU-bound routing + isochrone work (OPT-035). The five `/explore` heatmap futures shared the default loop executor, where they could queue behind unrelated work under load (OPT-069). CORS was registered first, so it ran innermost — OPTIONS preflights paid the security-headers + GZip cost before short-circuiting (OPT-043). The slowapi limiter key function re-parsed `X-Forwarded-For` (split + strip + list-comp) on every request, including `/health` polling traffic (OPT-044).
+
+**Implemented:**
+- **OPT-035** — [backend/Dockerfile](../../backend/Dockerfile) `CMD` is now `["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log --log-level warning --workers ${UVICORN_WORKERS:-2}"]`. Shell form is required so `${UVICORN_WORKERS:-2}` interpolates; `exec` replaces sh with uvicorn so SIGTERM reaches uvicorn directly. Default 2 workers fits Railway's smallest 2-vCPU plan; the env var lets operators tune up on bigger plans. `UVICORN_WORKERS` documented in [backend/.env.example](../../backend/.env.example).
+- **OPT-069** — Module-level `_heatmap_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="heatmap")` in [backend/main.py](../../backend/main.py). `/explore`'s five `loop.run_in_executor(None, _clip, …)` calls switched to `loop.run_in_executor(_heatmap_pool, _clip, …)`. Multi-worker uvicorn gives each process its own pool, so concurrent capacity scales as `workers × 8 heatmap threads`.
+- **OPT-043** — Middleware registration order reversed so CORS is the **last** `add_middleware` call (Starlette LIFO → CORS is outermost on the request side, short-circuits OPTIONS preflights without entering GZip or security-headers). New file-order top-to-bottom: `stash_client_ip` decorator → `add_security_headers` decorator → `GZipMiddleware` → `CORSMiddleware`. Verified by smoke test: OPTIONS response carries only CORS headers (no `X-Content-Type-Options`, no GZip).
+- **OPT-044** — New `stash_client_ip` HTTP middleware sets `request.state.client_ip = _client_ip(request)` once per request. Limiter `key_func` is now `_client_ip_key`, which reads the cached value with a defensive fallback to the direct parse for the rate-limit-exceeded handler path. Saves the split-strip-list-comp work on every `@limiter.limit(...)` decorator invocation.
+
+Backend suite (319 tests) green. Smoke: heatmap pool reports `max_workers=8`, OPTIONS preflight returns 200 with CORS headers only, POST `/route` returns 200 with `Content-Encoding: gzip` + `X-Content-Type-Options: nosniff`.
+
+**Doc impact landed in the same chunk:**
+- [`backend/.env.example`](../../backend/.env.example) — documented `UVICORN_WORKERS` next to the existing `TRUSTED_PROXY_HOPS` block.
+- [`CLAUDE.md`](../../CLAUDE.md) "Running Locally" — noted that production runs `--workers ${UVICORN_WORKERS:-2}` and the local `uvicorn --reload` stays single-process (it is incompatible with multi-worker).
+- [`docs/Pending_Verification.md`](../Pending_Verification.md) — added PV-011 covering the Railway memory headroom check, `hey -c 4 -n 100` p95 stability, OPTIONS-short-circuit verification, and `TRUSTED_PROXY_HOPS` smoke under the live proxy chain.
+
+---
+
+### 2026-05-23 · Lifespan warm-up + awaited graph preload (OPT-034, OPT-050, OPT-054 from CHUNK-07 of 2026-05-22 audit)
+
+**Files:** [backend/main.py](../../backend/main.py)
+
+**Impact:** 🔴 High (OPT-034) + 🟡 Medium (OPT-050, OPT-054)
+
+**Category:** Cold-start latency
+
+**What was inefficient:** The lifespan only scheduled `_preload_graph` via `asyncio.ensure_future` — the first `/route` arriving during load raced the preloader for `_graph_lock` (OPT-050). Heatmap STRtrees (places, residential, parks, green-space, tree canopy) and the Chicago boundary JSON parse were all lazy on the first `/explore`, adding ~200–500 ms to that cold-start request (OPT-034 + OPT-054).
+
+**Implemented:** Reshaped `lifespan` in [backend/main.py](../../backend/main.py) so the container blocks on the graph load once, then warms every clipper index in parallel via `loop.run_in_executor`:
+
+```python
+await loop.run_in_executor(None, _preload_graph)
+results = await asyncio.gather(
+    *(loop.run_in_executor(None, fn) for _, fn in _WARMERS),
+    return_exceptions=True,
+)
+```
+
+The `_WARMERS` tuple drives six tasks in parallel: `places._ensure_index`, `places._ensure_residential_index`, `parks._ensure_index`, `green_space._ensure_index`, `tree_canopy._ensure_index`, `explore._get_chicago_boundary`. Each warmer's per-module lazy path still works as a fallback when its `run_in_executor` raises — the failure is logged but doesn't block boot. Added explicit `import places, parks, green_space, tree_canopy, explore` lines so the module references are available for the warm-up alongside the existing `from … import …` function aliases.
+
+**Cold-start measurement (local TestClient):**
+
+| Phase | Before | After |
+|-------|--------|-------|
+| `lifespan` setup (`yield`)   | ~instant (preload scheduled) | ~2.6 s (preload awaited + warmers) |
+| First `/explore` after deploy | ~700–900 ms (catalog estimate) | 218 ms (measured) |
+| Subsequent `/explore`         | ~250 ms                       | 260 ms (unchanged) |
+
+**OPT-054** is covered by OPT-034's lifespan warmer firing `explore._get_chicago_boundary` once at boot — the existing module-level `_boundary` / `_boundary_loaded` cache then services every subsequent call. The catalog's "top-level `_BOUNDARY = _load_boundary()`" recipe wasn't needed since the lazy cache plus the lifespan call gives the same eager-load behavior.
+
+**Trade-off documented in the catalog and confirmed:** container start-up grows by the graph-load duration (~2.5 s on Railway's hardware). `/health` only returns after `lifespan` yields, so the container reports healthy only once everything is warm — that's strictly better than the prior "healthy → 700 ms `/explore` cold-start tax" race. Backend suite (319 tests) green.
+
+---
+
+### 2026-05-23 · numpy + shapely micro-optims across the explore hot path (OPT-033, OPT-046, OPT-048, OPT-051, OPT-080 from CHUNK-06 of 2026-05-22 audit)
+
+**Files:** [backend/explore.py](../../backend/explore.py), [backend/places.py](../../backend/places.py), [backend/walking.py](../../backend/walking.py), [backend/tree_canopy.py](../../backend/tree_canopy.py)
+
+**Impact:** 🔴 High (OPT-033) + 🟡 Medium (OPT-046, OPT-048, OPT-051, OPT-080)
+
+**Category:** Hot-path compute / Vectorization
+
+**What was inefficient:** Five small but stacked inefficiencies across the `/explore` flow each kept work in Python that shapely 2.0 / numpy 2.x can do in C: a `np.asarray(list_of_python_floats)` double-walk over the Dijkstra distance row (OPT-033), a `prepared.intersects()` second filter on candidates already narrowed by STRtree (OPT-046), two Python list comprehensions over the post-filter edgelist (OPT-048), a per-cell `box(...)` constructor on every canopy cell (OPT-051), and a per-place `Point(p["lon"], p["lat"])` in the places STRtree build (OPT-080).
+
+**Implemented:**
+- **OPT-033** — `_reachable_indices` in [backend/explore.py](../../backend/explore.py) now consumes the distance row via `np.fromiter(row, dtype=np.float64, count=len(row))` — pre-allocates the buffer, skips the intermediate-list walk that `np.asarray` does internally. igraph 1.0.0 has no `output="numpy"` mode on `distances()`, so the catalog's "numpy output if supported" branch defers to the `np.fromiter` fallback.
+- **OPT-046** — Dropped the `prepared = prep(polygon)` / `if not prepared.intersects(poly): continue` second filter in `places.residential_heatmap`. STRtree already returns only bbox-overlapping candidates, and `polygon.intersection(poly)` short-circuits internally on disjoint pairs.
+- **OPT-048** — `_populate_edge_caches` (v1 / graphml path) now does `el = np.asarray(G.get_edgelist(), dtype=np.int32)` once, then `_edge_sources = el[:, 0]` / `_edge_targets = el[:, 1]` — one C-level traversal of the edgelist instead of two Python list comprehensions.
+- **OPT-051** — `tree_canopy_in_polygon` now bulk-builds per-cell squares via `shapely.box(xmin, ymin, xmax, ymax)` (the catalog's "pre-template + affine translate" recipe is actually slower than `box(...)`; the real win is shapely 2.0's vectorized constructor — **60× faster** in a microbench on 5,000 cells). Band bucketing moved to a vectorized `np.where`-chain over `DENSITY_BANDS`. The dead `_band_for_density` helper was removed.
+- **OPT-080** — `places._ensure_index` now does `coords = np.fromiter(...)` (interleaved lon/lat) → `shapely.points(coords)` — **~20× faster** than `[Point(p["lon"], p["lat"]) for p in places]` on the ~16k Chicago places (190 ms → 10 ms in microbench). The `Point` import stays in `places.py` (annotated `# noqa: F401`) because `test_places.py` accesses it as `places.Point` for its own point-containment assertions.
+
+Backend suite (319 tests) green after the fixes. Wire smoke: 25-min Logan Square `/explore` now lands in ~235 ms with valid canopy bands and 18.8 KB on the wire — the bulk-box path produces the same MultiPolygon shape the unioned per-cell loop did.
+
+**Catalog course correction noted in the diff:** OPT-051's "pre-template a unit square + affine translate" recipe was specifically benchmarked and found to be ~1.5× *slower* than `box(...)`. Shapely 2.0's vectorized `shapely.box(arrays...)` was the actual win path. The catalog's underlying goal (eliminate per-cell Python construction) was correct; the proposed recipe was not.
+
+---
+
+### 2026-05-23 · `walking._flavor_weights` cache reshape — pre-bake green mask + float32 + versioned LRU (OPT-031, OPT-032, OPT-045, OPT-068 from CHUNK-05 of 2026-05-22 audit)
+
+**Files:** [backend/walking.py](../../backend/walking.py)
+
+**Impact:** 🔴 High (OPT-031, OPT-032) + 🟡 Medium (OPT-045, OPT-068)
+
+**Category:** Hot-path compute / Memory & eviction / Lock contention
+
+**What was inefficient:** The greenest weight build paid four small but stacked costs on every cache miss: a per-call `np.asarray(canopy, dtype=np.float32)` copy on already-float32 columns (OPT-031), a Python list comprehension over ~230k highway tag strings to rebuild the green-edge boolean mask (OPT-032), an unbounded `dict` cache that could accumulate stale-version entries forever after graph reloads (OPT-045), and a `len(cached) == G.ecount()` length check inside the DCL on every cache lookup (OPT-068).
+
+**Implemented:**
+- **OPT-031** — `_populate_edge_caches_v2` now calls `np.asarray(canopy_raw, dtype=np.float32)` / `np.asarray(parks_raw, dtype=np.float32)` once at load (no-op for already-float32 pickled arrays, but kills the defensive `.astype()` copies that used to run per cache miss). `_build_flavor_weights` consumes the pre-cast columns directly: `_GREEN_CANOPY_WEIGHT * canopy`, no inline cast.
+- **OPT-032** — Added `_edge_green_mask: np.ndarray | None` global. `_populate_edge_caches_v2` bakes it once via `np.fromiter((1 if h in _GREEN_HIGHWAYS else 0 for h in _edge_highways), dtype=np.uint8, count=len(_edge_highways))`. The greenest branch reads `_edge_green_mask` instead of rebuilding the comprehension. A length-mismatch fallback rebuilds locally so monkeypatched test fixtures (which set `_edge_highways` to small arrays without touching the cached mask) still work.
+- **OPT-045** — `_flavor_weights` is now an `OrderedDict` capped at `_FLAVOR_WEIGHTS_MAXSIZE = 8` entries. Overflow drops the oldest entry via `.popitem(last=False)` so cross-eviction-cycle stale-version entries cannot leak.
+- **OPT-068** — Added `_graph_version: int` global, bumped at the end of both `_populate_edge_caches` (v1) and `_populate_edge_caches_v2`. The `_flavor_weights` cache key is now `(flavor, _graph_version)`, so a hit guarantees the entry was built against the currently-loaded graph — the `len(cached) == G.ecount()` check is gone from both the fast path and the DCL inner check.
+
+Smoke check on a real load (232,759 edges): cold greenest build ~2.3 ms; warm hit ~10 µs; `_edge_green_mask` shape (232759,) dtype uint8; `_edge_tree_canopy` dtype float32 at load; cache key `('greenest', 1)`. Backend suite (319 tests, including `test_walking_greenest.py`'s NaN/Inf sanitization fixture which monkey-patches the edge columns) all green.
+
+**Out of scope:** `_combined_weights` (the avoid_stairs variant cache in `_get_avoid_stairs_weights`) still uses the legacy `dict` + `len(cached) == G.ecount()` shape. The catalog called it out for OPT-045 by mentioning `…variant…` in the cache key, but kept its concrete fix scoped to `_flavor_weights`. A future pass could unify the two caches under the same `(key, _graph_version)` shape if the duplication becomes load-bearing.
+
+---
+
+### 2026-05-23 · Pre-baked JSON artifacts minified (OPT-028, OPT-072 from CHUNK-04 of 2026-05-22 audit)
+
+**Files:** [backend/scripts/build_places_osm.py](../../backend/scripts/build_places_osm.py), [backend/scripts/_curated_common.py](../../backend/scripts/_curated_common.py), [backend/scripts/build_community_area_centroids.py](../../backend/scripts/build_community_area_centroids.py), [backend/data/places_osm.json](../../backend/data/places_osm.json), [backend/data/places_curated.json](../../backend/data/places_curated.json), [backend/data/community_area_centroids.json](../../backend/data/community_area_centroids.json)
+
+**Impact:** 🔴 High (OPT-028) + 🟢 Low (OPT-072)
+
+**Category:** Artifact size / Startup parse cost
+
+**What was inefficient:** Three build scripts wrote their JSON output with `indent=2`, adding ~30–40% pure whitespace bloat. `places_osm.json` (3.35 MB) is parsed at backend startup by `places.py` and the indentation lengthened both the on-disk artifact and the startup parse path. `places_curated.json` and `community_area_centroids.json` carried the same pattern. Every other build script in `scripts/` had already moved to `separators=(",", ":")` — these three were the holdouts.
+
+**Implemented:** Swapped `indent=2` → `separators=(",", ":")` in:
+- [backend/scripts/build_places_osm.py:356](../../backend/scripts/build_places_osm.py#L356) (OPT-028)
+- [backend/scripts/_curated_common.py:64](../../backend/scripts/_curated_common.py#L64) (OPT-028)
+- [backend/scripts/build_community_area_centroids.py:77](../../backend/scripts/build_community_area_centroids.py#L77) (OPT-072)
+
+Re-emitted each artifact by round-tripping the existing JSON through the new separators (content-preserving — equivalent to re-running the build scripts modulo external-data drift, which we deliberately avoided so the on-disk data stays identical to the most recent fetched snapshot):
+
+| Artifact | Before | After | Reduction |
+|----------|--------|-------|-----------|
+| `places_osm.json` | 3,354,202 B | 2,287,226 B | 31.8% |
+| `places_curated.json` | 561,940 B | 378,930 B | 32.6% |
+| `community_area_centroids.json` | 4,308 B | 2,689 B | 37.6% |
+
+Backend suite (319 tests) still green — `places.py` happily parses the minified artifacts.
+
+---
+
+### 2026-05-23 · Geometry precision + heatmap simplification + boundary simplify (OPT-024, OPT-026, OPT-083 from CHUNK-03 of 2026-05-22 audit)
+
+**Files:** [backend/utils.py](../../backend/utils.py), [backend/main.py](../../backend/main.py), [backend/places.py](../../backend/places.py), [backend/parks.py](../../backend/parks.py), [backend/green_space.py](../../backend/green_space.py), [backend/heatmap_clipper.py](../../backend/heatmap_clipper.py), [backend/scripts/build_chicago_boundary.py](../../backend/scripts/build_chicago_boundary.py), [backend/data/chicago_boundary.json](../../backend/data/chicago_boundary.json), [backend/Dockerfile](../../backend/Dockerfile)
+
+**Impact:** 🔴 High
+
+**Category:** Network payload / Geometry detail / Artifact size
+
+**What was inefficient:** GeoJSON coordinates in every `/route` and `/explore` response shipped at full float64 (15+ digits), even though the UI never renders below ~1 m precision. Heatmap polygons (residential, parks, green-space) emitted at full OSM/CPD ring detail (often hundreds of vertices per polygon). And `chicago_boundary.json` carried sub-meter ring detail wasted on the lakefront-clip step that only needs ~10 m precision.
+
+**Implemented:**
+- **OPT-024** — Added `quantize_geojson(obj, decimals=5)` to [backend/utils.py](../../backend/utils.py) — a recursive helper that rounds every float to 5 decimals (~1.1 m precision). Wrapped both `/route` response builders (2-stop + multi-stop) and the `/explore` response in [backend/main.py](../../backend/main.py). Walking-graph coords were already at 5 decimals coming out of `walking.py`, so `/route` payload bytes are unchanged in practice; the win lands on `/explore` where OSM heatmap polygons can carry higher precision.
+- **OPT-026** — Added `RESIDENTIAL_SIMPLIFY_TOLERANCE = 0.0005` (`places.py`), `PARKS_SIMPLIFY_TOLERANCE = 0.0005` (`parks.py`), `GREEN_SPACE_SIMPLIFY_TOLERANCE = 0.0005` (`green_space.py`) — ~5 m Douglas–Peucker tolerance, well below zoom-12–15 rendering resolution. `heatmap_clipper.clip_polygons_to_feature_collection` grew a `simplify_tolerance: float | None = None` kwarg and applies `.simplify(tol, preserve_topology=True)` on each unioned Feature geometry before `mapping()`. `places.residential_heatmap` (own pipeline, MultiPolygon output) inlines the same simplify call before `mapping(merged)`. Per-file tunable so each clipper can pick its own tolerance.
+- **OPT-083** — Added `BOUNDARY_SIMPLIFY_TOLERANCE = 0.0001` (~10 m) in [backend/scripts/build_chicago_boundary.py](../../backend/scripts/build_chicago_boundary.py); the simplify runs after `assemble()` and before `mapping()`. Rebuilt `chicago_boundary.json` locally via Overpass — file dropped from **87,162 bytes to 16,479 bytes** (~81% reduction). Bumped `ARG ARTIFACT_REV=2026-05-20 → 2026-05-23` in [backend/Dockerfile](../../backend/Dockerfile) so BuildKit's curl-layer cache busts and the next deploy fetches the new artifact. The `street-graph` GitHub release upload + push is the operator's step (see CLAUDE.md "Greenest-routing graph release runbook" for refresh procedure).
+
+Backend suite (319 tests) green after the changes. Wire smoke: 20-min Logan Square `/explore` ships at 13,432 wire bytes / 81,124 decoded bytes — the catalog's 30–50 KB post-gzip estimate scales with isochrone size + heatmap density, so the savings on smaller isochrones are correspondingly smaller. Visual fidelity at zoom 12–18 unchanged (the Douglas–Peucker tolerances are below the rendering resolution).
+
+**Operator follow-up (OPT-083 deploy):** Upload the regenerated [backend/data/chicago_boundary.json](../../backend/data/chicago_boundary.json) to the `street-graph` GitHub release (overwrite the existing asset), then push the `ARTIFACT_REV` bump. Until the release asset is overwritten, a Railway deploy will fetch the old (87 KB) boundary; the new build script change only affects future locally-built artifacts.
+
+---
+
+### 2026-05-23 · GZipMiddleware + ORJSONResponse on FastAPI (OPT-022, OPT-023 from CHUNK-02 of 2026-05-22 audit)
+
+**Files:** [backend/main.py](../../backend/main.py), [backend/requirements.txt](../../backend/requirements.txt)
+
+**Impact:** 🔴 High
+
+**Category:** Network payload / Response serialization
+
+**What was inefficient:** `app = FastAPI(lifespan=lifespan)` defaulted to `JSONResponse` (stdlib `json.dumps`, ~3× slower than orjson on the GeoJSON-heavy responses Passage emits) and no compression middleware was registered, so `/explore` payloads with all four heatmap layers shipped as 500 KB – 2 MB of uncompressed JSON.
+
+**Implemented:** Added `from fastapi.middleware.gzip import GZipMiddleware` and `from fastapi.responses import ORJSONResponse` imports in [backend/main.py:8-11](../../backend/main.py#L8-L11). The FastAPI init line is now `FastAPI(lifespan=lifespan, default_response_class=ORJSONResponse)`. `app.add_middleware(GZipMiddleware, minimum_size=500)` is registered after CORS so it sits adjacent to the existing middleware stack. `orjson>=3.10,<4.0` is now pinned in [backend/requirements.txt](../../backend/requirements.txt) — it wasn't a transitive dep of FastAPI 0.136.
+
+Smoke test confirmed gzip is active: a 2-stop `/route` response compressed from 24,251 bytes to 3,305 bytes on the wire (~7.3× reduction; matches the catalog's 5–10× estimate). Backend suite (319 tests) still green.
+
+**Known follow-up:** FastAPI 0.136 emits a `FastAPIDeprecationWarning` advising that `ORJSONResponse` is deprecated in favor of Pydantic-driven serialization triggered by explicit response models or return type annotations. The warning is informational — orjson still serves the response — but a future pass should either (a) annotate every endpoint's return type / add response_model entries so FastAPI uses Pydantic's native fast serializer directly, or (b) keep `ORJSONResponse` until FastAPI actually removes it. Not in scope for CHUNK-02; left as a tech-debt candidate.
+
+---
+
+### 2026-05-23 · Zero-risk one-shot bundle from CHUNK-01 (OPT-047, -049, -070, -071, -075, -077, -079, -081, -082, -086 from 2026-05-22 audit)
+
+**Files:** [backend/requirements.txt](../../backend/requirements.txt), [backend/Dockerfile](../../backend/Dockerfile), [backend/geocoding.py](../../backend/geocoding.py), [backend/local_search.py](../../backend/local_search.py), [backend/main.py](../../backend/main.py), [frontend/src/lib/explorePrefs.js](../../frontend/src/lib/explorePrefs.js), [frontend/src/MapView.jsx](../../frontend/src/MapView.jsx)
+
+**Impact:** 🟡 Medium (bundled — each item individually 🟢 Low or 🟡 Medium)
+
+**Category:** Mixed — image size, image reproducibility, SQLite hints, allocation waste, worst-case input handling, idle-state hygiene
+
+**What was inefficient:** Ten distinct single-file nits surfaced in the 2026-05-22 three-pass audit, each too small to merit its own PR but collectively worth one bundled cleanup pass (CHUNK-01 in [`Efficiency_Roadmap.md`](../Efficiency_Roadmap.md)).
+
+**Implemented:**
+- **OPT-070** — Removed `osmnx==2.1.0` from [backend/requirements.txt](../../backend/requirements.txt); it was already pinned in `requirements-dev.txt`. `osmnx` is only imported by `fetch_street_graph.py` (developer build script) — pulling it into the prod image dragged in ~100–200 MB of transitive deps (networkx, geopandas, fiona, rtree) that runtime never used.
+- **OPT-071** — Pinned the Dockerfile base image from `python:3.11-slim` to `python:3.11.13-slim`. Layer caches + behavioral guarantees no longer drift with the patch float; review quarterly per the catalog.
+- **OPT-082** — `_close_cache_db()` in [backend/geocoding.py](../../backend/geocoding.py) now runs `PRAGMA wal_checkpoint(TRUNCATE)` before `db.close()`. Cheap, idempotent, keeps the `.wal` sidecar from growing across crash-recovery cycles.
+- **OPT-081** — Added `PRAGMA query_only=1` to the `local_search._connect()` connection alongside the existing `mmap_size` / `temp_store` pragmas. The connection already opens `mode=ro` (file-level read-only); the planner hint lets SQLite skip write-related validations.
+- **OPT-075** — Replaced `JSON.parse(JSON.stringify(DEFAULT_PREFS))` in [frontend/src/lib/explorePrefs.js](../../frontend/src/lib/explorePrefs.js) with `Object.freeze(DEFAULT_PREFS)`. `EXPLORE_DEFAULTS` is never mutated in the codebase (always spread via `...EXPLORE_DEFAULTS`), so freezing the source object is the mutation-prevention semantics the deep-clone was approximating without the per-import allocation.
+- **OPT-047** — Added an `if not q_words: return None, None` early-return in `fuzzy_match_neighborhood` ([backend/geocoding.py](../../backend/geocoding.py)). Stop-word-only or whitespace-only queries no longer walk all ~150 NEIGHBORHOOD_COORDS entries against `SequenceMatcher.ratio()`.
+- **OPT-049** — Dropped redundant `list(...)` wraps in the `/route` response builder ([backend/main.py](../../backend/main.py)): `stops_out`, `stop_coords_out`, `origin_out`, `dest_out`, both `list(directions)` calls (custom-pref alternative + per-leg builder), `list(leg_slices[i])`, and `list(FLAVORS)`. Both stdlib `json.dumps` and orjson encode tuples and lists identically, so the wraps were pure allocation waste — ~8–16 fewer small lists per request.
+- **OPT-077** — Added a `gestureLockedRef` in [frontend/src/MapView.jsx](../../frontend/src/MapView.jsx) that tracks the last-applied lock state. The gesture-sync effect (and `handleUnlock`) now skip MapLibre's six-call lock/unlock sequence when the target state matches the cached state. The init effect's `lockMapGestures(map)` call sets gestures to locked, matching the ref's initial value of `true`.
+- **OPT-086** — Replaced `q.lstrip().split(None, 1)[0]` in `_looks_like_free_text_address` with a generator-based scan of the first non-whitespace character. No list allocation per `/autocomplete` call.
+- **OPT-079** — Inlined the dedupe in `local_search.autocomplete` at source-merge time via a nested `_add()` helper carrying `seen_keys` / `seen_labels` sets. The post-sort `_dedupe()` helper (and its sole caller) were removed; the `from typing import Iterable` import went with it. Dupes are skipped before the suggestion list grows, so peak working-set is smaller on short queries that traverse large bisect windows.
+
+Backend suite (319 tests) and frontend suite (460 tests) both green after the bundle. The catalog item OPT-074 (oxipng pass over the PWA icons) was deferred — oxipng is not installed locally and the user opted to defer rather than install a system-wide binary for a 2–4 KB win.
+
+---
+
 ### 2026-05-18 · Production Dockerfile rebuilt the `.pkl` in-container instead of fetching it prebuilt (OPT-001, post-FEAT-4 candidates scan)
 
 **Files:** [backend/Dockerfile](../../backend/Dockerfile), [CLAUDE.md](../../CLAUDE.md), [README.md](../../README.md)

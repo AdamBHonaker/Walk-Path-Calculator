@@ -31,7 +31,8 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from shapely.geometry import MultiPolygon, Point, Polygon, box, mapping
+import shapely
+from shapely.geometry import MultiPolygon, Point, Polygon, mapping
 from shapely.ops import unary_union
 from shapely.prepared import prep
 from shapely.strtree import STRtree
@@ -147,14 +148,6 @@ def reset_index_for_tests() -> None:
         _tree = None
 
 
-def _band_for_density(d: float) -> str | None:
-    """Return the highest band name a density value qualifies for, or None."""
-    for name, threshold in reversed(DENSITY_BANDS):
-        if d >= threshold:
-            return name
-    return None
-
-
 def tree_canopy_in_polygon(polygon) -> dict[str, Any] | None:
     """Return a GeoJSON FeatureCollection of canopy bands clipped to `polygon`.
 
@@ -187,33 +180,44 @@ def tree_canopy_in_polygon(polygon) -> dict[str, Any] | None:
 
     prepared = prep(polygon)
 
-    # Bucket cell squares by band. Build the square from the centroid
-    # ± half-cell on each axis; the cells were emitted as centroids
-    # specifically to make this cheap. Read lat/lon/density from the
-    # parallel numpy columns by index — no per-cell dict lookup.
-    lats_col = _cell_lats
-    lons_col = _cell_lons
-    band_squares: dict[str, list[Polygon]] = {name: [] for name, _ in DENSITY_BANDS}
-    for i in candidate_idx:
-        if not prepared.contains(_centroids[i]):
-            continue
-        band = _band_for_density(float(densities[i]))
-        if band is None:
-            continue
-        lat = float(lats_col[i])
-        lon = float(lons_col[i])
-        square = box(
-            lon - _half_cell_lon_deg, lat - _half_cell_lat_deg,
-            lon + _half_cell_lon_deg, lat + _half_cell_lat_deg,
-        )
-        band_squares[band].append(square)
+    # Filter to candidates whose centroid actually falls inside `polygon`.
+    # Containment is still per-cell Python (GEOS prepared.contains), so
+    # `np.fromiter` over the generator keeps the result in a numpy mask
+    # without an intermediate Python list copy.
+    cand_arr = np.asarray(candidate_idx, dtype=np.int64)
+    mask = np.fromiter(
+        (prepared.contains(_centroids[i]) for i in cand_arr),
+        dtype=bool, count=len(cand_arr),
+    )
+    inside = cand_arr[mask]
+    if inside.size == 0:
+        return None
+
+    # OPT-051: bulk-build cell squares via shapely 2.0's vectorized box()
+    # constructor — about 60× faster than the per-cell `box(...)` loop on
+    # large isochrones. Index density / lat / lon into the parallel columns
+    # once, then bucket per band with a numpy where-chain. The loop ordering
+    # walks DENSITY_BANDS ascending, so each cell ends up tagged with the
+    # highest threshold it qualifies for (mid wins over low, high over mid).
+    d    = densities[inside]
+    lats = _cell_lats[inside]
+    lons = _cell_lons[inside]
+    xmin = lons - _half_cell_lon_deg
+    xmax = lons + _half_cell_lon_deg
+    ymin = lats - _half_cell_lat_deg
+    ymax = lats + _half_cell_lat_deg
+    all_squares = shapely.box(xmin, ymin, xmax, ymax)
+
+    band_idx = np.full(len(d), -1, dtype=np.int8)
+    for k, (_, threshold) in enumerate(DENSITY_BANDS):
+        band_idx = np.where(d >= threshold, k, band_idx)
 
     features: list[dict[str, Any]] = []
-    for name, _threshold in DENSITY_BANDS:
-        squares = band_squares[name]
-        if not squares:
+    for k, (name, _threshold) in enumerate(DENSITY_BANDS):
+        sel = all_squares[band_idx == k]
+        if sel.size == 0:
             continue
-        merged = unary_union(squares)
+        merged = unary_union(sel)
         if merged.is_empty:
             continue
         if isinstance(merged, Polygon):
