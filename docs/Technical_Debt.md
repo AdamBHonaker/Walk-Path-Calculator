@@ -6,6 +6,573 @@ Known technical debt catalogued for future resolution. Priority: 🔴 High · �
 
 ---
 
+## Audit batch 2026-05-23 (multi-pass tech-debt sweep)
+
+A three-pass codebase audit (six Explore subagents across backend, frontend, cross-cutting, security, and API-contract surfaces) catalogued **~140 findings**. Each pass ignored items already flagged by earlier passes, then the final pass deep-read the two highest-complexity files (`backend/walking.py`, `frontend/src/App.jsx`) and the security + API-contract surfaces. Findings were grouped into **30 chunks across 7 waves** (TD-045 through TD-072 below; CHUNK-29 and CHUNK-30 are already tracked as TD-032 and TD-044 respectively).
+
+**Finding-ID convention** (audit-scoped): `B-*` backend, `F-*` frontend, `X-*` cross-cutting, `S-*` security, `C-*` cross-stack contract.
+
+**Wave map (parallelism cheat-sheet):**
+
+| Wave | TD entries | Theme | Parallel-safe? |
+|------|------------|-------|----------------|
+| 0 | TD-045 / -046 / -047 | Repo basics & docs | Yes — different files |
+| 1 | TD-048 / -049 / -050 / -051 | Operational hardening | Yes; TD-051 (PV burn-down) is human-driven |
+| 2 | TD-052 → TD-059 | Backend correctness + API contract | Yes except TD-053 → TD-054 (walking.py) |
+| 3 | TD-060 → TD-066 | Frontend correctness + UX | TD-061 + TD-062 both touch App.jsx — keep in lockstep |
+| 4 | TD-067 | Security headers + input validation | Standalone |
+| 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
+| 6 | TD-072 (+ TD-032, TD-044) | Polish / paused | Optional |
+
+**Audit priorities at a glance** — 12 High items concentrated in: response_model gap (TD-052), same-node routing (TD-053), recents-pollution + Explore error boundary (TD-061 / TD-062), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), README enum drift (TD-046), custom-flavor handling (TD-060), default_flavor consistency (TD-052), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
+
+---
+
+### TD-045 · CHUNK-01 · Repo metadata + license + contributor docs
+- **Files (new)**: `LICENSE`, `ATTRIBUTION.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
+- **Category**: Project governance / legal
+- **Priority**: 🔴 High (LICENSE) / 🟢 Low (the rest)
+- **Findings**:
+  - **X-25** — No `LICENSE` file at repo root; default copyright = "all rights reserved", which prevents OSS contribution.
+  - **X-26** — No `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md`. Commit-prefix convention (`feat:` / `fix:` / `chore:` / `docs:`) and PR-flow are followed but never documented.
+- **Description**: The repo carries no explicit license despite being on GitHub, and the contribution conventions live only in commit history. Adding these is zero code-risk.
+- **Scope**:
+  - Pick a license — MIT recommended unless data-source attribution conflicts (verify OSM, NLCD 2021, Chicago Data Portal, LocationIQ obligations).
+  - Move data-source attribution into a separate `ATTRIBUTION.md` so the license file stays clean.
+  - Codify the commit-prefix + PR-flow conventions already followed in practice; include "test required before merge" expectation.
+- **Acceptance**: GitHub renders the license badge; `CONTRIBUTING.md` is linked from README; `ATTRIBUTION.md` satisfies each upstream data source's license requirements.
+
+---
+
+### TD-046 · CHUNK-02 · Documentation drift sweep
+- **Files**: `README.md`, `CLAUDE.md`, `.gitignore`, `docs/Pending_Verification.md`, `docs/FEATURE_PLANS.md`
+- **Category**: Documentation accuracy
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **X-01** — README still describes tree canopy as "OSM `natural=tree` baked into a 50 m KDE grid"; the source pivoted to NLCD 2021 raster (100 m output grid, ~2.7 MB) on 2026-05-19. Also flags an internal CLAUDE.md 50 m vs 100 m drift to reconcile.
+  - **X-22** — README's `/explore` `source` enum lists three values; CLAUDE.md and code emit eight (`osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy`, `cdp_landmarks`).
+  - **X-03** — `.gitignore:62` references `docs/MOBILE_TESTING.md` while the doc is referenced as committed elsewhere. Verify and remove the rule if the file is intentionally tracked.
+  - **Secondary** — `docs/Pending_Verification.md` lacks a "blocks-ship vs post-ship" classifier per item; `docs/FEATURE_PLANS.md` mixes detailed plans (Multi-City) with one-line ideas — uniform template wanted.
+- **Description**: README, CLAUDE.md, and code drifted apart around the 2026-05-19 canopy pivot and 2026-05-21/22 curated-source ingest. Treat CLAUDE.md as the source of truth and either auto-generate the README API section from it or simplify what README claims.
+- **Scope**:
+  - Reconcile tree-canopy facts across README + CLAUDE.md (100 m output, NLCD 2021, ~2.7 MB).
+  - Update README `/explore` `source` enum to the full eight values.
+  - Verify `.gitignore:62` against the actual tracked state of `docs/MOBILE_TESTING.md`; remove or document.
+  - Add a one-line "blocks-ship vs post-ship" classifier to each PV item.
+  - Establish a uniform template for `FEATURE_PLANS.md` entries (effort, dependencies, scope).
+- **Acceptance**: `diff` the doc claims against `backend/places.py:87` and `backend/tree_canopy.py` constants and find no mismatches.
+
+---
+
+### TD-047 · CHUNK-03 · `scripts/dev-tunnel.mjs` resolution
+- **Files**: `frontend/package.json`, `docs/MOBILE_TESTING.md`, potentially restore `scripts/dev-tunnel.mjs`
+- **Category**: Build / dev tooling
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **X-09** — Audit `find` confirms `scripts/dev-tunnel.mjs` is absent from the repo; CLAUDE.md and README document it as present, and `frontend/package.json` has `"dev:tunnel": "node ../scripts/dev-tunnel.mjs"`. Running the script today produces a module-not-found error.
+- **Description**: Mobile dev tunneling is broken for anyone who clones the repo. Either restore the file from the developer's local copy or remove the npm script + doc references so the dev experience matches reality.
+- **Scope**:
+  - Decide: restore (preferred — feature is documented and useful) or remove (lighter weight).
+  - If restoring, verify the script runs on Linux + macOS + Windows; commit it to `scripts/` and update `.gitignore` if the directory was ignored wholesale.
+  - If removing, drop the npm script, the CLAUDE.md project-tree entry, the README install line, and update `docs/MOBILE_TESTING.md` to point at the ngrok fallback only.
+- **Acceptance**: `npm run dev:tunnel` either works cleanly or no longer exists in `package.json`; docs match the chosen path.
+
+---
+
+### TD-048 · CHUNK-04 · `railway.toml` + Railway env-var doc
+- **Files (potentially new)**: `railway.toml`, `docs/RAILWAY.md`, `backend/.env.example`
+- **Category**: Deployment configuration
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **X-11** — `backend/railway.toml` is minimal (per CLAUDE.md); Railway-required variables (`ARTIFACT_REV`, `STREET_GRAPH_SHA256`, `TRUSTED_PROXY_HOPS`, `LOCATIONIQ_API_KEY`, CDP creds) live only in the Railway dashboard.
+  - **X-24** — Audit pass-2 grep found no `railway.toml` at all; CLAUDE.md:78 documents it as present. Default Railway behavior (infer from Dockerfile, run `CMD`) is being relied upon.
+  - **X-12** — `backend/.env.example` documents runtime vars but doesn't mention build-time `STREET_GRAPH_SHA256` / `ARTIFACT_REV`.
+- **Description**: A new Railway deploy from a fresh fork can't succeed by reading the docs alone. Codify build/start/port/health-check + every Railway-only var.
+- **Scope**:
+  - Verify whether `railway.toml` exists; if not, create a minimal one (build cmd / start cmd / port / health check at `/health`).
+  - Document every Railway-only var in `docs/RAILWAY.md` with type + meaning.
+  - Split `.env.example` into "build-time only" and "runtime" sections.
+- **Acceptance**: A fresh fork-and-deploy succeeds by following `docs/RAILWAY.md` without operator out-of-band knowledge.
+
+---
+
+### TD-049 · CHUNK-05 · GitHub Actions CI baseline
+- **Files (new)**: `.github/workflows/ci.yml`, optional `.github/dependabot.yml`
+- **Category**: CI / DevOps automation
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **X-07** — No `.github/workflows/` directory exists. Tests are documented (pytest, vitest) but there's no automation to run them on PRs; recent merges show no check-status context.
+- **Description**: Tests run locally only. A PR could merge with breaking tests and no one would know until the next manual run.
+- **Scope**:
+  - Workflow runs `pytest backend/tests/` and `npm test --prefix frontend` on every PR and push to `main`.
+  - Add `pip-audit` (or Dependabot) for backend, and a lint step (`ruff` + `eslint`).
+  - Pin Python (3.11) and Node (18 LTS) versions explicitly.
+- **Acceptance**: Open a throwaway PR; CI runs green; intentionally break a test and confirm CI fails the PR.
+
+---
+
+### TD-050 · CHUNK-06 · Artifact pipeline guard rails
+- **Files**: `backend/Dockerfile`, new `docs/Release.md` or CLAUDE.md update
+- **Category**: Release operations
+- **Priority**: 🔴 High
+- **Findings**:
+  - **X-08** — Artifact refresh runbook (CLAUDE.md:424-514) is fully manual: rebuild `.pkl`, recompute SHA-256, upload to GitHub release, bump `ARTIFACT_REV`, rotate `STREET_GRAPH_SHA256`. Forgetting `ARTIFACT_REV` ships stale bytes (BuildKit layer cache).
+  - **X-23** — `backend/Dockerfile:50` `ARTIFACT_REV=2026-05-20`; recent commits (Divvy + Landmarks ingest on 2026-05-21) modify `places_curated.json`. If assets were re-uploaded without a bump, production has stale data.
+- **Description**: The runbook works but has no safety net. A pre-deploy guard + better docs + (optionally) an automation script would close the gap.
+- **Scope**:
+  - Add a build-time check that fails fast if `STREET_GRAPH_SHA256` is empty when `ARTIFACT_REV` looks recent.
+  - Verify whether the 2026-05-21/22 ingest commits required an `ARTIFACT_REV` bump; bump if so.
+  - Crisper operator workflow in a dedicated `docs/Release.md` (or expanded CLAUDE.md section).
+  - Optional: a GitHub Action that re-bakes `.pkl` and opens a PR with the bumped `ARTIFACT_REV` + new hash.
+- **Acceptance**: Manually rotate `ARTIFACT_REV` without rotating the hash → build fails fast with a clear message.
+
+---
+
+### TD-051 · CHUNK-07 · Pending-Verification burn-down (no code)
+- **Files**: `docs/Pending_Verification.md`
+- **Category**: Verification backlog
+- **Priority**: 🔴 High
+- **Findings**:
+  - **X-15** — Ten open PV items; several shipped code-only. Severity ranking: **PV-006 (greenest routing in prod)** is the highest-risk because it reshapes the pickle format and hasn't been confirmed live. PV-001 / PV-004 / PV-005 / PV-008 need real-device sign-off. PV-002 needs a live LocationIQ key. PV-007 / PV-009 / PV-010 are code-complete but data-pending (CDP / Overpass credentials or network).
+- **Description**: Verification work, not code. Multi-City (Feature 1) explicitly requires the PV backlog cleared before chunk 1 starts.
+- **Scope**:
+  - Sequence: PV-006 in prod first → PV-001 / PV-004 / PV-005 / PV-008 on iPhone + Android via `npm run dev:tunnel` → PV-002 with a live key → PV-007 / PV-009 / PV-010 once API access is available.
+  - Update `Pending_Verification.md` checkboxes; move resolved items to `archive/RESOLVED_HISTORY.md` per the file's own process note.
+- **Acceptance**: All ten PV items either resolved or formally re-classified as post-ship per TD-046's added classifier.
+
+---
+
+### TD-052 · CHUNK-08 · Pydantic response models + standardized error shape
+- **Files**: `backend/main.py`, `backend/walking.py`, new `backend/models.py`
+- **Category**: API contract / schema enforcement
+- **Priority**: 🔴 High
+- **Findings**:
+  - **B-22** — No `response_model=` declared on any endpoint. OpenAPI schema is inferred-and-incomplete; FastAPI does no response validation.
+  - **B-23** — Pydantic constraints duplicated in docstrings (e.g., `daily_goal` range).
+  - **C-08** — `default_flavor` may not be in `routes[].flavor`; frontend silently falls back to `routes[0]` on mismatch.
+  - **C-09** — Error response shape inconsistent across endpoints (`{detail: {message, stop_index}}` vs `{detail: "..."}` string).
+  - **C-11** — `walk_paths_alternatives` has no return-type annotation; consumers assume a list-of-dicts with known keys.
+  - **C-13** — `step_length_inches` echoed but unused by the frontend (mark informational or drop).
+  - **C-12** — `personalized_calories` boolean emitted but never consumed in the UI.
+  - **C-16** — `/reverse-geocode` lacks a response model (internal usage only, but contract still drifts).
+- **Description**: Endpoints return hand-built dicts. The B-22 fix unblocks most C-* contract items; standardized error shape (C-09) becomes possible once `ErrorDetail` exists.
+- **Scope**:
+  - Define `HealthResponse`, `RouteAlternative`, `RouteResponse`, `LegStats`, `DirectionStep`, `ExploreResponse`, `AutocompleteResponse`, `ReverseGeocodeResponse`, `ErrorDetail` in `backend/models.py`.
+  - Wire `response_model=` on every endpoint.
+  - Annotate `walk_paths_alternatives` return type (TypedDict or Pydantic).
+  - Assert `default_flavor ∈ {r.flavor for r in routes}` in the response builder.
+  - Either drop `step_length_inches` + `personalized_calories` or document them as informational-only.
+- **Acceptance**: `pytest backend/tests/`; `/docs` shows a complete OpenAPI schema; the C-08 assertion fires in a deliberately-broken test case.
+
+---
+
+### TD-053 · CHUNK-09 · `walking.py` correctness sweep
+- **Files**: `backend/walking.py`, `backend/tests/test_walking.py` (or new dedicated test files)
+- **Category**: Backend correctness
+- **Priority**: 🔴 High
+- **Findings**:
+  - **B-40** — Same-node origin/destination not short-circuited; igraph returns empty `epath` and the code silently returns an empty directions tuple.
+  - **B-41** — dtype mixing in `_get_avoid_stairs_weights:909-915`: float32 source cast to float64 then penalty added; inconsistent with the main `_build_flavor_weights` path which stays in float32.
+  - **B-42** — `_build_path_and_directions:1029-1047` reverse + `skip_first` is asymmetric: forward skips index 0, reverse skips index `n-1`, with different geometric meanings.
+  - **B-43** — Cardinal-direction binning brittle near 0/180° (`walking.py:1070-1072`); float drift causes jitter between adjacent labels.
+  - **B-44** — No defensive guard for empty `epath` when `len(vpath) >= 2`; theoretically impossible per igraph contract, but silent on regression.
+  - **B-45** — NaN handling in greenest discount (`walking.py:579-590`) silently degrades a corrupt edge to length-only weight; no operator-visible indicator.
+  - **B-46** — `_BLOCK_TYPE_THRESHOLD = 150.0` classifies exactly-150m as "long" — closer to short-block range but `>=` flips it.
+  - **B-47** — `_kdtree_to_vertex` int64 dtype assumed by consumers; a future refactor could silently truncate on very large graphs.
+- **Description**: Land these tests + fixes before the module-split refactor in TD-054 so the new test surface lives in the new structure from day one.
+- **Scope**:
+  - Same-node short-circuit (return zero-distance, zero-direction route with a clear marker).
+  - Standardize dtype across all flavor weight paths (pick float32 — the dominant native dtype — and convert once at module boundary).
+  - Audit reverse + skip_first asymmetry; fix or document the geometric semantics.
+  - One-shot WARNING (counter) when `nan_to_num` rescues an edge in greenest.
+  - Snap cardinal direction to exact label within a 1° tolerance band.
+  - Defensive `if not raw: log + return` for empty epath.
+  - Pick `>` or `>=` for the block threshold deliberately and add a docstring comment.
+  - Assert `_kdtree_to_vertex` dtype at load.
+- **Acceptance**: New unit tests for: same-node route, NaN-poisoned canopy edge, near-cardinal heading (179.5° / 180.5°), reverse + skip_first round-trip. `pytest backend/tests/test_walking*.py -v` green.
+- **Sequencing**: **Land before TD-054**.
+
+---
+
+### TD-054 · CHUNK-10 · `walking.py` module split
+- **Files**: `backend/walking.py` → split into `backend/walking.py` + `backend/walking_weights.py` + `backend/walking_formula.py`. Update imports in `backend/main.py`, `backend/fetch_street_graph.py`, tests.
+- **Category**: Code maintainability
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **B-01** — `walking.py` is 1,116 LOC + 32 functions mixing graph load, edge caches, flavor weights, shortest-path, and directions.
+  - **B-09** — Greenest formula constants split across `walking.py:99-103` (runtime) and `fetch_street_graph.py:250-254` (bake) with no unified reference; a tuning round must touch both.
+  - **B-11** — Greenest weight formula partially duplicated between bake (`_bake_green_signals`) and runtime (`_build_flavor_weights`).
+  - **B-15** — `_build_path_and_directions:999-1087` is 88 lines with sparse inline docs.
+  - **B-38** — `green_mask` is rebuilt on every cache-miss instead of once per graph load.
+- **Description**: After the correctness sweep lands, split the module along natural boundaries so the formula has a single source of truth.
+- **Scope**:
+  - Move per-edge caches + flavor weight builder to `walking_weights.py`.
+  - Move greenest constants + bake helpers to `walking_formula.py` (consumed by both `walking.py` runtime and `fetch_street_graph.py` bake).
+  - Cache `green_mask` at module load alongside `_edge_highways`.
+  - Add algorithm-level docstring to `_build_path_and_directions`.
+  - Add a "Greenest formula" section to CLAUDE.md listing all constants and where they apply.
+- **Acceptance**: All existing tests pass; greenest formula constants exist in exactly one location; CLAUDE.md updated.
+- **Sequencing**: **After TD-053.**
+
+---
+
+### TD-055 · CHUNK-11 · `geocoding.py` refactor + shared constants
+- **Files**: `backend/geocoding.py`, `backend/utils.py`, `backend/local_search.py`
+- **Category**: Code maintainability
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **B-02** — `geocoding.py` (950 LOC) mixes HTTP, cache, fuzzy match, KDTree, and cascade orchestration with inconsistent per-tier error handling.
+  - **B-05** — `_KDTREE_LON_SCALE` baked into the cached kdtree without versioning; a future scale change would silently consume the stale tree.
+  - **B-21** — `_http_session` never closed, no User-Agent, no retry adapter.
+  - **B-39** — `_KDTREE_LON_SCALE` informally consistent between `geocoding.py` and `local_search.py`; drift would silently diverge rankings.
+- **Description**: Decompose the cascade so each tier is a callable with consistent error handling; share the lat-scale constant.
+- **Scope**:
+  - Extract `_CachedGeocoder` and tier callables (`_NeighborhoodTier`, `_LocalSearchTier`, `_LocationIQTier`); compose them in `resolve_location` as a clean for-loop.
+  - Hoist `_KDTREE_LON_SCALE` to `utils.py`; import in both consumers.
+  - Include scale value in kdtree cache key (or invalidate on change).
+  - Set `requests.Session()` with UA header, retry adapter, and close-on-shutdown.
+- **Acceptance**: `pytest backend/tests/test_geocoding.py test_local_search.py` green; cascade unit tests cover the for-loop ordering.
+
+---
+
+### TD-056 · CHUNK-12 · FastAPI lifespan + rate-limiter robustness
+- **Files**: `backend/main.py`, `backend/walking.py` (eviction log), `backend/geocoding.py` (close), `backend/tests/conftest.py`, new `backend/tests/test_rate_limit.py`
+- **Category**: Backend ops / lifecycle
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **B-17** — Lifespan yields with no shutdown cleanup; eviction daemon force-killed at exit; preload future fire-and-forget.
+  - **B-18** — Preload future's result is discarded — silent failure means next request synchronously blocks on `_load_graph()`.
+  - **B-19** — Eviction daemon has a TOCTOU race on `_last_graph_access` (outer unlocked check, inner authoritative recheck).
+  - **B-20** — `geocoding._cache_db` close runs via atexit; lifespan-shutdown ordering not guaranteed (WAL flush risk on graceful redeploy).
+  - **B-24** — `_client_ip` silently falls back to peer when `TRUSTED_PROXY_HOPS` overshoots header length; no log signal.
+  - **B-25** — `_client_ip` doesn't validate XFF token is an IP; malformed headers produce bogus rate-limit keys.
+  - **B-35** — `conftest.py:26` disables rate limiting globally — limiter is untested.
+  - **B-36** — `_start_eviction_daemon` returns silently when TTL=0 — operator can't confirm the setting.
+- **Description**: Tighten the startup / shutdown contract and add the missing rate-limit test surface.
+- **Scope**:
+  - After-yield cleanup: await preload future, close `_cache_db`, close `_http_session`.
+  - Capture preload future's done-callback; log + export a `preload_ready` flag.
+  - Document the TOCTOU pattern (advisory outer / authoritative inner) or move check inside the lock.
+  - Validate XFF tokens with `ipaddress.ip_address`; latch one-shot WARNING on overshoot.
+  - Log "Graph eviction disabled (TTL=0)" instead of silent return.
+  - Add `tests/test_rate_limit.py` with `RATE_LIMIT_ENABLED=true` that drives a 429.
+- **Acceptance**: New rate-limit test green; uvicorn logs show graceful-shutdown messages locally.
+
+---
+
+### TD-057 · CHUNK-13 · Local-search + autocomplete hardening
+- **Files**: `backend/main.py`, `backend/local_search.py`, `backend/places.py`, `backend/tests/test_local_search.py`
+- **Category**: Backend reliability
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **B-04** — `/explore` accepts unknown category strings silently; `ExploreRequest.validate_categories` cleans the list but never cross-checks against the known set.
+  - **B-07** — `local_search.autocomplete():174-184` permanently degrades when `all_places()` raises — `_in_mem_built=True` is set after the warning, so a corrupted places file silently strips POI suggestions for the life of the process.
+- **Description**: Two small but high-impact reliability fixes.
+- **Scope**:
+  - Build a cached `KNOWN_CATEGORIES` set from `places.all_places()`; validate `/explore` `categories` against it and 422 on unknowns.
+  - Reset `_in_mem_built=False` when `all_places()` raises so subsequent requests retry; surface an `autocomplete_degraded` flag in `/health`.
+- **Acceptance**: `/explore` with `categories=["bogus"]` → 422; symlink-corrupt `places_osm.json`, hit `/autocomplete`, restore, confirm recovery on next request.
+
+---
+
+### TD-058 · CHUNK-14 · Ingest-script standardization
+- **Files**: new `backend/scripts/_ingest_runner.py`; edits across `backend/scripts/build_*.py`
+- **Category**: Data ingest reliability
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **B-26** — Ingest scripts overwrite output JSON in-place; interrupt mid-write trashes the artifact.
+  - **B-27** — Inconsistent error handling across ingest scripts (retry+backoff in some, raise-on-first in others, no catch in `_cdp_client.py`).
+  - **B-28** — Output JSON artifacts inconsistent on metadata envelope (some carry `{metadata, source, fetched_at}`, some are bare arrays).
+  - **B-29** — No persistent `requests.Session()` in ingest scripts — each call cold-opens TCP.
+  - **B-30** — Inconsistent HTTP timeouts (`60`, `120`, `300`, omitted).
+  - **B-31** — `build_address_points.py:169-179` has fixed `--sleep 10` between chunks; doesn't back off on failure streaks.
+  - **B-32** — `migrate_geocode_cache.py:117-124` rename is not concurrency-safe.
+  - **B-33** — `places._load_places_file` silently treats missing/malformed shape as empty.
+  - **B-34** — `residential_heatmap` JSON parse has no size cap (`backend/places.py:235`).
+- **Description**: Ingest scripts evolved organically; a shared runner removes ~80% of the per-script boilerplate while making them safer.
+- **Scope**:
+  - `_ingest_runner.py` provides: persistent `requests.Session()`, unified `_HTTP_TIMEOUT_S`, retry+backoff with adaptive inter-chunk sleep, atomic write via `*.tmp` → `os.replace`, optional `*.bak`, metadata envelope.
+  - Add `--check-freshness` mode (warn when artifact older than N days).
+  - Concurrency-safe rename in `migrate_geocode_cache.py`.
+  - Schema check + size cap on `places._load_places_file`.
+- **Acceptance**: Re-run `build_landmarks.py` end-to-end and kill mid-write — output unchanged (atomic).
+
+---
+
+### TD-059 · CHUNK-15 · Backend test coverage gaps
+- **Files**: `backend/tests/test_geocoding.py` (or new `test_geocoding_cascade.py`), `backend/tests/test_explore_perf.py`, new `backend/tests/test_redaction.py`
+- **Category**: Test coverage
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **B-12** — No integration test for the full geocoding cascade; tiers tested in isolation but order is load-bearing.
+  - **B-13** — `test_explore_perf.py` not gated in CI; isochrone regressions invisible.
+  - **B-37** — `_redact_coord` coverage not asserted by any test; new log sites can silently bypass redaction.
+- **Description**: Three targeted test additions that close coverage gaps without restructuring existing tests.
+- **Scope**:
+  - Cascade integration test: mock each tier to None/fail, assert advancement order.
+  - Add CI threshold to `test_explore_perf.py` (e.g., 45-min budget < 200 ms; fail on +10% regression).
+  - Redaction coverage: monkey-patch `logger.warning`/`info`/`error`, fuzz coords through geocoding + walking, assert no `41.x, -87.x` in log lines.
+- **Acceptance**: New tests run green; CI (TD-049) gates the perf threshold.
+
+---
+
+### TD-060 · CHUNK-16 · API contract enforcement: enums + place null-safety (frontend)
+- **Files**: new `frontend/src/lib/apiEnums.js`, `frontend/src/components/RouteFlavorTabs.jsx`, `frontend/src/map/MapExploreLayer.jsx`, `frontend/src/components/AddressAutocomplete.jsx`, `frontend/src/wayfarer/tokens.css` (validation test)
+- **Category**: API contract / UI correctness
+- **Priority**: 🔴 High (C-01) / 🟡 Medium (rest)
+- **Findings**:
+  - **C-01** — `FLAVOR_META` has no `"custom"` entry; backend's collapsed-flavor response renders as a literal "custom" string with no icon.
+  - **C-03** — `places[].subcategory` / `address` can be `null`; frontend stamps `null` into MapLibre feature properties.
+  - **C-04** — `places[].source` enum is open-ended (eight values today); frontend has no source→icon mapping.
+  - **C-10** — `pace` is an open string on the backend but a hardcoded enum on the frontend; a new pace name renders unlabeled.
+  - **C-17** — Autocomplete `source` (LocationIQ vs local DB) is visually indistinguishable to the user.
+  - **F-32** — `WF` token-name object has no build-time validation against `tokens.css`; renaming `--ink` silently breaks references.
+- **Description**: Centralize the contract enums so frontend / backend can drift only in one place.
+- **Scope**:
+  - Centralize enums in `apiEnums.js`: `FLAVORS` (incl. `custom`), `PACES`, `PLACE_SOURCES`, `AUTOCOMPLETE_SOURCES`.
+  - Add `custom` to `FLAVOR_META` with a clear label; consider hiding the flavor strip entirely in the collapsed case (mirror the "Optimized for accessible routes." treatment).
+  - Omit / coalesce null `subcategory` / `address` before stamping into feature properties.
+  - Surface autocomplete source distinction (icon or suffix).
+  - Vitest that diff-checks `WF` token names against `tokens.css` declarations.
+- **Acceptance**: `npm test`; manual: drive `prefer_pedestrian=true` and confirm flavor strip renders cleanly.
+
+---
+
+### TD-061 · CHUNK-17 · Recents + state hygiene in `App.jsx`
+- **Files**: `frontend/src/App.jsx`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useExploreFetch.js`, `frontend/src/components/DirectionLedger.jsx`, `frontend/src/lib/recentSearches.js`, `frontend/src/lib/explorePrefs.js`
+- **Category**: Frontend state correctness
+- **Priority**: 🔴 High (F-33) / 🟡 Medium (rest)
+- **Findings**:
+  - **F-33** — Recents persisted before route response validated; failed routes still pollute history (`useRouteFetch.js:108-113`).
+  - **F-34** — `exploreResult` not cleared on mode leave; render is guarded but state stays dirty.
+  - **F-35** — `userMovedSheetRef` never resets between modes; once dragged in Route mode, the auto-promote never fires again.
+  - **F-37** — Share-link `hft` / `hin` only seed personalization on mount; a second link in the same session is ignored.
+  - **F-02** — `explorePrefs` visibility logic split between persisted state + a computed memo; rename memo to `visibleCategories` and document as single source of truth.
+  - **C-14** — Frontend persists user-typed stops to URL/recents instead of the backend-normalized strings.
+  - **C-15** — Empty `directions` array leaves DirectionLedger without an arrival footer (`DirectionLedger.jsx:117`).
+- **Description**: Cluster of subtle state correctness issues in App.jsx + its hooks. Keep in lockstep with TD-062 since both touch App.jsx.
+- **Scope**:
+  - Gate `saveRecentSearch` on `data?.routes?.length > 0`.
+  - Clear `exploreResult` and `exploreError` when `mode !== "explore"`.
+  - Reset `userMovedSheetRef.current = false` on `mode` change.
+  - Re-read URL params on `popstate` for `hft` / `hin` reseed.
+  - Rename `activeSubsSet` → `visibleCategories`; document as the single visibility source.
+  - Re-key recents off `result.stops` (normalized).
+  - Show "Proceed directly to destination" when `directions.length === 0`.
+- **Acceptance**: Vitest covers each correction; manual confirms recents stays clean on failed routes.
+- **Sequencing**: Land alongside TD-062.
+
+---
+
+### TD-062 · CHUNK-18 · Frontend error boundary + a11y batch
+- **Files**: `frontend/src/components/RouteErrorBoundary.jsx` (template), new `ExploreErrorBoundary.jsx`, `frontend/src/App.jsx`
+- **Category**: Error resilience / accessibility
+- **Priority**: 🔴 High (F-15) / 🟡 Medium (rest)
+- **Findings**:
+  - **F-15** — No ErrorBoundary around Explore mode; a render error in `ExploreForm` / `MapExploreLayer` crashes the whole app.
+  - **F-17** — Focus is not moved when toggling between Route ↔ Explore; keyboard users have to tab into the form.
+  - **F-18** — Toast messages have no `aria-live` region; screen readers don't announce route-fetch failures.
+- **Description**: Three additions that close real-user reliability + accessibility gaps.
+- **Scope**:
+  - Create `ExploreErrorBoundary` modeled on `RouteErrorBoundary`; wrap Explore content in both desktop and mobile branches.
+  - `useEffect` on `mode` that focuses the first form input of the active mode.
+  - Wrap the toast container in `role="status" aria-live="polite" aria-atomic="true"`, kept in the DOM (not conditionally rendered) so AT can attach.
+- **Acceptance**: Throw a synthetic error inside `MapExploreLayer` — boundary catches; keyboard-tab the mode toggle — focus lands on form input; trigger a route failure — toast announced by VoiceOver/NVDA.
+- **Sequencing**: Land alongside TD-061.
+
+---
+
+### TD-063 · CHUNK-19 · Mobility profile UI + follow-location gating
+- **Files**: `frontend/src/components/PersonalizeModal.jsx`, `frontend/src/App.jsx`
+- **Category**: UX clarity / performance
+- **Priority**: 🟢 Low
+- **Findings**:
+  - **F-03** — Mobility profile forces `preferPedestrian=true` for Wheeled with no UI hint; user can't tell the toggle is overridden.
+  - **F-09** — `useFollowLocation({ enabled: true })` always-on; `watchPosition` runs in Route mode even though `followLocation` is rarely set.
+- **Description**: Two small UX/perf tweaks.
+- **Scope**:
+  - Add "Enabled for Wheeled profile" badge next to `prefer_pedestrian` toggle when wheeled is active (mirror the avoid_stairs disabled+badge treatment).
+  - Gate `useFollowLocation({ enabled: mode === "explore" && userInitiatedTracking })` (requires a new state flag for user intent).
+- **Acceptance**: Wheeled profile visibly marks the toggle as forced; in Route mode the geolocation watch is not active per DevTools / browser dev menu.
+
+---
+
+### TD-064 · CHUNK-20 · Frontend DRY + constants + comment cleanup
+- **Files**: new `frontend/src/lib/constants.js`, `frontend/src/lib/urlParams.js`, `frontend/src/lib/recentSearches.js`, `frontend/src/lib/explorePrefs.js`, `frontend/src/mapHelpers.js`, `frontend/src/lib/personaPrefs.js`, `frontend/src/hooks/useTurnCoords.js`, `frontend/src/components/PersonalizeModal.jsx`
+- **Category**: Code hygiene
+- **Priority**: 🟢 Low
+- **Findings**:
+  - **F-23** — `MAX_STOPS = 8` defined in two files; currently equal but free to drift.
+  - **F-25** — `EXPLORE_BUDGET_MIN` / `EXPLORE_BUDGET_MAX` exported but no importer.
+  - **F-29** — `_METERS_PER_DEG_LAT = 111320` undocumented magic number in `mapHelpers.js:38`.
+  - **F-30** — Backend's 3-9 ft height range is undocumented in frontend prefs (`personaPrefs.js:39`, `urlParams.js:43`).
+  - **F-36** — `useTurnCoords` two-phase array build is correct but unobvious; needs a one-line comment.
+  - **F-31** — PersonalizeModal `useEffect` intentionally omits `weightKg`/`dailyGoal` deps (BUG-011); pattern correct but name the helper `reseedLocalInputs` and isolate the rationale.
+- **Description**: Hygiene pass.
+- **Scope**:
+  - Hoist `MAX_STOPS` to shared constants module; both consumers import.
+  - Drop unused `EXPLORE_BUDGET_MIN/MAX` exports.
+  - Comment `_METERS_PER_DEG_LAT` (precision note: <1% error at Chicago latitude).
+  - Comment the 3-9 ft height range (mobility-device users).
+  - Comment the `useTurnCoords` two-phase build pattern.
+  - Name the PersonalizeModal reseed helper and block-comment its omitted deps.
+- **Acceptance**: `npm test`; `grep -r "MAX_STOPS" frontend/src/lib/` confirms single definition.
+
+---
+
+### TD-065 · CHUNK-21 · Frontend performance micro-optimizations
+- **Files**: `frontend/src/App.jsx`, `frontend/src/map/MapExploreLayer.jsx`
+- **Category**: Performance
+- **Priority**: 🟢 Low
+- **Findings**:
+  - **F-19** — `mapPadding` recomputed on every pointermove during sheet drag (`App.jsx:364-371`); new object per frame.
+  - **F-08** — `MapExploreLayer` detects theme flips via MutationObserver on `<html>` class; couples paint layer to a specific DOM side-effect.
+- **Description**: Both are latent (not user-visible today); fix when the area is being edited anyway.
+- **Scope**:
+  - Debounce / rAF the `mapPadding` updates (e.g., schedule via `requestAnimationFrame`, drop duplicates).
+  - Pass `themeVersion` (or theme identifier) as a prop down from App; remove the MutationObserver.
+- **Acceptance**: Drag the mobile sheet — confirm < 60 mapPadding updates / sec in profiler; theme flip — confirm MutationObserver no longer registered.
+
+---
+
+### TD-066 · CHUNK-22 · PWA / service worker / screenshot resilience
+- **Files**: `frontend/vite.config.js`, optionally `frontend/public/manifest.webmanifest`, `frontend/src/hooks/useShareCard.js`, `frontend/src/App.jsx`
+- **Category**: PWA / resilience
+- **Priority**: 🟢 Low
+- **Findings**:
+  - **F-21** — PWA manifest generated inline in `vite.config.js:106-136`; not a static file, can't be overridden per env or served with custom headers.
+  - **F-22** — No telemetry on SW update lifecycle (`App.jsx:414-431`); can't tell whether the swap succeeded or whether the prompt was accepted.
+  - **F-26** — `useShareCard` dynamic-imports `modern-screenshot` with no timeout fallback (`useShareCard.js:102`).
+  - **F-27** — Three different fetch timeouts (5s / 10s / 12s) with no documented rationale.
+  - **S-07** — Service-worker runtime caching whitelist is incomplete (`vite.config.js:137-144`); `/explore`, `/autocomplete`, `/reverse-geocode` fall back to the default strategy.
+- **Description**: PWA polish; not user-blocking but improves observability and resilience on slow networks.
+- **Scope**:
+  - Optionally externalize the manifest to `frontend/public/manifest.webmanifest`.
+  - Console checkpoints in the SW update lifecycle (`onNeedRefresh`, `fn(true)` callback).
+  - Race `modern-screenshot` import against a 5s timeout; surface download-fallback UI on timeout.
+  - Document the three timeout values inline with their rationale.
+  - Explicit `NetworkOnly` rules for `/explore`, `/autocomplete`, `/reverse-geocode`.
+- **Acceptance**: Throttle to slow-3G; share-card export shows fallback toast after 5s rather than hanging.
+
+---
+
+### TD-067 · CHUNK-23 · Security headers + input validation hardening
+- **Files**: `backend/main.py`, frontend attribution components
+- **Category**: Defense-in-depth security
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **S-01** — No `Permissions-Policy` header set; middleware sets XFO, XCTO, Referrer-Policy, HSTS but not Permissions-Policy.
+  - **S-02** — Error responses echo user-supplied stop strings (`backend/main.py:594, 610`); minor info leak / log noise.
+  - **S-03** — `/autocomplete` `q` length not enforced at the Pydantic boundary; 200-char limit checked in handler body after the request lands.
+  - **S-04** — Coord validation relies on NaN-comparison semantics; explicit `math.isfinite` is more robust.
+  - **S-05** — Implicit HEAD method handling; CORS `allow_methods` doesn't mention HEAD.
+  - **S-06** — Community-area echo in 404-style error (very minor info disclosure).
+  - **S-09** — External attribution links don't carry `rel="noreferrer noopener"`.
+- **Description**: All defense-in-depth. None of these are exploitable today but each closes a recon / future-refactor footgun.
+- **Scope**:
+  - Add `Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()` (and any other unused APIs) to the security-headers middleware.
+  - Replace echo of `stops[i]` in error messages with `"Stop {i+1} could not be found"`.
+  - Add `Field(..., max_length=200)` to `/autocomplete` `q` so Starlette rejects oversize requests at the boundary.
+  - Add explicit `math.isfinite(lat) and math.isfinite(lon)` precheck in `ExploreOrigin` validator.
+  - Decide on HEAD (allow explicitly or document the implicit allow).
+  - Genericize the community-area echo.
+  - Add `rel="noreferrer noopener"` to all `target="_blank"` anchors (attribution links).
+- **Acceptance**: `curl -I /health` shows Permissions-Policy; send a 1 MB `/autocomplete` query — 422 at boundary before handler runs.
+
+---
+
+### TD-068 · CHUNK-24 · Pickle format forward-compat + per-city circuit-breaker prep
+- **Files**: `backend/walking.py`, `backend/fetch_street_graph.py`, `backend/geocoding.py`, CLAUDE.md
+- **Category**: Architecture / multi-city readiness
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **X-19** — Pickle `format_version: 3` is all-or-nothing; multi-city needs to support cities without canopy or parks data.
+  - **X-20** — LocationIQ circuit breaker is global; post-multi-city, a Chicago 429 will gate Evanston too.
+  - **B-08** — Greenest can silently downgrade to footway-only on missing v3 columns mid-uptime (boot is fail-fast but hot-swap path isn't).
+- **Description**: Front-load the multi-city refactor groundwork so Feature 1 chunk 1 doesn't have to take it on.
+- **Scope**:
+  - Relax the fail-fast guard: check column presence per-column; zero-fill missing canopy/park columns with a clear "feature degraded" log instead of refusing to boot.
+  - Add a per-column schema version separate from `format_version`.
+  - Key the LocationIQ circuit breaker on `("forward", city)` instead of `"forward"` (no-op for single-city, ready for multi-city).
+  - Expose a `feature_degraded` flag on `/health`.
+- **Acceptance**: Build a synthetic v2-shaped pickle (no canopy/parks columns); confirm boot succeeds with greenest disabled but routing intact; `/health` shows the degraded flag.
+
+---
+
+### TD-069 · CHUNK-25 · Structured logging + observability
+- **Files**: `backend/requirements.txt`, `backend/main.py`, `backend/walking.py`, `backend/geocoding.py`
+- **Category**: Observability
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **X-17** — Backend uses default uvicorn text logs to stdout; no JSON / structured logging, no APM, no request correlation IDs, no custom metrics (route compute time, cache hit rate, LocationIQ call count).
+- **Description**: Debugging prod is currently blind. Structured logging unblocks log aggregation and alerting; an optional Sentry tier handles error tracking.
+- **Scope**:
+  - Add `structlog` (or `python-json-logger`) to `requirements.txt`.
+  - Emit JSON logs with `request_id`, `endpoint`, `latency_ms`, `flavor`, `cache_hit`.
+  - Wire FastAPI's logging config to route through the new structured logger.
+  - Optional: Sentry SDK behind a `SENTRY_DSN` env var.
+- **Acceptance**: uvicorn logs are valid JSON parseable by `jq`; a synthetic error reaches Sentry (if configured).
+
+---
+
+### TD-070 · CHUNK-26 · Backup / disaster-recovery runbook
+- **Files**: `CLAUDE.md`, optional new `docs/DR.md`
+- **Category**: Disaster recovery
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **X-27** — No off-machine backup of `street_graph.graphml` (~314 MB, lives only on the developer machine) or `chicago_geocode.db` source ingest data (only on GitHub release). If GitHub releases are corrupted or the dev machine dies, an OSM re-fetch yields a drifted snapshot.
+- **Description**: Low-probability but high-impact. Document the recovery procedure even if automation is deferred.
+- **Scope**:
+  - Document an off-site backup procedure (encrypted bucket, archive branch with Git LFS, periodic upload to private storage) for the `.graphml` and the SQLite DB sources.
+  - Keep dated snapshots in cloud storage; rotate retention.
+  - Add a step-by-step "Disaster recovery" section to CLAUDE.md.
+- **Acceptance**: Test rebuild from documented backup procedure produces a byte-identical (or formally-equivalent) artifact.
+
+---
+
+### TD-071 · CHUNK-27 · localStorage schema versioning
+- **Files**: `frontend/src/lib/storage.js`, all `walkpath:*` consumers
+- **Category**: Frontend data migration
+- **Priority**: 🟡 Medium
+- **Findings**:
+  - **F-24** — No `walkpath:schemaVersion` marker, no migration registry. The one schema change to date (`train_stations` → `el_train_stations`) is hand-coded in `explorePrefs.js:sanitize()`. Future renames will accumulate ad-hoc.
+- **Description**: Set up a tiny migration pipeline now so future schema changes have a clear place to live.
+- **Scope**:
+  - Introduce `walkpath:schemaVersion` (defaults to 1).
+  - One-time migration runner that reads the current version and applies a registered migration chain (`v1 → v2 → …`).
+  - Document the pattern in CLAUDE.md or a new `docs/Persistence.md`.
+- **Acceptance**: Simulate an old schema in localStorage; reload; migration runs; data intact.
+
+---
+
+### TD-072 · CHUNK-28 · CSS modularization + naming consistency (optional polish)
+- **Files**: `frontend/src/App.css` (split), `frontend/src/wayfarer/responsive.css`
+- **Category**: Code organization
+- **Priority**: 🟢 Low
+- **Findings**:
+  - **F-11** — `App.css` is 3,146 lines with no subfile split; manageable but on the edge.
+  - **F-12** — `!important` saturation in `wayfarer/responsive.css:67-91`; intentional (defeats higher-specificity modal selectors) but a specificity-bumped BEM variant would be cleaner.
+  - **F-13** — Component-local layout constants in `ShareDispatch.jsx:15-17` (`CARD_WIDTH`, `MAP_HEIGHT`); move to tokens if ever reused.
+  - **F-14** — CSS class naming mixes BEM with flat kebab; document the convention if adopted.
+- **Description**: Skip unless `App.css` crosses ~4K lines or editing friction emerges. Polish only.
+- **Scope**: Split `App.css` into per-area sheets; introduce a BEM variant (`.wf-modal--fullscreen-mobile`) to retire `!important`; document the convention.
+- **Acceptance**: Visual regression check of share-card + main UI; no behavior change.
+
+---
+
+## Items not duplicated as TD entries
+
+The following audit findings are not re-catalogued here because they overlap existing tracked items:
+
+- **F-06** (`forwardRef` deprecated in React 19) — already inside **TD-032** chunk 4 follow-up plan.
+- **F-10** / **F-16** (ShareDispatch inline styles + share-card PNG fragility) — already **TD-044**.
+- **X-05** (React 18 → 19 paused) — already **TD-032**.
+- **X-06** (`eslint.config.js` hardcodes React 18) — handled inside TD-032 chunk 3.
+
+A handful of audit "Confirms / clean" notes were positive findings (lazy-loading, parameterized SQL, no `dangerouslySetInnerHTML`, no `subprocess`/`eval`, BUG-006 fix still in place, 31 frontend tests with no skips) — those are not debt and aren't tracked.
+
+---
+
 ### TD-044 · ShareDispatch inline-style migration + CSP `style-src` tightening (final SEC-007 chunk)
 - **File**: [frontend/src/components/ShareDispatch.jsx](frontend/src/components/ShareDispatch.jsx), [frontend/vite.config.js](frontend/vite.config.js).
 - **Category**: Code Quality / Defense-in-Depth Security
