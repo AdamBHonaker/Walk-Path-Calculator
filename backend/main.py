@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -292,6 +292,22 @@ async def add_security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # TD-067 / S-01: deny every powerful Web API the app doesn't need.
+    # Passage uses geolocation client-side only — the backend never holds
+    # it — so a Permissions-Policy header on every response keeps a future
+    # XSS (or a compromised dependency) from probing camera/mic/usb from
+    # an attacker-controlled iframe embed. Format follows the structured
+    # syntax — `geolocation=()` means "no origin can use geolocation
+    # through this document's policy context."
+    response.headers["Permissions-Policy"] = (
+        "accelerometer=(), ambient-light-sensor=(), autoplay=(), battery=(), "
+        "camera=(), display-capture=(), document-domain=(), encrypted-media=(), "
+        "fullscreen=(self), gamepad=(), geolocation=(self), gyroscope=(), "
+        "hid=(), idle-detection=(), magnetometer=(), microphone=(), midi=(), "
+        "payment=(), picture-in-picture=(), publickey-credentials-get=(), "
+        "screen-wake-lock=(), serial=(), sync-xhr=(), usb=(), web-share=(self), "
+        "xr-spatial-tracking=()"
+    )
     if request.url.scheme == "https" or (
         _TRUST_PROXY_HEADERS and request.headers.get("x-forwarded-proto") == "https"
     ):
@@ -306,7 +322,11 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_origin_regex=_DEV_TUNNEL_ORIGIN_REGEX,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    # TD-067 / S-05: HEAD is implicitly accepted by FastAPI as a GET
+    # without a body; declaring it explicitly in the CORS allowlist
+    # documents that and prevents a future tightening from silently
+    # dropping HEAD support.
+    allow_methods=["GET", "HEAD", "POST", "OPTIONS"],
     allow_headers=["Content-Type", "Accept"],
 )
 
@@ -396,6 +416,14 @@ class ExploreOrigin(BaseModel):
                 "origin must have either `community_area` or both `lat` and `lon` (not both, not neither)"
             )
         if has_coords:
+            # TD-067 / S-04: reject NaN + ±inf explicitly. Without this, a
+            # NaN-coord request would short-circuit the bbox check below
+            # (NaN comparisons always return False, so `NaN <= x <= y` is
+            # False — the request rejects, but for the wrong reason). An
+            # explicit isfinite() check fails fast with a clear message.
+            import math
+            if not (math.isfinite(self.lat) and math.isfinite(self.lon)):
+                raise ValueError("origin lat/lon must be finite numbers")
             if not (CHICAGO_SOUTH <= self.lat <= CHICAGO_NORTH):
                 raise ValueError("origin.lat is outside the Chicago coverage area")
             if not (CHICAGO_WEST <= self.lon <= CHICAGO_EAST):
@@ -495,7 +523,12 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
     if origin.community_area:
         coords = lookup_centroid(origin.community_area)
         if coords is None:
-            raise http_error(400, f"Unknown community area: {origin.community_area!r}")
+            # TD-067 / S-06: don't echo the requested community-area name
+            # back. The list is fixed (77 entries) and the frontend uses a
+            # dropdown of valid values, so a free-form name here is either
+            # a stale URL or a probe — echoing it just pads logs and
+            # reflected-content surface.
+            raise http_error(400, "Unknown community area.")
         origin_lat, origin_lon = coords
     else:
         origin_lat, origin_lon = origin.lat, origin.lon
@@ -584,6 +617,12 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
 @app.get("/reverse-geocode", response_model=ReverseGeocodeResponse)
 @limiter.limit("60/minute")
 async def reverse_geocode(request: Request, lat: float, lon: float):
+    # TD-067 / S-04: reject NaN + ±inf before the bbox check so a non-finite
+    # coord fails with a clear message rather than the bbox's "outside
+    # coverage area" (NaN comparisons always evaluate False).
+    import math
+    if not (math.isfinite(lat) and math.isfinite(lon)):
+        raise http_error(422, "lat and lon must be finite numbers.")
     if not (CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST):
         raise http_error(422, "Location is outside the Chicago coverage area.")
     loop = asyncio.get_running_loop()
@@ -606,7 +645,16 @@ def _looks_like_free_text_address(q: str) -> bool:
 
 @app.get("/autocomplete", response_model=AutocompleteResponse)
 @limiter.limit("60/minute")
-async def autocomplete_endpoint(request: Request, q: str, limit: int = 8):
+async def autocomplete_endpoint(
+    request: Request,
+    # TD-067 / S-03: enforce the 200-char `q` cap at the Pydantic boundary
+    # so Starlette rejects oversize requests before the handler body runs.
+    # The redundant handler-body check below is kept as a belt-and-braces
+    # guard for clients that bypass the query-param binding (e.g. test
+    # fixtures that pass `q` directly).
+    q: str = Query(..., max_length=200),
+    limit: int = Query(8, ge=1, le=20),
+):
     """Typeahead suggestions for the route / explore forms.
 
     Local-first: returns up to `limit` ranked suggestions from
@@ -733,9 +781,13 @@ async def route(request: Request, payload: RouteRequest):
     ], return_exceptions=True)
     for i, coords in enumerate(resolved):
         if isinstance(coords, LocationOutsideChicagoError):
+            # TD-067 / S-02: don't echo `stops[i]` back. The frontend already
+            # knows what the user typed (it's in the input field) and an
+            # offline attacker probing for log noise has no business pinning
+            # arbitrary strings into the response body.
             raise http_error(
                 422,
-                f"'{stops[i]}' isn't in Chicago. Try a Chicago neighborhood, landmark, or street address.",
+                f"Stop {i + 1} isn't in Chicago. Try a Chicago neighborhood, landmark, or street address.",
                 stop_index=i,
             )
         if isinstance(coords, GeocoderDegradedError):
@@ -746,7 +798,7 @@ async def route(request: Request, payload: RouteRequest):
             raise http_error(
                 400,
                 (
-                    f"Could not find '{stops[i]}' in Chicago. "
+                    f"Stop {i + 1} could not be found in Chicago. "
                     "Try a neighborhood name or a street address. "
                     "Coverage: the full Chicago city limits (all 77 community areas)."
                 ),

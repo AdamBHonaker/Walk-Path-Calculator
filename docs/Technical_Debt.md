@@ -259,31 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-067 · CHUNK-23 · Security headers + input validation hardening
-- **Files**: `backend/main.py`, frontend attribution components
-- **Category**: Defense-in-depth security
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **S-01** — No `Permissions-Policy` header set; middleware sets XFO, XCTO, Referrer-Policy, HSTS but not Permissions-Policy.
-  - **S-02** — Error responses echo user-supplied stop strings (`backend/main.py:594, 610`); minor info leak / log noise.
-  - **S-03** — `/autocomplete` `q` length not enforced at the Pydantic boundary; 200-char limit checked in handler body after the request lands.
-  - **S-04** — Coord validation relies on NaN-comparison semantics; explicit `math.isfinite` is more robust.
-  - **S-05** — Implicit HEAD method handling; CORS `allow_methods` doesn't mention HEAD.
-  - **S-06** — Community-area echo in 404-style error (very minor info disclosure).
-  - **S-09** — External attribution links don't carry `rel="noreferrer noopener"`.
-- **Description**: All defense-in-depth. None of these are exploitable today but each closes a recon / future-refactor footgun.
-- **Scope**:
-  - Add `Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()` (and any other unused APIs) to the security-headers middleware.
-  - Replace echo of `stops[i]` in error messages with `"Stop {i+1} could not be found"`.
-  - Add `Field(..., max_length=200)` to `/autocomplete` `q` so Starlette rejects oversize requests at the boundary.
-  - Add explicit `math.isfinite(lat) and math.isfinite(lon)` precheck in `ExploreOrigin` validator.
-  - Decide on HEAD (allow explicitly or document the implicit allow).
-  - Genericize the community-area echo.
-  - Add `rel="noreferrer noopener"` to all `target="_blank"` anchors (attribution links).
-- **Acceptance**: `curl -I /health` shows Permissions-Policy; send a 1 MB `/autocomplete` query — 422 at boundary before handler runs.
-
----
-
 ### TD-068 · CHUNK-24 · Pickle format forward-compat + per-city circuit-breaker prep
 - **Files**: `backend/walking.py`, `backend/fetch_street_graph.py`, `backend/geocoding.py`, CLAUDE.md
 - **Category**: Architecture / multi-city readiness

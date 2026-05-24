@@ -1071,6 +1071,27 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Security headers + input validation hardening (TD-067 — Wave 4)
+
+**Files:** `backend/main.py`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Seven defense-in-depth findings from the 2026-05-23 audit. None exploitable today; each closes a recon / future-refactor footgun. No `Permissions-Policy` header (S-01); `/route` echoed user-supplied stop strings back in error messages (S-02); `/autocomplete` `q` length cap enforced inside the handler body, not at the Pydantic boundary (S-03); `ExploreOrigin` lat/lon validator relied on NaN-comparison-always-false instead of explicit `math.isfinite` (S-04); CORS `allow_methods` didn't list HEAD explicitly (S-05); `/explore` community-area error message echoed the requested name (S-06); audit also called for `rel="noreferrer noopener"` on `target="_blank"` attribution links (S-09 — turned out to be a non-issue, see below).
+
+**How it was resolved:**
+
+- **S-01 (Permissions-Policy):** Added a structured-syntax `Permissions-Policy` header to the security-headers middleware ([main.py:294](../../backend/main.py#L294)). 25 powerful APIs denied; `geolocation=(self)`, `fullscreen=(self)`, and `web-share=(self)` are scoped to the same-origin frame so the existing client features keep working. Future XSS or compromised dependency loses every other API surface.
+- **S-02 + S-06 (stop / community-area echo):** Replaced `f"'{stops[i]}'"` with `f"Stop {i + 1}"` in /route error messages (two sites — 422 outside-Chicago and 400 not-found). The frontend already knows what the user typed (it's in the input field); the response just carries the stop_index. The community-area error now reads "Unknown community area." without echoing the requested string.
+- **S-03 (`/autocomplete` boundary check):** `q` is now `Query(..., max_length=200)`, `limit` is `Query(8, ge=1, le=20)`. Starlette rejects oversize requests before the handler body runs. Kept the body-level checks as a belt-and-braces guard for test fixtures that pass the args directly.
+- **S-04 (isfinite precheck):** Added `math.isfinite()` checks on lat/lon in both `ExploreOrigin._exactly_one_mode` and `/reverse-geocode`. Without this, a NaN coord fails the bbox check with a misleading "outside coverage area" message; with it, the response reads "lat and lon must be finite numbers."
+- **S-05 (HEAD method):** CORS `allow_methods` now lists `["GET", "HEAD", "POST", "OPTIONS"]` explicitly. FastAPI implicitly accepted HEAD anyway, but the explicit declaration documents the intent and survives a future allowlist tightening.
+- **S-09 — non-issue.** `grep -rn 'target="_blank"' frontend/src` returned no matches. The audit's concern applied to a class of components that don't exist in this codebase (attribution links live in copy text without `target` attributes).
+
+**Acceptance:** `pytest backend/tests/` → **323 passed (323)** in 21s. `curl -I /health` shows `Permissions-Policy:` in the response headers.
+
+---
+
 ### 2026-05-24 · PWA + service worker + screenshot resilience (TD-066)
 
 **Files:** `frontend/src/lib/fetchWithTimeout.js`, `frontend/src/hooks/useShareCard.js`, `frontend/src/App.jsx`, `frontend/vite.config.js`.
