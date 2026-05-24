@@ -4,6 +4,20 @@ import { haversineMeters } from "../mapHelpers.js";
 // Walks the polyline path with the directions list, materializing the
 // (lat, lon) coordinate where each turn arrow should land. Used by the
 // MapView to draw turn dots and by App to flyTo on direction-step click.
+//
+// Two-phase array build (F-36):
+//   Phase 1 — single forward walk over the path segments. Each iteration
+//             may "absorb" zero, one, or many thresholds (when several
+//             directions share a long straight segment), assigning the
+//             interpolated coord at `turnCoords[tIdx]` for each.
+//   Phase 2 — fill any leftover `turnCoords[i]` slots with the last
+//             polyline point. Slots stay empty when rounding leaves the
+//             last threshold a few cm beyond the path's accumulated
+//             length; anchoring to the path's terminus is safer than
+//             dropping the turn or extrapolating off the line.
+// Sparse intermediate writes (assignment by index, not push) make the
+// rounding-leftover handling possible — phase 1 doesn't know in advance
+// whether a threshold will land inside the last segment or just past it.
 export function useTurnCoords(path, directions) {
   return useMemo(() => {
     if (!path?.length || !directions?.length) return [];

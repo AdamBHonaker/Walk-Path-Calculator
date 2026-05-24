@@ -66,6 +66,12 @@ export function haversineMeters([lat1, lon1], [lat2, lon2]) {
 // equirectangular approximation's accuracy. We compare squared meters to skip
 // the trig + sqrt of a full Haversine call per turn pair.
 const _DEDUP_METERS_SQ = 25;
+// Equirectangular approximation: meters per degree of latitude. WGS84's
+// geodetic latitude varies the meridional radius from ~110.6 km at the
+// equator to ~111.7 km at the poles; 111320 m is the canonical "round
+// midpoint" value used by most map-tile pipelines. At Chicago's latitude
+// (~41.9°) the meridional radius is ~111.04 km, so the error is < 0.3 %
+// — well below the dedup threshold (5 m at 5-m radius = 0.025 % error).
 const _METERS_PER_DEG_LAT = 111320;
 
 // Linearly interpolate between path[pi] and path[pi+1] at fraction t.

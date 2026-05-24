@@ -259,29 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-064 · CHUNK-20 · Frontend DRY + constants + comment cleanup
-- **Files**: new `frontend/src/lib/constants.js`, `frontend/src/lib/urlParams.js`, `frontend/src/lib/recentSearches.js`, `frontend/src/lib/explorePrefs.js`, `frontend/src/mapHelpers.js`, `frontend/src/lib/personaPrefs.js`, `frontend/src/hooks/useTurnCoords.js`, `frontend/src/components/PersonalizeModal.jsx`
-- **Category**: Code hygiene
-- **Priority**: 🟢 Low
-- **Findings**:
-  - **F-23** — `MAX_STOPS = 8` defined in two files; currently equal but free to drift.
-  - **F-25** — `EXPLORE_BUDGET_MIN` / `EXPLORE_BUDGET_MAX` exported but no importer.
-  - **F-29** — `_METERS_PER_DEG_LAT = 111320` undocumented magic number in `mapHelpers.js:38`.
-  - **F-30** — Backend's 3-9 ft height range is undocumented in frontend prefs (`personaPrefs.js:39`, `urlParams.js:43`).
-  - **F-36** — `useTurnCoords` two-phase array build is correct but unobvious; needs a one-line comment.
-  - **F-31** — PersonalizeModal `useEffect` intentionally omits `weightKg`/`dailyGoal` deps (BUG-011); pattern correct but name the helper `reseedLocalInputs` and isolate the rationale.
-- **Description**: Hygiene pass.
-- **Scope**:
-  - Hoist `MAX_STOPS` to shared constants module; both consumers import.
-  - Drop unused `EXPLORE_BUDGET_MIN/MAX` exports.
-  - Comment `_METERS_PER_DEG_LAT` (precision note: <1% error at Chicago latitude).
-  - Comment the 3-9 ft height range (mobility-device users).
-  - Comment the `useTurnCoords` two-phase build pattern.
-  - Name the PersonalizeModal reseed helper and block-comment its omitted deps.
-- **Acceptance**: `npm test`; `grep -r "MAX_STOPS" frontend/src/lib/` confirms single definition.
-
----
-
 ### TD-065 · CHUNK-21 · Frontend performance micro-optimizations
 - **Files**: `frontend/src/App.jsx`, `frontend/src/map/MapExploreLayer.jsx`
 - **Category**: Performance

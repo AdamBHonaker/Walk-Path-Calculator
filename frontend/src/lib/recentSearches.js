@@ -3,10 +3,15 @@
 // both legacy 2-stop ({origin, destination}) and multi-stop ({stops}) shapes.
 
 import { loadJSON, saveJSON, safeRemove } from "./storage.js";
+// MAX_STOPS lives in urlParams.js (the single source of truth — F-23).
+// Re-exported here so historical importers of `./recentSearches.js` MAX_STOPS
+// keep working without duplicating the literal.
+import { MAX_STOPS } from "./urlParams.js";
+
+export { MAX_STOPS };
 
 export const RECENT_KEY = "walkpath:recentSearches";
 export const RECENT_MAX = 10;
-export const MAX_STOPS  = 8;
 
 export function loadRecentSearches() {
   const parsed = loadJSON(RECENT_KEY, []);

@@ -1071,6 +1071,26 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Frontend hygiene pass — MAX_STOPS dedupe + magic-number docs + reseedLocalInputs name (TD-064)
+
+**Files:** `frontend/src/lib/recentSearches.js`, `frontend/src/mapHelpers.js`, `frontend/src/hooks/useTurnCoords.js`, `frontend/src/components/PersonalizeModal.jsx`.
+
+**Priority:** 🟢 Low.
+
+**What the debt was:** A hygiene pass over six minor findings. `MAX_STOPS = 8` was defined in both [urlParams.js](../../frontend/src/lib/urlParams.js) and [recentSearches.js](../../frontend/src/lib/recentSearches.js) — equal today, free to drift later (F-23). The `_METERS_PER_DEG_LAT = 111320` constant in [mapHelpers.js](../../frontend/src/mapHelpers.js) had no comment explaining why the canonical "round midpoint" is safe at Chicago latitude (F-29). The `useTurnCoords` two-phase array build worked correctly but the sparse-index-write pattern was unobvious (F-36). The PersonalizeModal effect that mirrored parent state into local inputs deliberately omitted its read deps (parent state) to avoid mid-typing clobber (BUG-011) — the comment explained the *what* but the catalog called for naming the helper `reseedLocalInputs` so a future reader can grep by intent (F-31). Two other findings (F-25 — unused EXPLORE_BUDGET exports; F-30 — undocumented 3-9 ft height range) turned out to be wrong: `ExploreForm.jsx` already imports both constants and the height range is already commented at the load and parse sites.
+
+**How it was resolved:**
+
+- **F-23 (MAX_STOPS dedupe):** [recentSearches.js](../../frontend/src/lib/recentSearches.js) now imports `MAX_STOPS` from [urlParams.js](../../frontend/src/lib/urlParams.js) and re-exports it for back-compat with any consumer that historically imported from `./recentSearches.js`. `urlParams.js` is the canonical source. `grep -rn "export const MAX_STOPS" frontend/src` confirms a single definition.
+- **F-29 (`_METERS_PER_DEG_LAT` magic-number comment):** Block comment explains the WGS84 meridional radius range (~110.6 km at equator to ~111.7 km at poles), why 111320 is the canonical map-tile midpoint, and the error budget at Chicago latitude (~111.04 km, < 0.3% error, well below the 5 m dedup threshold's tolerance).
+- **F-36 (useTurnCoords two-phase pattern):** Header comment names the phases — phase 1 walks path segments and may absorb 0..N thresholds per segment via sparse-index writes; phase 2 fills any leftover slots with the path's terminus. The sparse-index pattern is what makes the rounding-leftover handling possible.
+- **F-31 (PersonalizeModal `reseedLocalInputs`):** Extracted the effect body into a named function `reseedLocalInputs`; block-comment at the function head documents the intentional dep omission rationale (BUG-011) in one place. The effect now reads as `useEffect(() => { if (!open) return; reseedLocalInputs(); }, [open, unit])`.
+- **F-25 + F-30 (audit miscount — no edit):** Confirmed `EXPLORE_BUDGET_MIN` / `EXPLORE_BUDGET_MAX` are imported by [`ExploreForm.jsx`](../../frontend/src/components/ExploreForm.jsx) at four call sites. Confirmed `loadStoredHeightFt` ([personaPrefs.js:39](../../frontend/src/lib/personaPrefs.js#L39)) and `readUrlParams` ([urlParams.js:40](../../frontend/src/lib/urlParams.js#L40)) already comment the 3-9 ft / 36-108 in range. No action.
+
+**Acceptance:** `npm test` → **470 passed (470)** in 31s. `grep -rn "export const MAX_STOPS" frontend/src` returns exactly one match.
+
+---
+
 ### 2026-05-24 · Mobility profile prefer_pedestrian forced under Wheeled + follow-location mode gating (TD-063)
 
 **Files:** `frontend/src/hooks/useRouteFetch.js`, `frontend/src/components/PersonalizeModal.jsx`, `frontend/src/hooks/useRouteFetch.test.js`, `frontend/src/components/PersonalizeModal.test.jsx`, `frontend/src/App.jsx`.

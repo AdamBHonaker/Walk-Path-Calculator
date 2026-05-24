@@ -62,15 +62,26 @@ export function PersonalizeModal({
   // so the user isn't left wondering why their number didn't stick.
   const [goalNote, setGoalNote] = useState("");
 
-  // Reseed the local input mirrors when the modal opens or when the unit
-  // toggle changes. Parent values (`weightKg`, `dailyGoal`) are intentionally
-  // NOT in deps: each keystroke commits a clamped/converted value upward, and
-  // re-echoing it here would overwrite the user's in-progress typing (e.g.
-  // typing "1" → parent clamps to 1000 → input flips to "1000" mid-type).
-  // External resets are handled via `handleReset` which writes the local
-  // mirrors directly.
-  useEffect(() => {
-    if (!open) return;
+  /*
+   * `reseedLocalInputs` — refresh the local string mirrors of the parent's
+   * numeric weight + daily-goal values. Called only when:
+   *   - the modal opens, OR
+   *   - the unit toggle flips (kg ↔ lb — value needs to re-format).
+   *
+   * Parent values (`weightKg`, `dailyGoal`) are intentionally NOT effect
+   * deps even though the effect reads them (the eslint disable below
+   * acknowledges this). Why: each keystroke commits a clamped/converted
+   * value upward through `onChangeWeight` / `onChangeGoal`, and re-echoing
+   * the clamped value back into the local input would overwrite the
+   * user's in-progress typing (typing "1" → parent clamps to 1000 → input
+   * flips to "1000" mid-type — see BUG-011).
+   *
+   * External resets (the "Restore defaults" button) bypass this effect
+   * entirely by calling `handleReset` which writes the local mirrors
+   * directly. F-31: named so a future reader can search for the rationale
+   * by helper name rather than by surrounding-comment archaeology.
+   */
+  function reseedLocalInputs() {
     setWeightInput(
       weightKg != null
         ? String(Math.round(unit === "lb" ? kgToLb(weightKg) : weightKg))
@@ -78,6 +89,10 @@ export function PersonalizeModal({
     );
     setGoalInput(dailyGoal != null ? String(dailyGoal) : "");
     setGoalNote("");
+  }
+  useEffect(() => {
+    if (!open) return;
+    reseedLocalInputs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, unit]);
 
