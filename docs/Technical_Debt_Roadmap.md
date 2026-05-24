@@ -63,7 +63,7 @@ Within each wave, items in the same row can run in different sessions without co
 | 2 | TD-055 ∥ TD-056 ∥ TD-057 ∥ TD-058 ∥ TD-059 | TD-053 → TD-054 sequential; everything else parallel. TD-059 waits on TD-049. TD-052 resolved 2026-05-24 — Wave 3 is no longer gated. |
 | 3 | — | All Wave 3 items landed 2026-05-24. |
 | 4 | — | TD-067 landed 2026-05-24. |
-| 5 | TD-068, TD-069, TD-070, TD-071 | Independent of each other. **TD-068 has a soft dep on TD-054 (Wave 2)** — both touch `walking.py`; land TD-068 after TD-054 if both are planned in the same window. |
+| 5 | — | TD-068 / -069 / -070 / -071 all landed 2026-05-24. |
 | 6 | TD-072, TD-032, TD-034, TD-044 | All optional / paused. TD-032 / TD-034 / TD-044 predate the audit batch — see [Wave 6 details (paused / optional items)](#wave-6-details-paused--optional-items) below before pulling them. |
 
 ## Wave 6 details (paused / optional items)

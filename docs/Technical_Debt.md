@@ -259,21 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-071 · CHUNK-27 · localStorage schema versioning
-- **Files**: `frontend/src/lib/storage.js`, all `walkpath:*` consumers
-- **Category**: Frontend data migration
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **F-24** — No `walkpath:schemaVersion` marker, no migration registry. The one schema change to date (`train_stations` → `el_train_stations`) is hand-coded in `explorePrefs.js:sanitize()`. Future renames will accumulate ad-hoc.
-- **Description**: Set up a tiny migration pipeline now so future schema changes have a clear place to live.
-- **Scope**:
-  - Introduce `walkpath:schemaVersion` (defaults to 1).
-  - One-time migration runner that reads the current version and applies a registered migration chain (`v1 → v2 → …`).
-  - Document the pattern in CLAUDE.md or a new `docs/Persistence.md`.
-- **Acceptance**: Simulate an old schema in localStorage; reload; migration runs; data intact.
-
----
-
 ### TD-072 · CHUNK-28 · CSS modularization + naming consistency (optional polish)
 - **Files**: `frontend/src/App.css` (split), `frontend/src/wayfarer/responsive.css`
 - **Category**: Code organization

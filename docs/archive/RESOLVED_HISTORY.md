@@ -1071,6 +1071,27 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · localStorage schema versioning + migration registry (TD-071)
+
+**Files:** new `frontend/src/lib/storageSchema.js`, new `frontend/src/lib/storageSchema.test.js`, `frontend/src/main.jsx`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** No `walkpath:schemaVersion` marker, no migration registry. The one schema change to date (`train_stations` → `el_train_stations`) was hand-coded inside `explorePrefs.js:sanitize()` as a per-key fixup. Future renames would accumulate the same way — scattered across whichever module owns the affected key, with no central place to audit "what schema changes have we shipped, and on what schedule do users get migrated forward" (F-24).
+
+**How it was resolved:**
+
+- **New [`frontend/src/lib/storageSchema.js`](../../frontend/src/lib/storageSchema.js)** holds a `CURRENT_SCHEMA_VERSION` constant (currently 1 — the pre-existing baseline) and a `MIGRATIONS` registry keyed by from-version. Each migration is an idempotent, crash-safe function that performs whatever localStorage surgery the schema change requires; the runner walks the chain `from = currentVersion` up to `CURRENT_SCHEMA_VERSION` and persists the new version after each successful step.
+- **`runStorageMigrations()`** is the public entry point. Reads `walkpath:schemaVersion` (treating missing / malformed as v1 — the pre-versioning baseline), walks the chain, persists the new version, returns the resulting version. Gaps in the registry log a dev-time warning and short-circuit to the current version (loud in dev, graceful in prod). Migration crashes don't advance the version, so the next boot retries.
+- **Wired in [`frontend/src/main.jsx`](../../frontend/src/main.jsx)** at the very top of the import graph — runs synchronously before App imports, so every `loadStored*()` call in the feature modules sees a migrated localStorage. Comment pins the ordering rationale so a future refactor doesn't reshuffle the imports.
+- **Documented adding-a-migration recipe** inline in `storageSchema.js`: bump `CURRENT_SCHEMA_VERSION`, add a `[N]: () => { ... }` entry, document the change. The function-level doc comment captures the idempotent / crash-safe / defensive contract every migration must honor. An example migration is included (commented out) as a template.
+
+**Tests:** New [`storageSchema.test.js`](../../frontend/src/lib/storageSchema.test.js) covers four cases — fresh install, idempotent re-run at current version, malformed version marker, missing marker (pre-TD-071 user). All four lock in the contract; future migrations should add their own scenario tests against the registry.
+
+**Acceptance:** `npm test` → **474 passed (474)** in 20s. `walkpath:schemaVersion` is now persisted on every boot.
+
+---
+
 ### 2026-05-24 · Disaster recovery runbook (TD-070)
 
 **Files:** new `docs/DR.md`.
