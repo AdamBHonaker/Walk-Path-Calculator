@@ -926,13 +926,17 @@
   max-width: 260px;
 }
 
-.maplibregl-canvas {
-  filter: sepia(0.18) saturate(0.7) brightness(0.98);
-}
-
-.theme-dusk .maplibregl-canvas {
-  filter: sepia(0.06) saturate(0.6) brightness(0.55);
-}
+/* OPT-042 (2026-05-23): the prior `.maplibregl-canvas { filter:
+ * sepia(...) saturate(...) brightness(...) }` rule was removed. The
+ * editorial map tint is now applied via a MapLibre `background` layer
+ * in MapView + ShareDispatch (see `MAP_TINT` in mapHelpers.js); the
+ * filter forced the browser to allocate a backing surface for the
+ * canvas and re-apply the filter on every pan/zoom composite, whereas
+ * the layer-based approach composites natively in the map's paint
+ * pipeline. Visual contract shifted slightly — route + explore
+ * overlays now render in their true Wayfarer colors above the tint
+ * rather than being tinted alongside the base map. PV-014 tracks the
+ * Cream/Dusk side-by-side sign-off. */
 
 .map-unlock-btn {
   position: absolute;
@@ -2629,7 +2633,16 @@
   font-size: 11px;
   font-weight: 700;
   border: 1.5px solid var(--paper-bright);
-  box-shadow: 0 0 0 1px var(--ink);
+  /* OPT-066: `outline: 1px solid ink` paints the dark outer ring at far
+   * lower cost than the prior `box-shadow: 0 0 0 1px ink` — modern
+   * browsers route outlines through a cheaper paint primitive than the
+   * shadow rasterizer (no per-frame alpha blur composite, even at 0 px
+   * blur radius). At 50+ swatches in the explore panel this drops the
+   * paint-node count meaningfully on scroll. The two-tone "pin with
+   * cream halo" look is preserved because outline sits just outside the
+   * border, exactly where the box-shadow did. */
+  outline: 1px solid var(--ink);
+  outline-offset: 0;
   flex-shrink: 0;
 }
 .explore-cat-row-swatch--fill {
@@ -2637,7 +2650,9 @@
    * so the user reads it as a region, not a pin. */
   border-radius: 2px;
   border: 1px solid var(--ink);
-  box-shadow: none;
+  /* Outline reset to match the prior `box-shadow: none` override — fill
+   * swatches have a single ink border, no outer halo. */
+  outline: none;
   opacity: 0.7;
 }
 .explore-cat-sublist {

@@ -25,11 +25,37 @@ export function useExploreFetch({ mode, explorePrefs }) {
     return merged.length === 0 ? ["__none__"] : merged;
   }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
 
+  // OPT-025: derive the backend `with_heatmaps` filter from the four toggle
+  // prefs. Layer names must match the backend's `_HEATMAP_LAYER_NAMES`
+  // ({"residential","parks","green_space","tree_canopy"}). Drives both the
+  // request body and the toggle-expansion effect below.
+  const requestHeatmaps = useMemo(() => {
+    const out = [];
+    if (explorePrefs.showResidentialHeatmap) out.push("residential");
+    if (explorePrefs.showParksHeatmap)       out.push("parks");
+    if (explorePrefs.showTreeCanopyHeatmap)  out.push("tree_canopy");
+    if (explorePrefs.showGreenSpaceHeatmap)  out.push("green_space");
+    return out;
+  }, [
+    explorePrefs.showResidentialHeatmap,
+    explorePrefs.showParksHeatmap,
+    explorePrefs.showTreeCanopyHeatmap,
+    explorePrefs.showGreenSpaceHeatmap,
+  ]);
+
+  // Tracks the heatmap set the last successful fetch was built against. Lets
+  // the toggle-expansion effect below skip a network round-trip when a user
+  // toggles a heatmap OFF (no fetch needed) or back ON when the existing
+  // exploreResult already carries its geojson (the layer just unhides from
+  // the same cached data).
+  const lastFetchedHeatmapsRef = useRef(null);
+
   const fetchExploreResult = useCallback(async (overrides = {}) => {
     const prefs = explorePrefsRef.current;
     const origin = overrides.origin ?? prefs.origin;
     const maxMinutes = overrides.maxMinutes ?? prefs.maxMinutes;
     const categories = overrides.categories ?? requestCategories;
+    const withHeatmaps = overrides.withHeatmaps ?? requestHeatmaps;
 
     if (origin.kind === "current" && (origin.lat == null || origin.lon == null)) {
       setExploreError("Allow location access to explore from where you are.");
@@ -46,10 +72,12 @@ export function useExploreFetch({ mode, explorePrefs }) {
         origin,
         maxMinutes,
         categories,
+        withHeatmaps,
         signal,
       });
       if (signal.aborted) return;
       setExploreResult(data);
+      lastFetchedHeatmapsRef.current = withHeatmaps;
     } catch (err) {
       if (err.name === "AbortError" || signal.aborted) return;
       const message = err.name === "TimeoutError"
@@ -59,14 +87,21 @@ export function useExploreFetch({ mode, explorePrefs }) {
     } finally {
       if (!signal.aborted) setExploreLoading(false);
     }
-  }, [requestCategories]);
+  }, [requestCategories, requestHeatmaps]);
 
   // First entry into explore mode → fire an initial fetch so the user sees an
   // isochrone immediately on switch (no "click Discover" dead state).
+  //
+  // OPT-057: the prior `if (exploreLoading) return;` in-flight guard was
+  // removed. `fetchExploreResult` already implements cancel-and-replace
+  // via `exploreAbortRef.current?.abort()` before starting the new
+  // request, so a rapid mode toggle (explore → route → explore) now
+  // aborts the stale fetch and starts a fresh one with the current
+  // params, rather than silently dropping the new request and letting
+  // the prior one's stale params surface in the result.
   useEffect(() => {
     if (mode !== "explore") return;
     if (exploreResult) return;
-    if (exploreLoading) return;
     fetchExploreResult();
     // Intentional: only run on mode-flip-into-explore + when result is empty.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -89,6 +124,24 @@ export function useExploreFetch({ mode, explorePrefs }) {
     // exploreResult / fetchExploreResult / mode intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestCategories]);
+
+  // OPT-025: re-fetch when the user toggles ON a heatmap whose data the
+  // current exploreResult doesn't carry. Toggling OFF is silent (the layer
+  // hides client-side via the existing show* prefs), and toggling back ON
+  // a heatmap whose geojson is already in exploreResult is silent too.
+  useEffect(() => {
+    if (mode !== "explore") return;
+    if (!exploreResult) return;
+    const last = lastFetchedHeatmapsRef.current;
+    if (last === null) return;
+    const o = explorePrefsRef.current.origin;
+    if (o.kind === "current" && (o.lat == null || o.lon == null)) return;
+    const lastSet = new Set(last);
+    const needsExpansion = requestHeatmaps.some(h => !lastSet.has(h));
+    if (needsExpansion) fetchExploreResult();
+    // exploreResult / fetchExploreResult / mode intentionally omitted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestHeatmaps]);
 
   return {
     exploreResult,

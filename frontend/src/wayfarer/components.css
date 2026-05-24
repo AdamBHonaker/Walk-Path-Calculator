@@ -26,13 +26,20 @@
   flex-direction: column;
   z-index: 20;
   border-top: 1px solid var(--ink);
+  /* OPT-067: blur radius cut from 24 px → 12 px. The browser
+   * re-rasterizes the shadow region on every drag frame, and the cost
+   * scales with the blur radius squared. Halving the blur quarters the
+   * rasterized area without meaningfully changing the editorial "page
+   * lifted off the page below" feel — the 8 px y-offset + alpha still
+   * read as a tactile floating sheet. Sheet drag was the worst-case
+   * surface for this on mid-tier Android. */
   box-shadow:
-    0 -8px 24px rgba(23,19,16,0.18),
+    0 -8px 12px rgba(23,19,16,0.18),
     0 -1px 0 rgba(23,19,16,0.05);
 }
 .theme-dusk .wf-sheet {
   box-shadow:
-    0 -8px 24px rgba(0,0,0,0.45),
+    0 -8px 12px rgba(0,0,0,0.45),
     0 -1px 0 rgba(0,0,0,0.25);
 }
 

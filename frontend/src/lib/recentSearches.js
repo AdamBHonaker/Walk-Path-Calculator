@@ -21,16 +21,16 @@ export function saveRecentSearch(originOrStops, destination) {
     stops = [String(originOrStops), String(destination)];
   }
   if (stops.length < 2) return null;
+  // OPT-056: single-pass dedupe + clean. Load is one JSON.parse via
+  // loadRecentSearches. The new key is stringified once into `sig`. We
+  // walk existing entries in a single loop, computing each entry's
+  // stops shape inline (no re-stringify) and using a Set<string> of
+  // stop signatures for O(1) "have we seen this?" — combining the prior
+  // separate "drop corrupt" + "dedupe" filter passes into one. Corrupt
+  // entries (fewer than 2 stops, the same shape `recentEntryStops`
+  // refuses to render) are skipped here too so they don't crowd the
+  // 10-slot window. Final write is one JSON.stringify + setItem.
   const existing = loadRecentSearches();
-  // Drop corrupt legacy entries (missing/empty stops, or origin/destination
-  // that resolved to undefined) before we dedupe — otherwise their
-  // "[null,null]" signature lingers in the 10-slot window and crowds out
-  // valid entries. recentEntryStops is the same readback the UI uses, so
-  // anything it can't render gets filtered here.
-  const cleanExisting = existing.filter(r => recentEntryStops(r).length >= 2);
-  // JSON.stringify keeps stop boundaries intact so ["A","BC"] and ["AB","C"]
-  // produce different signatures — using a plain join("") collapsed those
-  // distinct routes onto the same key and silently evicted the older one.
   const sig = JSON.stringify(stops);
   const entry = {
     stops,
@@ -38,10 +38,18 @@ export function saveRecentSearch(originOrStops, destination) {
     destination: stops[stops.length - 1],
     timestamp: Date.now(),
   };
-  const sigOf = (r) => JSON.stringify(recentEntryStops(r));
-  const deduped = cleanExisting.filter(r => sigOf(r) !== sig);
-  const updated = [entry, ...deduped].slice(0, RECENT_MAX);
-  return saveJSON(RECENT_KEY, updated) ? updated : null;
+  const seen = new Set([sig]); // pre-populate so any equal entry drops out
+  const kept = [entry];
+  for (const r of existing) {
+    if (kept.length >= RECENT_MAX) break;
+    const stopsArr = recentEntryStops(r);
+    if (stopsArr.length < 2) continue;          // legacy corrupt — skip
+    const rSig = JSON.stringify(stopsArr);
+    if (seen.has(rSig)) continue;               // duplicate — skip
+    seen.add(rSig);
+    kept.push(r);
+  }
+  return saveJSON(RECENT_KEY, kept) ? kept : null;
 }
 
 export function clearRecentSearches() {

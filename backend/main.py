@@ -383,11 +383,22 @@ class ExploreOrigin(BaseModel):
         return self
 
 
+_HEATMAP_LAYER_NAMES: frozenset[str] = frozenset(
+    {"residential", "parks", "green_space", "tree_canopy"}
+)
+
+
 class ExploreRequest(BaseModel):
     origin: ExploreOrigin
     max_minutes: int = Field(ge=5, le=45)
     categories: list[str] | None = None
     height_inches: float | None = None
+    # Subset of {"residential", "parks", "green_space", "tree_canopy"}. When
+    # `None` (the default) the backend computes every heatmap; when a list is
+    # provided, layers not in the set are skipped and returned as `null`. Used
+    # to avoid ~150 ms of shapely clip work for layers the user has toggled off
+    # on the frontend (OPT-025).
+    with_heatmaps: list[str] | None = None
 
     @field_validator("max_minutes", mode="before")
     @classmethod
@@ -415,6 +426,20 @@ class ExploreRequest(BaseModel):
             raise ValueError("too many categories (max 32)")
         cleaned = [c.strip() for c in v if isinstance(c, str) and c.strip()]
         return cleaned or None
+
+    @field_validator("with_heatmaps")
+    @classmethod
+    def validate_with_heatmaps(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return None
+        unknown = [name for name in v if name not in _HEATMAP_LAYER_NAMES]
+        if unknown:
+            raise ValueError(
+                f"with_heatmaps contains unknown layer(s): {unknown!r}. "
+                f"Valid names: {sorted(_HEATMAP_LAYER_NAMES)!r}."
+            )
+        # Empty list is meaningful — "compute no heatmaps". Preserve as-is.
+        return v
 
 
 @app.get("/health")
@@ -488,13 +513,29 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
     def _clip(fn, *args):
         return fn(_shape(geojson_polygon), *args)
 
-    places, heatmap, canopy, parks, green = await asyncio.gather(
-        loop.run_in_executor(_heatmap_pool, _clip, places_in_polygon, payload.categories),
-        loop.run_in_executor(_heatmap_pool, _clip, residential_heatmap),
-        loop.run_in_executor(_heatmap_pool, _clip, tree_canopy_in_polygon),
-        loop.run_in_executor(_heatmap_pool, _clip, parks_in_polygon),
-        loop.run_in_executor(_heatmap_pool, _clip, green_space_in_polygon),
+    # OPT-025: skip the clip work for heatmaps the frontend toggled off. When
+    # `with_heatmaps` is None (omitted) we keep the legacy behavior of
+    # computing every layer.
+    include_heatmaps = (
+        set(payload.with_heatmaps)
+        if payload.with_heatmaps is not None
+        else _HEATMAP_LAYER_NAMES
     )
+    heatmap_specs = (
+        ("residential", residential_heatmap),
+        ("tree_canopy", tree_canopy_in_polygon),
+        ("parks",       parks_in_polygon),
+        ("green_space", green_space_in_polygon),
+    )
+    heatmap_futs = {
+        name: loop.run_in_executor(_heatmap_pool, _clip, fn)
+        for name, fn in heatmap_specs
+        if name in include_heatmaps
+    }
+    places_fut = loop.run_in_executor(_heatmap_pool, _clip, places_in_polygon, payload.categories)
+    gathered = await asyncio.gather(places_fut, *heatmap_futs.values())
+    places = gathered[0]
+    heatmap_results: dict[str, object] = dict(zip(heatmap_futs.keys(), gathered[1:]))
 
     return quantize_geojson({
         "origin_coords": [origin_lat, origin_lon],
@@ -504,21 +545,22 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         "stats": result["stats"],
         "places": places,
         # GeoJSON MultiPolygon (or null if no residential land falls inside
-        # the isochrone — happens for tight Loop-area budgets).
-        "residential_heatmap": heatmap,
+        # the isochrone — happens for tight Loop-area budgets, OR when the
+        # caller passed a `with_heatmaps` filter that excluded "residential").
+        "residential_heatmap": heatmap_results.get("residential"),
         # GeoJSON FeatureCollection of up to three density bands (low/mid/
         # high), or null when no canopy cells overlap the isochrone.
-        "tree_canopy_heatmap": canopy,
+        "tree_canopy_heatmap": heatmap_results.get("tree_canopy"),
         # GeoJSON FeatureCollection of CPD park footprints clipped to the
         # isochrone (one Feature per park with name + acres properties),
         # or null when no park polygons overlap.
-        "parks_heatmap": parks,
+        "parks_heatmap": heatmap_results.get("parks"),
         # GeoJSON FeatureCollection of non-CPD green space (cemeteries,
         # golf courses, nature reserves / Forest Preserves, recreation
         # grounds) clipped to the isochrone. One Feature per `kind`
         # (kind ∈ {cemetery, golf_course, nature_reserve, recreation_ground}),
         # or null when none overlap.
-        "green_space_heatmap": green,
+        "green_space_heatmap": heatmap_results.get("green_space"),
     })
 
 
@@ -572,8 +614,20 @@ async def autocomplete_endpoint(request: Request, q: str, limit: int = 8):
     loop = asyncio.get_running_loop()
     suggestions = await loop.run_in_executor(None, local_search.autocomplete, q, limit)
 
+    # OPT-085: a stable `id` per suggestion (composed of source + label +
+    # quantized coords) lets the frontend use it as the React `<li key=...>`
+    # so list reconciliation across filter/reorder keeps the DOM nodes
+    # mounted instead of remounting every row. Same suggestion across two
+    # backend calls gets the same id; collisions between different
+    # suggestions are blocked by source-prefixing.
     out = [
-        {"label": s.label, "lat": s.lat, "lon": s.lon, "source": s.source}
+        {
+            "label": s.label,
+            "lat": s.lat,
+            "lon": s.lon,
+            "source": s.source,
+            "id": f"{s.source}|{s.label}|{s.lat:.6f},{s.lon:.6f}",
+        }
         for s in suggestions
     ]
 
@@ -595,6 +649,7 @@ async def autocomplete_endpoint(request: Request, q: str, limit: int = 8):
                 "lat": coords[0],
                 "lon": coords[1],
                 "source": "locationiq",
+                "id": f"locationiq|{q}|{coords[0]:.6f},{coords[1]:.6f}",
             })
 
     return {"suggestions": out[:limit]}

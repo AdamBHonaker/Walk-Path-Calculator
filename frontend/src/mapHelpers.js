@@ -18,6 +18,37 @@ export const MAP_STYLE_URL =
 export const DEFAULT_MAP_CENTER = [-87.654, 41.966]; // Uptown, Chicago
 export const DEFAULT_MAP_ZOOM   = 13;
 
+// OPT-042: editorial map tint via a MapLibre `background` layer rather
+// than the prior CSS `filter: sepia(...) saturate(...) brightness(...)`
+// on `.maplibregl-canvas`. The CSS filter forced the browser to apply
+// the matrix to the entire WebGL canvas on EVERY composite (pan/zoom
+// dragged the filter through the GPU each frame). A background layer is
+// part of the map's own paint pipeline — it composites once per frame
+// alongside the rest of the layers, with no extra surface allocation.
+//
+// The tint layer is inserted ABOVE the OpenFreeMap Liberty base layers
+// (water, land, buildings, roads, labels) but BELOW the route + explore
+// overlays added by MapRouteLayer / MapExploreLayer. The visual contract
+// shifts slightly vs. the CSS filter — route lines and explore polygons
+// now show in their true Wayfarer colors (more pop, less unified tone).
+// Tune the values via real-device side-by-side review (see PV-014).
+export const MAP_TINT_LAYER_ID = "passage-map-tint";
+export const MAP_TINT = {
+  cream: { color: "#8B6F47", opacity: 0.12 }, // warm sepia wash
+  dusk:  { color: "#0a0807", opacity: 0.45 }, // dark warm overlay
+};
+
+// Returns the active tint object based on the document root theme class.
+// SSR-safe: returns the Cream variant when document is unavailable.
+export function getActiveMapTint() {
+  if (typeof document === "undefined" || !document.documentElement) {
+    return MAP_TINT.cream;
+  }
+  return document.documentElement.classList.contains("theme-dusk")
+    ? MAP_TINT.dusk
+    : MAP_TINT.cream;
+}
+
 // Backend returns [lat, lon]; GeoJSON / MapLibre expects [lon, lat].
 export const toGeo = ([lat, lon]) => [lon, lat];
 
@@ -216,7 +247,13 @@ function dropTracked(map, ids, sourceIds, layerIds) {
 // `activeTurnIndex` is no longer consumed by the source build — it's applied
 // via setFeatureState in `applyActiveTurnFeatureState` below. The parameter
 // remains in the signature for backward compatibility with test fixtures.
-export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layerIds, sourceIds, fitPadding = 60, routeColor = WALK_PATH_COLOR, drawEndpointDots = true) {
+//
+// `precomputedSegments` is an optional GeoJSON FeatureCollection produced by
+// `buildRouteSegments` upstream (memoized in MapRouteLayer); when supplied,
+// the per-edge segment FeatureCollection isn't rebuilt here, sparing the
+// `_buildTurnPathInfo` cum-distance walk on flavor swaps that keep the path
+// identical.
+export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layerIds, sourceIds, fitPadding = 60, routeColor = WALK_PATH_COLOR, drawEndpointDots = true, precomputedSegments = null) {
   if (!result?.path?.length) return;
 
   const { path, origin_coords, dest_coords, directions } = result;
@@ -240,12 +277,18 @@ export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layer
   // the active direction step. walk-segments-line: alternating-opacity copy
   // of the route line, hidden during draw-in animation and swapped in after.
   if (directions?.length) {
-    const hadSegSource = !!map.getSource?.("walk-segments");
-    upsertGeoSource(map, "walk-segments", buildRouteSegments(path, directions), sourceIds);
-    if (hadSegSource) {
+    // Clear stale feature state BEFORE the new setData. If the prior route
+    // had more turns than the new one, leaving the high-IDs' state set in
+    // MapLibre's internal feature-state map orphans them: setData rebinds
+    // ids in the source but does not reset state for ids that no longer
+    // exist in the data. Clearing before setData prevents the dict from
+    // growing monotonically across route swaps.
+    if (map.getSource?.("walk-segments")) {
       try { map.removeFeatureState?.({ source: "walk-segments" }); }
       catch { /* source torn down between checks */ }
     }
+    const segments = precomputedSegments || buildRouteSegments(path, directions);
+    upsertGeoSource(map, "walk-segments", segments, sourceIds);
     ensureLayer(map, {
       id: "walk-segment-casing", type: "line", source: "walk-segments",
       layout: { "line-cap": "round", "line-join": "round" },
@@ -281,19 +324,20 @@ export function renderWalkRoute(map, result, turnCoords, _activeTurnIndex, layer
   }, layerIds);
 
   if (turnCoords?.length) {
-    const hadSource = !!map.getSource?.("walk-turns");
+    // Clear stale feature state BEFORE setData. setData retains states
+    // keyed by feature id, so stale ids past the new feature count would
+    // accumulate over many flavor / route swaps and a stale active=true
+    // on a still-present id would silently bleed across swaps. Clearing
+    // ahead of the upsert addresses both.
+    if (map.getSource?.("walk-turns")) {
+      try { map.removeFeatureState?.({ source: "walk-turns" }); }
+      catch { /* source torn down between checks */ }
+    }
     upsertGeoSource(
       map, "walk-turns",
       buildTurnsGeoJson(turnCoords),
       sourceIds,
     );
-    // Clear stale feature state from the previous route — setData retains
-    // states keyed by feature id, and a stale active=true would silently
-    // leak across route swaps if the same id existed in the new data.
-    if (hadSource) {
-      try { map.removeFeatureState?.({ source: "walk-turns" }); }
-      catch { /* source torn down between checks */ }
-    }
     ensureLayer(map, {
       id: "walk-turns-circle", type: "circle", source: "walk-turns",
       paint: {
@@ -504,47 +548,23 @@ function ensureExploreSource(map, id, data, clusterOptions, sourceIds) {
   sourceIds.push(id);
 }
 
-/**
- * Render the explorer's polygon + (optional) residential heatmap + place
- * pins. Mutates `layerIds` / `sourceIds` so the caller can dispose layers
- * at the next render.
- *
- * The caller pre-computes `placeFeatures` (the GeoJSON FeatureCollection
- * for the pin source) and `placeExpressions` (the color/glyph match
- * expressions). This lets a `showResidential`-only toggle reuse the same
- * cached features and skip handing supercluster a fresh setData payload.
- *
- * @param {maplibregl.Map} map
- * @param {Object} result               — backend /explore response
- * @param {Object} options
- * @param {boolean} options.showResidential
- * @param {Object[]}       options.placeFeatures   — GeoJSON Features
- * @param {Object}         options.placeExpressions — { colorExpr, glyphExpr }
- * @param {number|Object}  options.fitPadding
- * @param {string[]}       layerIds
- * @param {string[]}       sourceIds
- */
-export function renderExplore(map, result, options, layerIds, sourceIds) {
-  if (!result?.polygon) {
-    clearExploreLayers(map, layerIds, sourceIds);
+// Per-layer helpers split out of the legacy `renderExplore` monolith so
+// MapExploreLayer can wire each layer to its own React useEffect with a
+// narrow dep array. Toggling a single heatmap no longer thrashes through
+// every block of code that touched unrelated sources.
+//
+// `renderExplore` remains as a façade for share-card paths + the existing
+// test suite; production code (MapExploreLayer) calls the per-layer
+// helpers directly.
+
+export function renderExplorePolygon(map, polygonGeom, layerIds, sourceIds, fitOptions) {
+  if (!polygonGeom) {
+    dropTracked(map, ["explore-poly-stroke", "explore-poly-fill", "explore-poly"], sourceIds, layerIds);
     return;
   }
-  const {
-    showResidential = true,
-    showParks = false,
-    showTreeCanopy = false,
-    showGreenSpace = false,
-    canopyBandColors = CANOPY_BAND_COLORS,
-    placeFeatures = [],
-    placeExpressions,
-    fitPadding = 60,
-    fitOnRender = true,
-  } = options || {};
-
-  // ── Polygon source ────────────────────────────────────────────────
   ensureExploreSource(
     map, "explore-poly",
-    { type: "Feature", geometry: result.polygon, properties: {} },
+    { type: "Feature", geometry: polygonGeom, properties: {} },
     null, sourceIds,
   );
   ensureLayer(map, {
@@ -563,14 +583,35 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
     },
   }, layerIds);
 
-  // ── Residential heatmap fill ─────────────────────────────────────
-  if (showResidential && result.residential_heatmap) {
-    ensureExploreSource(
-      map, "explore-residential",
-      { type: "Feature", geometry: result.residential_heatmap, properties: {} },
-      null, sourceIds,
-    );
-    if (!map.getLayer("explore-residential-fill")) {
+  // Only fit bounds when a new isochrone arrives — not on display-only
+  // changes (category filter, heatmap toggle) so the user's pan/zoom is
+  // preserved while exploring within a result.
+  if (fitOptions?.fitOnRender) {
+    const b = polygonBounds(polygonGeom);
+    if (b) {
+      map.fitBounds(b, { padding: fitOptions.fitPadding ?? 60, animate: false, maxZoom: 15 });
+    }
+  }
+}
+
+export function renderExploreResidential(map, show, residentialHeatmap, layerIds, sourceIds) {
+  if (!show || !residentialHeatmap) {
+    dropTracked(map, ["explore-residential-fill", "explore-residential"], sourceIds, layerIds);
+    return;
+  }
+  ensureExploreSource(
+    map, "explore-residential",
+    { type: "Feature", geometry: residentialHeatmap, properties: {} },
+    null, sourceIds,
+  );
+  if (!map.getLayer("explore-residential-fill")) {
+    // `beforeId` references the polygon stroke so the residential wash
+    // sits beneath the outline. The polygon effect runs first because
+    // its dep set fires on every mode/result transition, but if it's
+    // ever missing (defensive path), the addLayer call would throw —
+    // catch and skip silently so a transient ordering mismatch doesn't
+    // surface as a runtime error.
+    try {
       map.addLayer({
         id: "explore-residential-fill", type: "fill", source: "explore-residential",
         paint: {
@@ -579,22 +620,24 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
         },
       }, "explore-poly-stroke");
       layerIds.push("explore-residential-fill");
-    }
-  } else {
-    dropTracked(map, ["explore-residential-fill", "explore-residential"], sourceIds, layerIds);
+    } catch { /* polygon stroke not yet present */ }
   }
+}
 
-  // ── Tree canopy heatmap (three opacity bands) ────────────────────
-  // Single fill layer driven by the `density_band` feature property.
-  // Sits above the residential wash and below the CPD parks layer so
-  // a park footprint visually "wins" when both are enabled.
-  if (showTreeCanopy && result.tree_canopy_heatmap?.features?.length) {
-    ensureExploreSource(
-      map, "explore-canopy",
-      result.tree_canopy_heatmap,
-      null, sourceIds,
-    );
-    if (!map.getLayer("explore-canopy-fill")) {
+// Tree canopy density bands. Sits above residential and below CPD parks
+// so an overlap reads as "park wins, then canopy, then residential."
+export function renderExploreCanopy(map, show, canopyHeatmap, canopyBandColors, layerIds, sourceIds) {
+  if (!show || !canopyHeatmap?.features?.length) {
+    dropTracked(map, ["explore-canopy-fill", "explore-canopy"], sourceIds, layerIds);
+    return;
+  }
+  ensureExploreSource(
+    map, "explore-canopy",
+    canopyHeatmap,
+    null, sourceIds,
+  );
+  if (!map.getLayer("explore-canopy-fill")) {
+    try {
       map.addLayer({
         id: "explore-canopy-fill", type: "fill", source: "explore-canopy",
         paint: {
@@ -609,23 +652,25 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
         },
       }, "explore-poly-stroke");
       layerIds.push("explore-canopy-fill");
-    }
-  } else {
-    dropTracked(map, ["explore-canopy-fill", "explore-canopy"], sourceIds, layerIds);
+    } catch { /* polygon stroke not yet present */ }
   }
+}
 
-  // ── Parks heatmap fill (CPD park footprints) ─────────────────────
-  // Sits above residential, below the polygon stroke + place pins.
-  // Each Feature in `parks_heatmap` carries name + acres; we keep them
-  // as Features so a future popup can read the properties off the
-  // hover/click event.
-  if (showParks && result.parks_heatmap?.features?.length) {
-    ensureExploreSource(
-      map, "explore-parks",
-      result.parks_heatmap,
-      null, sourceIds,
-    );
-    if (!map.getLayer("explore-parks-fill")) {
+// CPD parks footprints. Each Feature carries name + acres for popups +
+// the greenest-routing edge-weight bake; we keep them as Features rather
+// than a single MultiPolygon for that reason.
+export function renderExploreParks(map, show, parksHeatmap, layerIds, sourceIds) {
+  if (!show || !parksHeatmap?.features?.length) {
+    dropTracked(map, ["explore-parks-stroke", "explore-parks-fill", "explore-parks"], sourceIds, layerIds);
+    return;
+  }
+  ensureExploreSource(
+    map, "explore-parks",
+    parksHeatmap,
+    null, sourceIds,
+  );
+  if (!map.getLayer("explore-parks-fill")) {
+    try {
       map.addLayer({
         id: "explore-parks-fill", type: "fill", source: "explore-parks",
         paint: {
@@ -634,8 +679,10 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
         },
       }, "explore-poly-stroke");
       layerIds.push("explore-parks-fill");
-    }
-    if (!map.getLayer("explore-parks-stroke")) {
+    } catch { /* polygon stroke not yet present */ }
+  }
+  if (!map.getLayer("explore-parks-stroke")) {
+    try {
       map.addLayer({
         id: "explore-parks-stroke", type: "line", source: "explore-parks",
         paint: {
@@ -644,62 +691,69 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
         },
       }, "explore-poly-stroke");
       layerIds.push("explore-parks-stroke");
-    }
-  } else {
-    dropTracked(map, ["explore-parks-stroke", "explore-parks-fill", "explore-parks"], sourceIds, layerIds);
+    } catch { /* polygon stroke not yet present */ }
   }
+}
 
-  // ── Non-CPD green space fill (cemeteries / golf / nature / rec) ─
-  // Sits below the CPD parks layer so where the two overlap, the
-  // authoritative park footprint wins visually.
-  if (showGreenSpace && result.green_space_heatmap?.features?.length) {
-    ensureExploreSource(
-      map, "explore-greenspace",
-      result.green_space_heatmap,
-      null, sourceIds,
-    );
-    if (!map.getLayer("explore-greenspace-fill")) {
+// Non-CPD green space (OSM cemeteries / golf / nature reserves / rec
+// grounds). Sits below CPD parks so a polygon tagged as both reads as
+// the authoritative park footprint.
+export function renderExploreGreenSpace(map, show, greenSpaceHeatmap, layerIds, sourceIds) {
+  if (!show || !greenSpaceHeatmap?.features?.length) {
+    dropTracked(map, ["explore-greenspace-stroke", "explore-greenspace-fill", "explore-greenspace"], sourceIds, layerIds);
+    return;
+  }
+  ensureExploreSource(
+    map, "explore-greenspace",
+    greenSpaceHeatmap,
+    null, sourceIds,
+  );
+  // beforeId varies: prefer "explore-parks-fill" when parks are live
+  // (so green-space sits below parks), otherwise fall back to the
+  // polygon stroke. This preserves z-order regardless of whether the
+  // parks toggle is currently on.
+  const beforeId = map.getLayer?.("explore-parks-fill") ? "explore-parks-fill" : "explore-poly-stroke";
+  if (!map.getLayer("explore-greenspace-fill")) {
+    try {
       map.addLayer({
         id: "explore-greenspace-fill", type: "fill", source: "explore-greenspace",
         paint: {
           "fill-color":   GREEN_SPACE_FILL_COLOR,
           "fill-opacity": GREEN_SPACE_FILL_OPACITY,
         },
-      }, "explore-parks-fill");
+      }, beforeId);
       layerIds.push("explore-greenspace-fill");
-    }
-    if (!map.getLayer("explore-greenspace-stroke")) {
+    } catch { /* anchor layer not yet present */ }
+  }
+  if (!map.getLayer("explore-greenspace-stroke")) {
+    try {
       map.addLayer({
         id: "explore-greenspace-stroke", type: "line", source: "explore-greenspace",
         paint: {
           "line-color": GREEN_SPACE_STROKE_COLOR,
           "line-width": GREEN_SPACE_STROKE_WIDTH,
         },
-      }, "explore-parks-fill");
+      }, beforeId);
       layerIds.push("explore-greenspace-stroke");
-    }
-  } else {
-    dropTracked(map, ["explore-greenspace-stroke", "explore-greenspace-fill", "explore-greenspace"], sourceIds, layerIds);
+    } catch { /* anchor layer not yet present */ }
   }
+}
 
-  // ── Places source (clustered) ────────────────────────────────────
-  // The caller (MapExploreLayer) owns subcategory filtering and the
-  // GeoJSON shaping of `placeFeatures`, plus the per-category color +
-  // glyph match expressions. Keeping that work in the React layer lets
-  // it be memoised on the user's selection state.
-
+// Clustered place pins. The caller (MapExploreLayer) owns subcategory
+// filtering and GeoJSON shaping of `placeFeatures` plus the per-category
+// color + glyph match expressions, so this helper only paints what it's
+// handed.
+export function renderExplorePlaces(map, placeFeatures, placeExpressions, layerIds, sourceIds) {
   ensureExploreSource(
     map, "explore-places",
-    { type: "FeatureCollection", features: placeFeatures },
+    { type: "FeatureCollection", features: placeFeatures || [] },
     {
       cluster: true,
       clusterRadius: 40,
       // Cluster up through zoom 12; from zoom 13 every place is an
       // individual pin. The default `fitBounds` for a 20-min isochrone
       // lands around zoom 13, so users see real category pins on the
-      // first frame instead of a single cluster bubble. Larger budgets
-      // (30–45 min) still cluster naturally because they auto-fit
-      // lower.
+      // first frame instead of a single cluster bubble.
       clusterMaxZoom: 12,
     },
     sourceIds,
@@ -735,11 +789,6 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
     paint: { "text-color": PLACE_PIN_TEXT_COLOR },
   }, layerIds);
 
-  // Individual pin: a colored circle per category, stroked white. We use a
-  // category→color expression so a single circle layer paints every pin
-  // without N category-specific layers (those would each have their own
-  // event subscription, ballooning the click handler bookkeeping).
-  // Expressions are pre-built by the caller and memoised on categoryStyles.
   const { colorExpr, glyphExpr } = placeExpressions || _fallbackPinExpressions();
 
   ensureLayer(map, {
@@ -769,16 +818,48 @@ export function renderExplore(map, result, options, layerIds, sourceIds) {
       "text-halo-color": "rgba(0,0,0,0.35)",
     },
   }, layerIds);
+}
 
-  // Only fit bounds when a new isochrone arrives — not on display-only
-  // changes (category filter, heatmap toggle) so the user's pan/zoom is
-  // preserved while exploring within a result.
-  if (fitOnRender) {
-    const b = polygonBounds(result.polygon);
-    if (b) {
-      map.fitBounds(b, { padding: fitPadding, animate: false, maxZoom: 15 });
-    }
+/**
+ * Façade that delegates to the per-layer helpers above. Kept so the
+ * existing mapHelpers.test.js + ShareDispatch-style callers don't have
+ * to enumerate every helper. Production code in MapExploreLayer calls
+ * the per-layer helpers directly so each useEffect's dep array stays
+ * scoped to the source it manages.
+ *
+ * @param {maplibregl.Map} map
+ * @param {Object} result               — backend /explore response
+ * @param {Object} options
+ * @param {boolean} options.showResidential
+ * @param {Object[]}       options.placeFeatures   — GeoJSON Features
+ * @param {Object}         options.placeExpressions — { colorExpr, glyphExpr }
+ * @param {number|Object}  options.fitPadding
+ * @param {string[]}       layerIds
+ * @param {string[]}       sourceIds
+ */
+export function renderExplore(map, result, options, layerIds, sourceIds) {
+  if (!result?.polygon) {
+    clearExploreLayers(map, layerIds, sourceIds);
+    return;
   }
+  const {
+    showResidential = true,
+    showParks = false,
+    showTreeCanopy = false,
+    showGreenSpace = false,
+    canopyBandColors = CANOPY_BAND_COLORS,
+    placeFeatures = [],
+    placeExpressions,
+    fitPadding = 60,
+    fitOnRender = true,
+  } = options || {};
+
+  renderExplorePolygon(map, result.polygon, layerIds, sourceIds, { fitOnRender, fitPadding });
+  renderExploreResidential(map, showResidential, result.residential_heatmap, layerIds, sourceIds);
+  renderExploreCanopy(map, showTreeCanopy, result.tree_canopy_heatmap, canopyBandColors, layerIds, sourceIds);
+  renderExploreParks(map, showParks, result.parks_heatmap, layerIds, sourceIds);
+  renderExploreGreenSpace(map, showGreenSpace, result.green_space_heatmap, layerIds, sourceIds);
+  renderExplorePlaces(map, placeFeatures, placeExpressions, layerIds, sourceIds);
 }
 
 // Safety net for callers that didn't pre-build the pin expressions

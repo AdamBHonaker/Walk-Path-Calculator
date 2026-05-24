@@ -14,9 +14,15 @@ import { parseApiErrorMessage } from "./apiErrorMessage.js";
  *                                           { kind:"current", lat, lon }
  * @param {number}   args.maxMinutes       — 5..45
  * @param {string[]} [args.categories]     — top-level keys; omit for "all"
+ * @param {string[]} [args.withHeatmaps]   — subset of {"residential","parks",
+ *                                           "green_space","tree_canopy"}.
+ *                                           Omit to compute every heatmap
+ *                                           (legacy behavior); pass an array
+ *                                           to skip the clip work for layers
+ *                                           the user has toggled off.
  * @param {AbortSignal} [args.signal]
  */
-export async function fetchExplore({ origin, maxMinutes, categories, signal }) {
+export async function fetchExplore({ origin, maxMinutes, categories, withHeatmaps, signal }) {
   const body = {
     max_minutes: maxMinutes,
     origin: origin.kind === "community_area"
@@ -25,6 +31,9 @@ export async function fetchExplore({ origin, maxMinutes, categories, signal }) {
   };
   if (Array.isArray(categories)) {
     body.categories = categories;
+  }
+  if (Array.isArray(withHeatmaps)) {
+    body.with_heatmaps = withHeatmaps;
   }
 
   const res = await fetchWithTimeout(`${BACKEND_URL}/explore`, {

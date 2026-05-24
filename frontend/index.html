@@ -17,6 +17,23 @@
     <link rel="icon" type="image/png" sizes="192x192" href="/passage-icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/passage-icon-180.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- Preload the four self-hosted variable fonts so the browser can fetch
+         them alongside the HTML rather than waiting for CSS to parse and the
+         @font-face rules in wayfarer/fonts.css to resolve. `crossorigin` is
+         required for font preloads even on same-origin requests per the
+         spec; without it the browser fetches the font a second time when the
+         @font-face rule eventually runs. All four are on the critical first
+         paint: Fraunces (regular + italic) for the editorial masthead +
+         widespread italic UI strings; Inter for forms / labels; JetBrains
+         Mono for the step / minute / mile readouts. -->
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/fonts/Fraunces-VariableFont_SOFT,WONK,opsz,wght.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/fonts/Fraunces-Italic-VariableFont_SOFT,WONK,opsz,wght.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/fonts/Inter-VariableFont_opsz,wght.woff2" />
+    <link rel="preload" as="font" type="font/woff2" crossorigin
+          href="/fonts/JetBrainsMono-VariableFont_wght.woff2" />
     <title>Passage</title>
     <script>
       try {

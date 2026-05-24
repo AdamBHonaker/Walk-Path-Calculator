@@ -110,8 +110,27 @@ export function useShareCard({
       // claims better iOS behavior but this overlay is cheap insurance.)
       const map = cardMapRef.current;
       if (map) {
-        await new Promise(resolve => {
-          map.once("render", resolve);
+        // OPT-062: race the render event against a 5 s timeout so a
+        // failed/lost WebGL context on iOS doesn't hang the modal
+        // indefinitely. The caller's catch already routes a thrown
+        // error to a toast + leaves the share modal in an actionable
+        // state, so a timeout failure surfaces the same way as any
+        // other PNG capture problem.
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const timeoutId = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            try { map.off("render", onRender); } catch { /* listener gone */ }
+            reject(new Error("Share-card map render timed out after 5 s"));
+          }, 5000);
+          const onRender = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timeoutId);
+            resolve();
+          };
+          map.once("render", onRender);
           map.triggerRepaint();
         });
         const mapDataUrl = map.getCanvas().toDataURL("image/png");

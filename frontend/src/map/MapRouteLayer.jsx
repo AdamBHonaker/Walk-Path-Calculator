@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import { WFFromMark, WFToMark } from "../wayfarer/primitives.jsx";
 import {
   renderWalkRoute,
+  buildRouteSegments,
   SEG_ALT_OPACITY_EXPR,
 } from "../mapHelpers.js";
 
@@ -55,6 +56,19 @@ export function MapRouteLayer({
 
   useEffect(() => { turnCoordsRef.current = turnCoords; }, [turnCoords]);
   useEffect(() => { mapPaddingRef.current = mapPadding; }, [mapPadding]);
+
+  // OPT-038 + OPT-059: memoize the per-step segment FeatureCollection on
+  // (path, directions) identity. `buildRouteSegments` internally walks the
+  // path to compute cum-distance for every direction step — a flavor swap
+  // that lands on the same path (and the same directions array) used to
+  // re-do this work end-to-end. With the memo, that flavor swap is a
+  // useMemo cache hit and the data-load effect sees a stable segments
+  // reference, skipping the upsertGeoSource setData call entirely (its
+  // own equality check short-circuits on identical data).
+  const routeSegments = useMemo(() => {
+    if (!result?.path?.length || !result?.directions?.length) return null;
+    return buildRouteSegments(result.path, result.directions);
+  }, [result?.path, result?.directions]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -126,11 +140,15 @@ export function MapRouteLayer({
       }
       // renderWalkRoute upserts sources via setData when they already exist,
       // so back-to-back renders (route flavor swap) reuse GPU buffers instead
-      // of tearing every source down and rebuilding it.
+      // of tearing every source down and rebuilding it. `routeSegments` is
+      // the memoised per-step FeatureCollection — passing it in skips the
+      // cum-distance walk inside `buildRouteSegments` for flavor swaps that
+      // land on an identical (path, directions) pair.
       renderWalkRoute(
         map, result, turnCoords, activeTurnIndex,
         layerIds.current, sourceIds.current,
-        mapPaddingRef.current ?? 60, undefined, /* drawEndpointDots = */ false
+        mapPaddingRef.current ?? 60, undefined, /* drawEndpointDots = */ false,
+        routeSegments,
       );
 
       const stops = Array.isArray(result.stops) ? result.stops : null;
@@ -237,9 +255,17 @@ export function MapRouteLayer({
       // render can reposition them via marker.setLngLat instead of re-mounting.
       // They're disposed in the dedicated unmount effect below.
     };
-  // intentional: only re-render route when result/turnCoords change; mapRef is a stable ref
+  // OPT-038: narrowed from `[result, turnCoords, mode]` so a flavor swap that
+  // produces an identical (path, directions) pair doesn't re-run the effect —
+  // and even when the pair changes, `routeSegments` is the only thing in the
+  // dep array that meaningfully captures "did the geometry change," sparing
+  // the GPU buffer reallocation + draw-in re-kick on identity-only swaps.
+  // Endpoint marker coords (origin_coords / dest_coords / stops) only change
+  // when the underlying fetch result changes, and that always changes path
+  // identity too — so the markers stay in sync via the same effect firing.
+  // mapRef is a stable ref.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, turnCoords, mode]);
+  }, [result?.path, result?.directions, routeSegments, turnCoords, mode]);
 
   // Unmount-only: release React roots backing the persistent endpoint markers.
   // We intentionally read endpointMarkersRef.current at unmount time (not at

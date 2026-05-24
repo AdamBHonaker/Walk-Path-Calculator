@@ -33,20 +33,29 @@ export function usePersonalization(initialUrlParams) {
   const [preferPedestrian, setPreferPedestrian] = useState(initialAccess.preferPedestrian);
   const [mobilityProfile, setMobilityProfileState] = useState(loadMobilityProfile);
 
-  useEffect(() => {
-    saveAccessPrefs({ avoidStairs, preferPedestrian });
-  }, [avoidStairs, preferPedestrian]);
-
   const setMobilityProfile = useCallback((next) => {
     const value = next === "wheeled" ? "wheeled" : "walking";
     setMobilityProfileState(value);
     saveMobilityProfile(value);
   }, []);
 
-  useEffect(() => { saveStoredPace(walkPace); }, [walkPace]);
-  useEffect(() => { saveStoredHeightFt(heightFt); }, [heightFt]);
-  useEffect(() => { saveStoredHeightIn(heightIn); }, [heightIn]);
-  useEffect(() => { saveStoredWeightKg(weightKg); }, [weightKg]);
+  // OPT-076: coalesced persistence. The prior five separate effects each
+  // re-ran on every state-update batch — touching height + weight in the
+  // same Personalize modal commit fired two effects → two localStorage
+  // writes → two synchronous JSON.stringify + setItem round-trips. One
+  // effect with all five deps runs once per batch (React coalesces
+  // setState updates within the same event loop tick), so a multi-field
+  // commit is one set of writes. Each save helper still touches its own
+  // key, so the on-disk shape is unchanged; only the round-trip count
+  // collapses. `saveAccessPrefs` writes the avoid/prefer pair as one
+  // merged object the way it already did, so that path stays atomic too.
+  useEffect(() => {
+    saveStoredPace(walkPace);
+    saveStoredHeightFt(heightFt);
+    saveStoredHeightIn(heightIn);
+    saveStoredWeightKg(weightKg);
+    saveAccessPrefs({ avoidStairs, preferPedestrian });
+  }, [walkPace, heightFt, heightIn, weightKg, avoidStairs, preferPedestrian]);
 
   const handleHeightChange = useCallback((ft, inches) => {
     const toNum = v => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));

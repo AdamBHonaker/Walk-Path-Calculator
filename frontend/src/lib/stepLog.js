@@ -36,6 +36,13 @@ export function pruneStoredStepLog() {
 // re-read + re-parse localStorage on every click. Falls back to disk for
 // callers that don't have it in hand. Either way the write is a single
 // stringify + setItem.
+//
+// OPT-084: also prunes TTL-expired entries on every save. The boot
+// `pruneStoredStepLog` covers across-session compaction, but within a
+// long-running session new entries pile onto an in-memory list that's
+// never re-pruned. Walking the entries here is cheap (filter on a
+// timestamp) and bounds the persisted file even when the app stays
+// open for weeks of daily logging.
 export function logWalk({ steps, miles, minutes, origin, destination }, currentLog) {
   const existing = Array.isArray(currentLog) ? currentLog : loadStepLog();
   const now = Date.now();
@@ -51,7 +58,8 @@ export function logWalk({ steps, miles, minutes, origin, destination }, currentL
     origin: String(origin ?? ""),
     destination: String(destination ?? ""),
   };
-  return saveJSON(STEP_LOG_KEY, [entry, ...existing]) ? entry : null;
+  const pruned = pruneExpired(existing, now);
+  return saveJSON(STEP_LOG_KEY, [entry, ...pruned]) ? entry : null;
 }
 
 export function clearStepLog() {

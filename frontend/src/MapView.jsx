@@ -8,6 +8,8 @@ import {
   MAP_STYLE_URL,
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
+  MAP_TINT_LAYER_ID,
+  getActiveMapTint,
 } from "./mapHelpers.js";
 import { MapRouteLayer } from "./map/MapRouteLayer.jsx";
 import { MapExploreLayer } from "./map/MapExploreLayer.jsx";
@@ -135,6 +137,69 @@ export default function MapView({
     if (targetLocked) lockMapGestures(map);
     else unlockMapGestures(map);
   }, [mode, unlocked, pickMode, mapReady]);
+
+  // ── Editorial map tint (OPT-042) ──────────────────────────────────────
+  // Installs a low-opacity MapLibre `background` layer ABOVE the
+  // OpenFreeMap Liberty base layers as soon as the style loads. The
+  // Wayfarer Cream / Dusk class on `<html>` swaps the tint hex via the
+  // theme observer below. Replaces the prior `.maplibregl-canvas { filter:
+  // sepia(...) saturate(...) brightness(...) }` CSS rule, which forced
+  // a per-frame WebGL surface filter; this layer composes natively in
+  // MapLibre's paint pipeline. See `MAP_TINT` in mapHelpers.js for the
+  // tunable color + opacity per theme; PV-014 covers the visual sign-off.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    function installTint() {
+      if (map.getLayer(MAP_TINT_LAYER_ID)) return;
+      const tint = getActiveMapTint();
+      // No `beforeId` → appended to the end of the layer array, so it
+      // sits on top of the Liberty base layers. Route + explore layers
+      // added later by their respective layer components will sit
+      // ABOVE this tint, so the editorial route/polygon colors render
+      // un-tinted (a deliberate visual departure from the prior CSS
+      // filter, which tinted the whole canvas).
+      map.addLayer({
+        id:    MAP_TINT_LAYER_ID,
+        type:  "background",
+        paint: {
+          "background-color":   tint.color,
+          "background-opacity": tint.opacity,
+        },
+      });
+    }
+
+    function applyTintForCurrentTheme() {
+      if (!map.getLayer(MAP_TINT_LAYER_ID)) return;
+      const tint = getActiveMapTint();
+      try {
+        map.setPaintProperty(MAP_TINT_LAYER_ID, "background-color",   tint.color);
+        map.setPaintProperty(MAP_TINT_LAYER_ID, "background-opacity", tint.opacity);
+      } catch { /* layer torn down between checks */ }
+    }
+
+    if (map.isStyleLoaded()) installTint();
+    else map.once("load", installTint);
+
+    if (typeof document === "undefined" || !document.documentElement) return;
+    // rAF-gate the observer (same pattern as MapExploreLayer's theme
+    // observer): coalesce rapid class mutations into one paint update.
+    let rafToken = null;
+    const obs = new MutationObserver(() => {
+      if (rafToken !== null) return;
+      rafToken = requestAnimationFrame(() => {
+        rafToken = null;
+        applyTintForCurrentTheme();
+      });
+    });
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => {
+      if (rafToken !== null) cancelAnimationFrame(rafToken);
+      obs.disconnect();
+      map.off("load", installTint);
+    };
+  }, [mapReady]);
 
   // ── User-location pin (live fix) ──────────────────────────────────────
   // Adds an empty GeoJSON source + halo/dot layers once on map load. Later

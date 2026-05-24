@@ -366,7 +366,13 @@ export function AddressAutocomplete({
     >
       {suggestions.map((s, i) => (
         <li
-          key={`${s.source || "x"}-${s.label}-${s.lat ?? "x"}-${i}`}
+          // OPT-085: prefer the backend's stable `id` (source + label +
+          // quantized coords) so re-renders triggered by typing don't
+          // remount every row — React reconciles by key, and the prior
+          // index-suffixed composite key changed on every list reorder.
+          // Fallback keeps backward compat with the community-area
+          // picker (local filter — no backend round-trip → no `id`).
+          key={s.id || `${s.source || "x"}-${s.label}-${s.lat ?? "x"}-${i}`}
           id={`${listboxId}-opt-${i}`}
           role="option"
           aria-selected={i === active}

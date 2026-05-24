@@ -6,6 +6,8 @@ import {
   lockMapGestures,
   MAP_STYLE_URL,
   DEFAULT_MAP_CENTER,
+  MAP_TINT_LAYER_ID,
+  getActiveMapTint,
 } from "../mapHelpers.js";
 import { safePaceLabel, motivationMessage } from "../lib/routeFormat.js";
 import { calorieEquivalent } from "../calorieEquiv.js";
@@ -58,6 +60,22 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
     if (mapInstanceRef) mapInstanceRef.current = map;
 
     map.once("load", () => {
+      // OPT-042: install the editorial map tint BEFORE the route layers
+      // are added so the route polyline + endpoint markers render ABOVE
+      // it (un-tinted Wayfarer colors), matching the live-map paint
+      // contract. The share PNG bakes the tint into the rendered map
+      // background so the exported image matches what the user sees.
+      if (!map.getLayer(MAP_TINT_LAYER_ID)) {
+        const tint = getActiveMapTint();
+        map.addLayer({
+          id:    MAP_TINT_LAYER_ID,
+          type:  "background",
+          paint: {
+            "background-color":   tint.color,
+            "background-opacity": tint.opacity,
+          },
+        });
+      }
       // Share-card route uses ember (#9c2a1a) — kept in sync with --ember in
       // tokens.css. Hex literal because MapLibre paint won't resolve
       // `var(--ember)`; a CSS-var resolver here would be over-engineering.

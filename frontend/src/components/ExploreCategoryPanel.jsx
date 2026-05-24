@@ -54,6 +54,22 @@ export function ExploreCategoryPanel({
   const selectedCatSet = useMemo(() => new Set(selectedCategories), [selectedCategories]);
   const selectedSubSet = useMemo(() => new Set(selectedSubs), [selectedSubs]);
 
+  // OPT-078: precompute the set of category keys that have at least one sub
+  // selected. Without this, the JSX below ran `cat.subs.some(s => selectedSubSet.has(`${cat.key}/${s.key}`))`
+  // per parent render — O(subs) per category × all rendered categories — to
+  // decide whether the sublist should reveal. A single pass over the flat
+  // `selectedSubs` array splits each entry on "/" once and seeds a
+  // category-keyed Set, so the per-row check collapses to a single O(1)
+  // `categoriesWithSelectedSubs.has(cat.key)`.
+  const categoriesWithSelectedSubs = useMemo(() => {
+    const out = new Set();
+    for (const sub of selectedSubs) {
+      const slash = sub.indexOf("/");
+      if (slash > 0) out.add(sub.slice(0, slash));
+    }
+    return out;
+  }, [selectedSubs]);
+
   // Per-group selection counts. Recomputed only when selection state actually
   // changes — keeps the nested-traversal cost (5 groups × up to 4 categories
   // × up to 5 subs ≈ ~100 Set lookups) off every re-render of the panel.
@@ -180,7 +196,7 @@ export function ExploreCategoryPanel({
                             </span>
                           }
                         />
-                        {cat.subs && (isChecked || cat.subs.some(s => selectedSubSet.has(`${cat.key}/${s.key}`))) && (
+                        {cat.subs && (isChecked || categoriesWithSelectedSubs.has(cat.key)) && (
                           <ul className="explore-cat-sublist">
                             {cat.subs.map(sub => {
                               const subKey = `${cat.key}/${sub.key}`;

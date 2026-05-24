@@ -148,9 +148,12 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        // Pin maplibre-gl into a single shared chunk so the lazy MapView and
-        // lazy ShareDispatch entries don't each duplicate the library.
+        // OPT-073: pin React + react-dom into a `react-vendor` chunk so
+        // app-code hash bumps don't invalidate the cached React download.
+        // Rule ordered before the maplibre rule so the React match wins
+        // on `node_modules/react/` paths (maplibre depends on neither).
         manualChunks: (id) => {
+          if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/")) return "react-vendor";
           if (id.includes("node_modules/maplibre-gl/")) return "maplibre";
         },
       },

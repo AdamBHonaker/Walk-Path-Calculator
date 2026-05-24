@@ -77,9 +77,22 @@ class TestNeighborhoodSuggestions:
         resp = client.get("/autocomplete", params={"q": "wrigleyville"})
         assert resp.status_code == 200
         for s in resp.json()["suggestions"]:
-            assert set(s) == {"label", "lat", "lon", "source"}
+            # OPT-085: `id` is a stable per-suggestion key (composed of
+            # source + label + quantized coords) the frontend uses as the
+            # React list key. Same suggestion across two requests must get
+            # the same id; assert presence + stable shape here.
+            assert set(s) == {"label", "lat", "lon", "source", "id"}
             assert isinstance(s["lat"], float)
             assert isinstance(s["lon"], float)
+            assert isinstance(s["id"], str) and len(s["id"]) > 0
+
+    def test_id_is_stable_across_requests(self):
+        """Same query → identical `id` values per suggestion. Guarantees the
+        React-key contract: list reconciliation across keystrokes that
+        re-issue the same query won't remount rows."""
+        r1 = client.get("/autocomplete", params={"q": "wrigleyville"}).json()["suggestions"]
+        r2 = client.get("/autocomplete", params={"q": "wrigleyville"}).json()["suggestions"]
+        assert [s["id"] for s in r1] == [s["id"] for s in r2]
 
 
 @needs_db

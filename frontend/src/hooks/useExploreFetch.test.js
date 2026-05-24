@@ -147,4 +147,81 @@ describe("useExploreFetch", () => {
     expect(signals[0].aborted).toBe(true);
     expect(signals[1].aborted).toBe(false);
   });
+
+  // OPT-025 (CHUNK-11): the request's `withHeatmaps` is derived from the four
+  // show*Heatmap toggles. Toggling ON a previously-off heatmap fires a fetch
+  // with the expanded set; toggling OFF is silent (the layer hides client-side).
+  describe("with_heatmaps filter (OPT-025)", () => {
+    it("passes the active heatmap toggles as withHeatmaps", async () => {
+      fetchExplore.mockResolvedValueOnce(FAKE_RESULT);
+      const prefs = {
+        ...DEFAULT_PREFS,
+        showResidentialHeatmap: true,
+        showParksHeatmap: false,
+        showTreeCanopyHeatmap: false,
+        showGreenSpaceHeatmap: false,
+      };
+      renderHook(() => useExploreFetch({ mode: "explore", explorePrefs: prefs }));
+      await waitFor(() => expect(fetchExplore).toHaveBeenCalledTimes(1));
+      expect(fetchExplore.mock.calls[0][0].withHeatmaps).toEqual(["residential"]);
+    });
+
+    it("refetches with the expanded set when a heatmap toggle goes from off to on", async () => {
+      fetchExplore.mockResolvedValue(FAKE_RESULT);
+      const initial = { ...DEFAULT_PREFS, showResidentialHeatmap: true };
+      const { rerender } = renderHook(
+        ({ prefs }) => useExploreFetch({ mode: "explore", explorePrefs: prefs }),
+        { initialProps: { prefs: initial } },
+      );
+      await waitFor(() => expect(fetchExplore).toHaveBeenCalledTimes(1));
+      expect(fetchExplore.mock.calls[0][0].withHeatmaps).toEqual(["residential"]);
+
+      rerender({ prefs: { ...initial, showParksHeatmap: true } });
+      await waitFor(() => expect(fetchExplore).toHaveBeenCalledTimes(2));
+      expect(fetchExplore.mock.calls[1][0].withHeatmaps).toEqual(["residential", "parks"]);
+    });
+
+    it("does NOT refetch when a heatmap toggle goes from on to off", async () => {
+      fetchExplore.mockResolvedValue(FAKE_RESULT);
+      const initial = {
+        ...DEFAULT_PREFS,
+        showResidentialHeatmap: true,
+        showParksHeatmap: true,
+      };
+      const { rerender } = renderHook(
+        ({ prefs }) => useExploreFetch({ mode: "explore", explorePrefs: prefs }),
+        { initialProps: { prefs: initial } },
+      );
+      await waitFor(() => expect(fetchExplore).toHaveBeenCalledTimes(1));
+
+      rerender({ prefs: { ...initial, showParksHeatmap: false } });
+      // Give the effect a tick to settle.
+      await new Promise(r => setTimeout(r, 25));
+      expect(fetchExplore).toHaveBeenCalledTimes(1);
+    });
+
+    it("does NOT refetch when toggling ON a heatmap already in the last fetch's set", async () => {
+      fetchExplore.mockResolvedValue(FAKE_RESULT);
+      const initial = {
+        ...DEFAULT_PREFS,
+        showResidentialHeatmap: true,
+        showParksHeatmap: true,
+      };
+      const { rerender } = renderHook(
+        ({ prefs }) => useExploreFetch({ mode: "explore", explorePrefs: prefs }),
+        { initialProps: { prefs: initial } },
+      );
+      await waitFor(() => expect(fetchExplore).toHaveBeenCalledTimes(1));
+
+      // Toggle parks OFF — no fetch.
+      rerender({ prefs: { ...initial, showParksHeatmap: false } });
+      await new Promise(r => setTimeout(r, 25));
+      expect(fetchExplore).toHaveBeenCalledTimes(1);
+
+      // Toggle parks back ON — still no fetch (lastFetched already has it).
+      rerender({ prefs: { ...initial, showParksHeatmap: true } });
+      await new Promise(r => setTimeout(r, 25));
+      expect(fetchExplore).toHaveBeenCalledTimes(1);
+    });
+  });
 });

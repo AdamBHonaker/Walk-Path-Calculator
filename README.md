@@ -251,14 +251,14 @@ Response:
 ```json
 {
   "suggestions": [
-    {"label": "Wrigleyville",                  "lat": 41.9476, "lon": -87.6553, "source": "neighborhood"},
+    {"label": "Wrigleyville",                  "lat": 41.9476, "lon": -87.6553, "source": "neighborhood",  "id": "neighborhood|Wrigleyville|41.947600,-87.655300"},
     {"label": "West Belmont Avenue & North Clark Street",
-                                                "lat": 41.9400, "lon": -87.6507, "source": "intersection"},
-    {"label": "1060 West Addison Street",      "lat": 41.9477, "lon": -87.6566, "source": "address"}
+                                                "lat": 41.9400, "lon": -87.6507, "source": "intersection", "id": "intersection|West Belmont Avenue & North Clark Street|41.940000,-87.650700"},
+    {"label": "1060 West Addison Street",      "lat": 41.9477, "lon": -87.6566, "source": "address",      "id": "address|1060 West Addison Street|41.947700,-87.656600"}
   ]
 }
 ```
-`source ∈ {"neighborhood", "intersection", "address", "place", "locationiq"}`.
+`source ∈ {"neighborhood", "intersection", "address", "place", "locationiq"}`. `id` is a stable per-suggestion key (composed of `source`, `label`, and 6-decimal-quantized `lat,lon`) used as the React list key on the frontend.
 
 ### `POST /route`
 
@@ -380,6 +380,7 @@ Walkable-isochrone endpoint for the Neighborhood Explorer. Returns the alpha-sha
 | `max_minutes`           | number, 5–45             | Time budget. Routing uses the canonical 3 mph.  |
 | `categories`            | list[str], optional      | Filters `places` to the named top-level categories. Omit/null returns every place inside the polygon. Subcategory keys are not accepted at this layer. |
 | `height_inches`         | number, 36–108, optional | Reserved for future step-count enrichment.      |
+| `with_heatmaps`         | list[str], optional      | Subset of `{"residential", "parks", "green_space", "tree_canopy"}`. Layers not in the list are skipped (returned as `null`). Omit/null to compute every heatmap. |
 
 Top-level place categories (matched against `places.category`):
 `grocery`, `medical`, `el_train_stations`, `metra_stations`, `gyms_fitness`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories on individual records (`medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`, `coffee_bakery/chain_coffee_shop`, …).

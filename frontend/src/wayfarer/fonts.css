@@ -1,4 +1,38 @@
-/* Self-hosted variable fonts. Files live in /public/fonts/. */
+/* Self-hosted variable fonts. Files live in /public/fonts/.
+ *
+ * OPT-064 (2026-05-23): each font file is subset to a targeted codepoint
+ * range. `unicode-range` tells the browser which codepoints the file
+ * covers so it doesn't fall back to a system font when a glyph is in
+ * range. The range is intentionally broader than the catalog's
+ * U+0000-024F because the editorial copy uses em dashes (—, U+2014),
+ * right arrows (→, U+2192), ellipsis (…, U+2026), vulgar fractions
+ * (½ ⅓ ⅔, U+00BD + U+2153-2154), and the approx symbol (≈, U+2248).
+ * Bundled as `U+0000-024F, U+2000-22FF` to cover Latin + Latin
+ * Extended-A + General Punctuation + Number Forms + Arrows + Math —
+ * everything the UI plausibly renders. Subset files trimmed total
+ * webfont bytes from 896 KB → 626 KB (30% saved).
+ *
+ * To re-subset after a font upgrade (drop the new variable woff2 into
+ * /public/fonts/, then run from the project root):
+ *
+ *   pip install 'fonttools[woff]' brotli zopfli   # one-time, any venv
+ *   for f in Fraunces-VariableFont_SOFT,WONK,opsz,wght \
+ *            Fraunces-Italic-VariableFont_SOFT,WONK,opsz,wght \
+ *            Inter-VariableFont_opsz,wght \
+ *            JetBrainsMono-VariableFont_wght; do
+ *     pyftsubset "frontend/public/fonts/$f.woff2" \
+ *       --output-file="frontend/public/fonts/$f.woff2" \
+ *       --flavor=woff2 \
+ *       --unicodes='U+0000-024F,U+2000-22FF' \
+ *       --layout-features='*' --name-IDs='*' --notdef-outline \
+ *       --recalc-bounds --recalc-timestamp
+ *   done
+ *
+ * Keep the codepoint list in sync with the `unicode-range:` declarations
+ * below — the browser trusts the declaration and won't request a font
+ * for a codepoint it claims not to cover, so a glyph silently falling
+ * outside both the file AND the range falls back to the system font.
+ */
 
 @font-face {
   font-family: "Fraunces";
@@ -6,6 +40,7 @@
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+0000-024F, U+2000-22FF;
 }
 
 @font-face {
@@ -14,6 +49,7 @@
   font-weight: 100 900;
   font-style: italic;
   font-display: swap;
+  unicode-range: U+0000-024F, U+2000-22FF;
 }
 
 @font-face {
@@ -22,6 +58,7 @@
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+0000-024F, U+2000-22FF;
 }
 
 @font-face {
@@ -30,6 +67,7 @@
   font-weight: 100 800;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+0000-024F, U+2000-22FF;
 }
 
 :root {

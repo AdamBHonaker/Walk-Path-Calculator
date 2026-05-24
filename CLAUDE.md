@@ -247,14 +247,14 @@ Response:
 ```json
 {
   "suggestions": [
-    {"label": "Wrigleyville",                  "lat": 41.9476, "lon": -87.6553, "source": "neighborhood"},
+    {"label": "Wrigleyville",                  "lat": 41.9476, "lon": -87.6553, "source": "neighborhood",  "id": "neighborhood|Wrigleyville|41.947600,-87.655300"},
     {"label": "West Belmont Avenue & North Clark Street",
-                                                "lat": 41.9400, "lon": -87.6507, "source": "intersection"},
-    {"label": "1060 West Addison Street",      "lat": 41.9477, "lon": -87.6566, "source": "address"}
+                                                "lat": 41.9400, "lon": -87.6507, "source": "intersection", "id": "intersection|West Belmont Avenue & North Clark Street|41.940000,-87.650700"},
+    {"label": "1060 West Addison Street",      "lat": 41.9477, "lon": -87.6566, "source": "address",      "id": "address|1060 West Addison Street|41.947700,-87.656600"}
   ]
 }
 ```
-`source ∈ {"neighborhood", "intersection", "address", "place", "locationiq"}`.
+`source ∈ {"neighborhood", "intersection", "address", "place", "locationiq"}`. `id` is a stable per-suggestion key (composed of `source`, `label`, and 6-decimal-quantized `lat,lon`) the frontend uses as the React list key — same suggestion across two requests carries the same `id`, so list reconciliation across keystrokes doesn't remount rows.
 
 ### `POST /explore`
 
@@ -275,6 +275,7 @@ Request — exactly one of the two origin modes:
 | `max_minutes`            | number, 5–45        | Time budget. Routing uses the canonical 3 mph constant (`WALKING_SPEED_MPH`). |
 | `categories`             | list[str], optional | Filters `places` to the named top-level categories. Omit (or send `null`) to get every place inside the polygon — useful for debugging, not the frontend's default. Subcategory keys are *not* accepted at this layer; the frontend post-filters. |
 | `height_inches`          | number, 36–108, optional | Accepted but unused (reserved for future step-count enrichment). |
+| `with_heatmaps`          | list[str], optional | Subset of `{"residential", "parks", "green_space", "tree_canopy"}`. Layers not in the list are skipped (response field is `null`) — saves ~25–57% of `/explore` latency on a 20-min isochrone, with a roughly proportional payload-size drop. Omit (or send `null`) to compute every heatmap (legacy behavior). Unknown layer names → 422. |
 
 Place categories (top-level keys, matched against `places.category`):
 `grocery`, `medical`, `el_train_stations`, `metra_stations`, `gyms_fitness`, `bike_share`, `coffee_bakery`, `restaurants`, `bars_nightlife`, `parks`, `art_museums`, `theaters`, `bookstores`, `landmarks`, `schools`, `places_of_worship`, `libraries`, `police_stations`, `fire_stations`. Several have subcategories tagged on individual records (e.g., `medical/pharmacy`, `parks/playground`, `places_of_worship/christianity`, `grocery/farmers_market`, `coffee_bakery/chain_coffee_shop`).

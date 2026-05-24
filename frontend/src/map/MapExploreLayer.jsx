@@ -3,11 +3,31 @@ import { createRoot } from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
 import {
-  renderExplore,
+  renderExplorePolygon,
+  renderExploreResidential,
+  renderExploreCanopy,
+  renderExploreParks,
+  renderExploreGreenSpace,
+  renderExplorePlaces,
   clearExploreLayers,
   EXPLORE_STROKE_COLOR,
   CANOPY_BAND_COLORS,
 } from "../mapHelpers.js";
+
+// Defer `fn` until the MapLibre style is loaded. Returns a cleanup
+// callback. The per-source render effects each call this so a freshly-
+// mounted Map doesn't drop their first render on the floor when the
+// style hasn't parsed yet — the prior single-effect implementation
+// shared one listener; with per-source effects, each one needs its own
+// guard.
+function _whenStyleReady(map, fn) {
+  if (map.isStyleLoaded()) {
+    fn();
+    return () => {};
+  }
+  map.once("load", fn);
+  return () => { map.off("load", fn); };
+}
 
 // Resolve a Wayfarer color token like "var(--field)" to its current hex
 // value. MapLibre paint properties don't parse CSS custom properties, so
@@ -58,12 +78,30 @@ export function MapExploreLayer({
   // class mutation and feed it into `placeExpressions`' deps. The
   // colors-only effect below then re-applies the new hex via
   // `setPaintProperty` without re-tiling the supercluster source.
+  //
+  // OPT-060 — the observer can fire multiple class mutations for a single
+  // user-triggered theme toggle (React batches the `<html>` class write
+  // into two layout flushes when it co-occurs with another setState),
+  // which used to fan out into two `setThemeVersion` bumps and two
+  // MapLibre paint updates. Gate the callback with a single rAF token so
+  // any number of coalesced class mutations collapse into one bump per
+  // animation frame.
   const [themeVersion, setThemeVersion] = useState(0);
   useEffect(() => {
     if (typeof window === "undefined" || !document?.documentElement) return;
-    const obs = new MutationObserver(() => setThemeVersion(v => v + 1));
+    let rafToken = null;
+    const obs = new MutationObserver(() => {
+      if (rafToken !== null) return; // already scheduled this frame
+      rafToken = requestAnimationFrame(() => {
+        rafToken = null;
+        setThemeVersion(v => v + 1);
+      });
+    });
     obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => obs.disconnect();
+    return () => {
+      if (rafToken !== null) cancelAnimationFrame(rafToken);
+      obs.disconnect();
+    };
   }, []);
 
   // Build the GeoJSON FeatureCollection for the pin source from the
@@ -178,51 +216,114 @@ export function MapExploreLayer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [placeExpressions]);
 
-  // ── Polygon + heatmap + pins render ──────────────────────────────────
+  // ── Per-source render effects ─────────────────────────────────────────
+  //
+  // OPT-039 — the legacy single effect re-ran `renderExplore` end-to-end
+  // on any heatmap toggle, including `setData` on the supercluster pin
+  // source (re-tiles ~200 places). Splitting by layer source means
+  // toggling residential doesn't touch the canopy / parks / greenspace
+  // / pins layers, and a category-filter change doesn't touch the
+  // heatmaps. Each effect's dep array is scoped to the toggle + the
+  // exact GeoJSON slice it owns.
+  //
+  // Cleanup contract: when `mode !== "explore"` or the relevant data is
+  // null, each helper drops its own tracked source + layers. The
+  // polygon effect additionally drops the whole stack (mirrors the
+  // legacy `clearExploreLayers` semantics) when the polygon itself goes
+  // away — because heatmaps + pins are meaningless without a polygon
+  // and the operator could land here via a route → explore → route → …
+  // bounce. Other effects either short-circuit (data already absent) or
+  // run their own targeted dropTracked, so the second pass is a no-op
+  // for sources already cleared by the polygon path.
+
+  // Polygon effect — also owns the "leaving explore" full clear so the
+  // stack doesn't leak heatmap / pin layers when mode flips back to
+  // route. Tracks identity of the last-rendered exploreResult so
+  // fitBounds is only called when a NEW isochrone arrives, not on
+  // display-only re-renders (category filter, heatmap toggle).
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-
-    const renderE = () => {
-      if (mode !== "explore") {
+    return _whenStyleReady(map, () => {
+      if (mode !== "explore" || !exploreResult?.polygon) {
+        // Clear everything — heatmaps/pins make no sense without a
+        // polygon, and a mode flip should wipe the slate fully.
         clearExploreLayers(map, layerIds.current, sourceIds.current);
-        return;
-      }
-      if (!exploreResult) {
-        clearExploreLayers(map, layerIds.current, sourceIds.current);
+        prevExploreResultRef.current = null;
         return;
       }
       const didResultChange = exploreResult !== prevExploreResultRef.current;
       prevExploreResultRef.current = exploreResult;
-      renderExplore(
-        map, exploreResult,
-        {
-          showResidential,
-          showParks,
-          showTreeCanopy,
-          showGreenSpace,
-          canopyBandColors,
-          placeFeatures,
-          placeExpressions,
-          fitPadding: mapPaddingRef.current ?? 60,
-          fitOnRender: didResultChange,
-        },
-        layerIds.current, sourceIds.current,
-      );
-    };
-
-    if (map.isStyleLoaded()) {
-      renderE();
-    } else {
-      map.once("load", renderE);
-    }
-
-    return () => {
-      map.off("load", renderE);
-    };
-  // ref-stored map handle is stable
+      renderExplorePolygon(map, exploreResult.polygon, layerIds.current, sourceIds.current, {
+        fitOnRender: didResultChange,
+        fitPadding: mapPaddingRef.current ?? 60,
+      });
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, exploreResult, showResidential, showParks, showTreeCanopy, showGreenSpace, canopyBandColors, placeFeatures, placeExpressions]);
+  }, [mode, exploreResult]);
+
+  // Residential heatmap effect.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    return _whenStyleReady(map, () => {
+      const data = mode === "explore" ? exploreResult?.residential_heatmap : null;
+      renderExploreResidential(map, showResidential, data, layerIds.current, sourceIds.current);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, showResidential, exploreResult?.residential_heatmap]);
+
+  // Tree-canopy heatmap effect. `canopyBandColors` is intentionally
+  // omitted from deps — the dedicated paint-update effect above handles
+  // theme-driven color rotations on an existing layer via
+  // `setPaintProperty`, and a closure read here picks up the latest
+  // band-color values for any first-time layer creation.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    return _whenStyleReady(map, () => {
+      const data = mode === "explore" ? exploreResult?.tree_canopy_heatmap : null;
+      renderExploreCanopy(map, showTreeCanopy, data, canopyBandColors, layerIds.current, sourceIds.current);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, showTreeCanopy, exploreResult?.tree_canopy_heatmap]);
+
+  // CPD parks heatmap effect.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    return _whenStyleReady(map, () => {
+      const data = mode === "explore" ? exploreResult?.parks_heatmap : null;
+      renderExploreParks(map, showParks, data, layerIds.current, sourceIds.current);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, showParks, exploreResult?.parks_heatmap]);
+
+  // Non-CPD green-space heatmap effect.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    return _whenStyleReady(map, () => {
+      const data = mode === "explore" ? exploreResult?.green_space_heatmap : null;
+      renderExploreGreenSpace(map, showGreenSpace, data, layerIds.current, sourceIds.current);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, showGreenSpace, exploreResult?.green_space_heatmap]);
+
+  // Place pins + clusters effect. `placeExpressions` is consumed at
+  // initial-layer-create time only; later expression changes are picked
+  // up by the dedicated `placeExpressions` effect higher up via
+  // `setPaintProperty` + `setLayoutProperty`, avoiding a source tear-
+  // down. So this effect's deps don't include `placeExpressions`.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    return _whenStyleReady(map, () => {
+      if (mode !== "explore" || !exploreResult?.polygon) return;
+      renderExplorePlaces(map, placeFeatures, placeExpressions, layerIds.current, sourceIds.current);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, placeFeatures, exploreResult?.polygon]);
 
   // ── Pin/cluster click + popup lifecycle ─────────────────────────────
   // Cluster click zooms in; pin click pops a MapLibre Popup that contains a

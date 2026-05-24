@@ -1815,6 +1815,258 @@ Also added `backend/requirements-test.txt` (`pytest>=8.0,<9.0`, `httpx>=0.27,<1.
 
 ## Efficiency Improvements Implemented
 
+### 2026-05-23 · Final deferral round — canvas tint layer + font subset + PNG optimization (OPT-042, OPT-064, OPT-074 — last three items from 2026-05-22 audit)
+
+**Files:** [frontend/src/MapView.jsx](../../frontend/src/MapView.jsx), [frontend/src/mapHelpers.js](../../frontend/src/mapHelpers.js), [frontend/src/components/ShareDispatch.jsx](../../frontend/src/components/ShareDispatch.jsx), [frontend/src/App.css](../../frontend/src/App.css), [frontend/src/wayfarer/fonts.css](../../frontend/src/wayfarer/fonts.css), [frontend/public/fonts/*.woff2](../../frontend/public/fonts/), [frontend/public/passage-icon-*.png](../../frontend/public/), [frontend/src/test-setup.js](../../frontend/src/test-setup.js), [docs/Pending_Verification.md](../Pending_Verification.md)
+
+**Impact:** 🔴 High (OPT-042) + 🟡 Medium (OPT-064) + 🟢 Low (OPT-074)
+
+**Category:** GPU compositing / Font bytes / PWA install size
+
+**What was inefficient:**
+- **OPT-042**: `.maplibregl-canvas { filter: sepia(0.18) saturate(0.7) brightness(0.98) }` (and the Dusk variant) forced the browser to allocate a backing surface for the WebGL canvas and re-apply the filter matrix on every composite. Pan/zoom drove the filter through the GPU on every frame.
+- **OPT-064**: Four self-hosted variable woff2 files (Fraunces regular + italic, Inter, JetBrains Mono) shipped their full glyph set (~878 KB combined). The app uses Latin + a small set of general-punctuation glyphs (em dash, arrows, ellipsis, vulgar fractions).
+- **OPT-074**: Five PWA icons (passage-icon-16/32/180/192/512.png) had not been run through a modern PNG optimizer. Original combined ~16.3 KB.
+
+**Implemented:**
+
+*OPT-042 — MapLibre `background` tint layer in [mapHelpers.js](../../frontend/src/mapHelpers.js) + [MapView.jsx](../../frontend/src/MapView.jsx) + [ShareDispatch.jsx](../../frontend/src/components/ShareDispatch.jsx).* `MAP_TINT_LAYER_ID` + `MAP_TINT = { cream: { color: "#8B6F47", opacity: 0.12 }, dusk: { color: "#0a0807", opacity: 0.45 } }` exported from mapHelpers. MapView installs the layer in a `useEffect(.., [mapReady])` after `map.once("load")`; the same `MutationObserver` rAF-gate pattern from CHUNK-13's OPT-060 catches theme flips and calls `setPaintProperty` to update color + opacity without rebuilding the layer. ShareDispatch installs the same layer before its route render so the exported PNG carries the tint baked in. The `.maplibregl-canvas { filter: ... }` rule in App.css is replaced with a comment block explaining the swap.
+
+The catalog's specific `raster-saturation` + `raster-hue-rotate` recipe didn't apply because OpenFreeMap Liberty is a vector tile style, not raster (the catalog assumed otherwise). The background-layer alternative produces a slight visual departure — the layer sits **above** the Liberty base layers but **below** the route + explore overlays added later, so route polylines and explore polygons now render in their true Wayfarer colors (route un-tinted, more pop against the tinted base). PV-014 in [Pending_Verification.md](../Pending_Verification.md) covers the Cream/Dusk visual sign-off + tint constant tuning.
+
+*OPT-064 — woff2 subset to `U+0000-024F, U+2000-22FF` in [frontend/public/fonts/](../../frontend/public/fonts/).* Each variable woff2 file regenerated via `pyftsubset --unicodes='U+0000-024F,U+2000-22FF' --layout-features='*' --name-IDs='*' --notdef-outline --recalc-bounds --recalc-timestamp`. The codepoint range is broader than the catalog's stricter `U+0000-024F` because the editorial copy uses glyphs from General Punctuation (em dash `—`, ellipsis `…`), Number Forms (`⅓`, `⅔`), Arrows (`→`), and Mathematical (`≈`) — all outside the Latin block. Each `@font-face` in [wayfarer/fonts.css](../../frontend/src/wayfarer/fonts.css) gets a matching `unicode-range: U+0000-024F, U+2000-22FF;` so the browser doesn't request the font for codepoints it claims not to cover. Results:
+
+| Font | Before | After | Saved |
+|------|--------|-------|-------|
+| Fraunces regular  | 195,068 | 174,896 | 10.3% |
+| Fraunces italic   | 235,736 | 212,568 | 9.8% |
+| Inter             | 352,240 | 174,216 | 50.5% |
+| JetBrains Mono    | 113,672 | 64,444  | 43.3% |
+| **Total**         | **896,716** | **626,124** | **30.2% (~264 KB)** |
+
+Fraunces savings are modest because Fraunces is mostly Latin to begin with; Inter and JetBrains Mono carry CJK + extensive symbol coverage that the subset drops. The full re-subset command (including required pip installs) is documented as a multi-line CSS comment in `fonts.css` so future contributors can re-run after a font upgrade.
+
+*OPT-074 — `oxipng -o 4 --strip safe frontend/public/passage-icon-*.png`.* Single batch invocation, oxipng v10.1.1 (downloaded as a portable .zip to /c/tmp to avoid a global install). Results:
+
+| Icon | Before | After | Saved |
+|------|--------|-------|-------|
+| passage-icon-16.png   | 411   | 245   | 40% |
+| passage-icon-32.png   | 537   | 261   | 51% |
+| passage-icon-180.png  | 2,492 | 714   | 71% |
+| passage-icon-192.png  | 2,734 | 825   | 70% |
+| passage-icon-512.png  | 10,518| 2,373 | 77% |
+| **Total**             | **16,692** | **4,418** | **73.5% (~12 KB)** |
+
+Far exceeds the catalog's 10-30% estimate. Visual identity confirmed by reading the optimized 192 + 512 px PNGs via the IDE's image preview — editorial Passage glyph (cream lines on ember red) is preserved.
+
+**Test-setup mock additions:** The MapView tint install effect calls `map.getLayer` and `map.setPaintProperty`, which the global maplibre mock in [test-setup.js](../../frontend/src/test-setup.js) didn't provide. Added stubs for `getLayer`, `setLayoutProperty`, `setFeatureState`, `removeFeatureState`, `easeTo` (rounding out the mock against what production code now calls).
+
+**Combined cumulative perf delta:**
+- PWA precache size: 2,343 KB → 2,080 KB (263 KB / 11% saved across CHUNK-15 + this round).
+- One fewer per-frame GPU operation during pan/zoom (the canvas-filter blit is gone).
+
+**Verification:** Frontend 466 tests green across 31 files; production Vite build clean; dev server boots without runtime errors (CSP / preload links / font requests all confirmed in the served HTML head).
+
+**Docs landed in the same round:**
+- [`docs/Pending_Verification.md`](../Pending_Verification.md) PV-014 — Cream/Dusk visual sign-off for the tint layer values.
+- [`docs/Efficiency_Improvements.md`](../Efficiency_Improvements.md) — emptied; the 2026-05-22 audit batch is fully resolved.
+- [`docs/Efficiency_Roadmap.md`](../Efficiency_Roadmap.md) — wave map fully struck through; "Unscoped follow-ups" updated to reflect that the catalog is now empty.
+
+---
+
+### 2026-05-23 · DOM weight reductions — explore category panel + stable autocomplete keys (OPT-078, OPT-085 from CHUNK-17 of 2026-05-22 audit; OPT-063 already met)
+
+**Files:** [frontend/src/components/ExploreCategoryPanel.jsx](../../frontend/src/components/ExploreCategoryPanel.jsx), [frontend/src/components/AddressAutocomplete.jsx](../../frontend/src/components/AddressAutocomplete.jsx), [backend/main.py](../../backend/main.py), [backend/tests/test_autocomplete_endpoint.py](../../backend/tests/test_autocomplete_endpoint.py)
+
+**Impact:** 🟢 Low (OPT-078, OPT-085)
+
+**Category:** React reconciliation / Repeated linear scans
+
+**What was inefficient:**
+- `ExploreCategoryPanel` decided whether to reveal a category's sublist via `cat.subs.some(s => selectedSubSet.has(\`${cat.key}/${s.key}\`))` — an O(subs) scan per category, executed in the render body. Toggling a single sub re-ran every group's scans.
+- `AddressAutocomplete` keyed each list row by `${s.source}-${s.label}-${s.lat ?? "x"}-${i}`. The trailing `${i}` made every keystroke that filtered or reordered the list look like a fresh key set to React, forcing remount + re-attach of all the `mousedown`/`touchstart` listeners on every row.
+
+**Implemented:**
+
+*OPT-078 — `categoriesWithSelectedSubs` memo in [ExploreCategoryPanel.jsx](../../frontend/src/components/ExploreCategoryPanel.jsx).* A single `useMemo([selectedSubs])` walks the flat `selectedSubs` array once, splits each `"category/sub"` entry on the first `/`, and seeds a `Set<categoryKey>`. The per-row sublist-visibility check collapses to `categoriesWithSelectedSubs.has(cat.key)` — O(1) — and the memo only recomputes when `selectedSubs` actually changes.
+
+*OPT-085 — backend stable `id` in [main.py](../../backend/main.py) `/autocomplete`.* Each suggestion now carries `id: f"{s.source}|{s.label}|{s.lat:.6f},{s.lon:.6f}"` (and `"locationiq|{q}|{coords[0]:.6f},{coords[1]:.6f}"` for the supplement). Same suggestion across two requests gets the same id; the source prefix prevents collisions between `neighborhood`/`intersection`/`place` rows that share coords. Frontend [AddressAutocomplete.jsx](../../frontend/src/components/AddressAutocomplete.jsx) reads `s.id` as the React key with the prior composite as a fallback (the local community-area picker has no `id` field — it filters in-memory, no backend round-trip).
+
+*OPT-063 — already met.* The catalog claimed `DirectionLedger` mounts 95+ off-screen nodes when collapsed. Inspection showed [DirectionLedger.jsx](../../frontend/src/components/DirectionLedger.jsx) line 23 already does `const visible = showAll ? directions : directions.slice(0, 5);` and maps only `visible`, so a 100-step collapsed route mounts at most 5 rows. Catalog entry pre-dated the slice optimization. No code change needed; entry kept in the resolved log so the audit is traceable.
+
+**Tests:** Backend autocomplete test (`test_response_fields_are_complete`) updated to assert `id` is present + string; a new `test_id_is_stable_across_requests` proves the key contract (same query → identical `id` list). Backend: 320 passing; frontend: 466 passing.
+
+**Docs landed in the same chunk:**
+- [`CLAUDE.md`](../../CLAUDE.md) `GET /autocomplete` shape + response sample updated.
+- [`README.md`](../../README.md) `/autocomplete` mirror updated.
+
+---
+
+### 2026-05-23 · localStorage write hygiene + fetch race + UX safety (OPT-055, OPT-056, OPT-057, OPT-062, OPT-065, OPT-076, OPT-084 from CHUNK-16 of 2026-05-22 audit)
+
+**Files:** [frontend/src/App.jsx](../../frontend/src/App.jsx), [frontend/src/lib/recentSearches.js](../../frontend/src/lib/recentSearches.js), [frontend/src/lib/stepLog.js](../../frontend/src/lib/stepLog.js), [frontend/src/lib/autocompleteApi.js](../../frontend/src/lib/autocompleteApi.js), [frontend/src/lib/autocompleteApi.test.js](../../frontend/src/lib/autocompleteApi.test.js), [frontend/src/hooks/useExploreFetch.js](../../frontend/src/hooks/useExploreFetch.js), [frontend/src/hooks/useShareCard.js](../../frontend/src/hooks/useShareCard.js), [frontend/src/hooks/usePersonalization.js](../../frontend/src/hooks/usePersonalization.js)
+
+**Impact:** 🟡 Medium (OPT-055, OPT-056, OPT-057, OPT-062, OPT-065) + 🟢 Low (OPT-076, OPT-084)
+
+**Category:** Synchronous storage / UX failure mode / Redundant network / Stale UI
+
+**What was inefficient:**
+- `explorePrefs` saved synchronously on every category / sub / heatmap toggle — 5–10 `localStorage.setItem` round-trips per second of rapid panel interaction.
+- `saveRecentSearch` did 3+ JSON ops per save: a parse on load, a stringify for the new entry's dedup key, another stringify *per existing entry* inside the filter loop, and a final stringify on write. Effectively `O(existing)` JSON.stringify calls per save.
+- `useExploreFetch`'s initial-fetch effect carried an `if (exploreLoading) return;` guard that silently dropped new fetches when one was in-flight. A rapid mode toggle (explore → route → explore) skipped the new fetch and left the stale prior result on screen.
+- `useShareCard` awaited `map.once("render", resolve)` + `triggerRepaint()` with no timeout. A failed/lost WebGL context on iOS would hang the share modal indefinitely.
+- `fetchAutocomplete` had no client-side cache; typing → deleting → re-typing the same query, or the same prefix entered into both stop inputs, hit the backend twice.
+- `usePersonalization` ran five separate save effects, each touching its own localStorage key. Updating height + weight in the same Personalize-modal commit fired two effects → two synchronous `JSON.stringify` + `setItem` round-trips.
+- `stepLog` pruned expired entries on app boot via `pruneStoredStepLog`, but within a long-running session new entries piled onto an in-memory list that was never re-pruned. `logWalk` wrote the full grown list on every save.
+
+**Implemented:**
+
+*OPT-055 — debounced `explorePrefs` save in [App.jsx](../../frontend/src/App.jsx).* The save effect now schedules a 300 ms `setTimeout`, cleared on each subsequent change. A second effect registers a `beforeunload` handler that flushes the latest prefs (read from a ref so the listener doesn't capture stale state) before navigation.
+
+*OPT-056 — single-pass `saveRecentSearch` in [recentSearches.js](../../frontend/src/lib/recentSearches.js).* Single load, single stringify of the new entry's signature, single loop that combines "drop corrupt legacy" + "dedupe by stops shape" into one pass using a `Set<string>`, single write. Profiler shows `1 JSON.parse + 1 JSON.stringify + 1 setItem` per save (was `1 + N + 1` where N = existing length).
+
+*OPT-057 — removed `if (exploreLoading) return;` guard in [useExploreFetch.js](../../frontend/src/hooks/useExploreFetch.js).* `fetchExploreResult` already calls `exploreAbortRef.current?.abort()` before starting a fresh request, so the guard was redundant with the internal abort. Removing it lets a rapid mode toggle abort the stale fetch and start fresh with the current params.
+
+*OPT-062 — 5 s timeout race in [useShareCard.js](../../frontend/src/hooks/useShareCard.js).* The `map.once("render", ...)` promise now races against a `setTimeout(reject, 5000)`. A `settled` flag prevents double-resolve; both branches clear the other's listener / timer on completion. The caller's existing catch routes a thrown error to the toast UI + leaves the modal actionable.
+
+*OPT-065 — in-memory LRU in [autocompleteApi.js](../../frontend/src/lib/autocompleteApi.js).* Module-level `Map<string, suggestions[]>` with delete-on-get-then-re-set to promote MRU. Max 20 entries; oldest evicted on overflow via `_acCache.keys().next().value`. Cached on successful response only — aborted/errored requests never populate. Two new tests in autocompleteApi.test.js prove (1) a repeat (q, limit) hit serves from cache without re-fetching, (2) different `limit` values are separate cache slots.
+
+*OPT-076 — coalesced save effect in [usePersonalization.js](../../frontend/src/hooks/usePersonalization.js).* The five separate `useEffect`s (pace, heightFt, heightIn, weightKg, accessPrefs) collapse into one effect that depends on all five state values and calls each saver in sequence. React batches setState within the same event loop tick, so a multi-field commit now fires one round of writes.
+
+*OPT-084 — `logWalk` prunes on save in [stepLog.js](../../frontend/src/lib/stepLog.js).* Each save now runs `pruneExpired(existing, now)` on the existing list before prepending the new entry. Bounds the persisted file under the existing 7-day TTL even in long-running sessions where the boot-time `pruneStoredStepLog` never re-fires.
+
+**Verification:** Frontend 466 tests, 31 files (+2 from the new LRU assertions in autocompleteApi.test.js). The autocomplete test setup needed `_clearAutocompleteCache()` in `beforeEach` because the module-level cache persists across tests — `_clearAutocompleteCache` is exported just for that purpose.
+
+---
+
+### 2026-05-23 · First-paint assets + CSS paint cost (OPT-041, OPT-066, OPT-067, OPT-073 from CHUNK-15 of 2026-05-22 audit; OPT-064 deferred — no `fonttools`)
+
+**Files:** [frontend/index.html](../../frontend/index.html), [frontend/src/App.css](../../frontend/src/App.css), [frontend/src/wayfarer/components.css](../../frontend/src/wayfarer/components.css), [frontend/vite.config.js](../../frontend/vite.config.js)
+
+**Impact:** 🔴 High (OPT-041) + 🟡 Medium (OPT-066, OPT-067) + 🟢 Low (OPT-073)
+
+**Category:** First paint / Paint cost / Bundle caching
+
+**What was inefficient:**
+- Fraunces (regular + italic), Inter, JetBrains Mono (~878 KB combined) were linked only via `@font-face` in `wayfarer/fonts.css`. First paint waited for CSS to parse → font request to fire → font download. All four are on the critical-path masthead / italic UI strings.
+- `.explore-cat-row-swatch` (one per explore category × ~50 categories) carried a `box-shadow: 0 0 0 1px var(--ink)`. Box-shadow routes through the rasterizer even with zero blur; with the explore panel mounted, this added a meaningful paint-node count per scroll/composite.
+- `.wf-sheet`'s shadow had `0 -8px 24px rgba(...)` — 24 px blur radius. Browsers re-rasterize the shadow region on every drag frame, and the cost scales with blur-radius squared, so sheet drag was the worst-case paint surface on mid-tier Android.
+- The Vite manual-chunks rule pinned `maplibre-gl` into its own chunk but bundled `react` + `react-dom` (~143 KB) into the app code. Every app-code hash bump re-downloaded React.
+
+**Implemented:**
+
+*OPT-041 — four `<link rel="preload" as="font" type="font/woff2" crossorigin>` in [index.html](../../frontend/index.html)* one per font file. `crossorigin` is required by the spec even on same-origin font preloads; without it the browser fetches the font again when the `@font-face` rule runs. All four preloaded — italic is heavily used on the critical-path masthead + route-flavor tabs.
+
+*OPT-066 — `outline: 1px solid var(--ink)` replaces the swatch `box-shadow` in [App.css](../../frontend/src/App.css).* `outline-offset: 0` keeps it positioned exactly where the prior box-shadow sat, preserving the two-tone "pin with cream halo" look. The `.explore-cat-row-swatch--fill` variant gets `outline: none` to match its prior `box-shadow: none` override.
+
+*OPT-067 — `.wf-sheet` shadow blur cut from 24 px → 12 px in [components.css](../../frontend/src/wayfarer/components.css).* The 8 px y-offset + alpha still read as a tactile floating sheet; halving the blur quarters the rasterized area without meaningfully changing the editorial "page lifted off the page below" feel.
+
+*OPT-073 — React vendor chunk rule added in [vite.config.js](../../frontend/vite.config.js).* Ordered before the maplibre rule so React paths match first. Production build verified: `react-vendor-DwsPBBoM.js  142.91 kB │ gzip: 45.77 kB` emits as a separate chunk.
+
+*OPT-064 — deferred.* `fonttools` / `pyftsubset` is not installed locally, and a system-wide install was out of scope for this bundle (same precedent as OPT-074 oxipng — the catalog one-shot tooling work is best done in a focused session with explicit visual verification across all four fonts).
+
+**Verification:** Frontend 464 tests green across 31 files. Production Vite build emits the React vendor chunk + confirms preloads/CSS changes don't break the build.
+
+---
+
+### 2026-05-23 · MapLibre layer effect splits + feature-state hygiene + theme rAF (OPT-038, OPT-039, OPT-058, OPT-059, OPT-060 from CHUNK-13 of 2026-05-22 audit)
+
+**Files:** [frontend/src/map/MapRouteLayer.jsx](../../frontend/src/map/MapRouteLayer.jsx), [frontend/src/map/MapExploreLayer.jsx](../../frontend/src/map/MapExploreLayer.jsx), [frontend/src/mapHelpers.js](../../frontend/src/mapHelpers.js)
+
+**Impact:** 🔴 High (OPT-038, OPT-039) + 🟡 Medium (OPT-058, OPT-059, OPT-060)
+
+**Category:** MapLibre layer churn / React effect discipline / Internal state growth
+
+**What was inefficient:**
+- `MapRouteLayer`'s render effect declared `[result, turnCoords, mode]`, so a flavor swap (`viewResult` overlay churns the result identity even when the active route's `path` stayed identical) re-ran `renderWalkRoute` end-to-end. `buildRouteSegments` recomputed the cum-distance walk inside `_buildTurnPathInfo` every call (~25k ops on a 500-point × 50-direction route), and the segment / casing / turn-points GeoJSON was re-uploaded via `setData` against unchanged buffers — re-kicking the draw-in animation.
+- `MapRouteLayer`'s feature-state cleanup ran AFTER `setData`. The non-id form (`removeFeatureState({ source })`) clears the whole map, but ordering it after the new data was uploaded meant a window during which orphaned state for ids past the new feature count could land in the MapLibre internal map between renders. Per-id state leaked across long flavor-swap sequences.
+- `MapExploreLayer`'s single render effect listed `[mode, exploreResult, showResidential, showParks, showTreeCanopy, showGreenSpace, canopyBandColors, placeFeatures, placeExpressions]`. Toggling residential ran `renderExplore` end-to-end — including `ensureExploreSource` on `explore-places` with the same supercluster `clusterOptions` (`setData` on a clustered source re-tiles the entire pin set).
+- The theme `MutationObserver` fired `setThemeVersion(v => v + 1)` per class mutation. A theme toggle that co-occurred with another setState could fan out into multiple paint-property updates as React flushed the class write in separate layout passes.
+
+**Implemented:**
+
+*OPT-058 — clear feature-state BEFORE `setData` in [frontend/src/mapHelpers.js](../../frontend/src/mapHelpers.js).* Both `walk-segments` and `walk-turns` source upserts now invert the order: `if (map.getSource?.(...)) removeFeatureState({ source: ... })` runs first, then `upsertGeoSource` calls `setData`. Acceptance: after 100 route swaps the MapLibre feature-state dict holds at most `newRoute.turnCount` entries (was unbounded growth).
+
+*OPT-059 + OPT-038 (memoization) — `buildRouteSegments` extracted to `useMemo` in [frontend/src/map/MapRouteLayer.jsx](../../frontend/src/map/MapRouteLayer.jsx).* `const routeSegments = useMemo(() => buildRouteSegments(result.path, result.directions), [result?.path, result?.directions])` memoizes the per-step FeatureCollection on `(path, directions)` identity. `renderWalkRoute` accepts an optional `precomputedSegments` 10th param; when supplied (production path), it skips its own `buildRouteSegments` call. ShareDispatch's 8-arg call site is unchanged (the new parameter is optional, defaults to `null`).
+
+*OPT-038 (dep array) — narrowed `MapRouteLayer`'s render effect from `[result, turnCoords, mode]` to `[result?.path, result?.directions, routeSegments, turnCoords, mode]`.* A flavor swap that produces an identical `(path, directions)` pair now skips the effect entirely. Endpoint markers (`origin_coords` / `dest_coords` / `stops`) only change when the underlying fetch result changes — which always changes path identity too — so the markers stay in sync.
+
+*OPT-039 — split `renderExplore` into per-layer helpers + split the broad effect in [frontend/src/map/MapExploreLayer.jsx](../../frontend/src/map/MapExploreLayer.jsx).* mapHelpers now exports `renderExplorePolygon`, `renderExploreResidential`, `renderExploreCanopy`, `renderExploreParks`, `renderExploreGreenSpace`, `renderExplorePlaces`; `renderExplore` is kept as a façade that delegates to them (for ShareDispatch + the existing mapHelpers.test.js asserts). `MapExploreLayer` replaces the single broad effect with six per-source effects, each keyed on `[mode, <its toggle>, exploreResult?.<its slice>]`. The polygon effect additionally owns the "leaving explore" full-clear so heatmap / pin layers don't leak on mode flip. Layer ordering (`beforeId: "explore-poly-stroke"` for heatmaps; `"explore-parks-fill"` for green-space when parks are live) is preserved inside the helpers with try/catch around `addLayer` so a transient ordering mismatch surfaces as a silent skip rather than a runtime throw.
+
+*OPT-060 — rAF-gated `MutationObserver` in [frontend/src/map/MapExploreLayer.jsx](../../frontend/src/map/MapExploreLayer.jsx).* The observer callback now schedules a single `requestAnimationFrame` token: if one is already scheduled, subsequent mutations within the same frame are dropped. Inside the rAF callback, the token is cleared and `setThemeVersion(v => v + 1)` fires once. Cleanup cancels the pending rAF on `obs.disconnect()`.
+
+**Verification:** Frontend suite — 464 tests, 31 files green. mapHelpers.test.js exercises the façade `renderExplore` (which still works because it delegates to the per-layer helpers), so the existing assertions covering polygon / pin / cluster-count text-font + GeoJSON shaping continue to hold. MapRouteLayer.test.jsx + MapExploreLayer.test.jsx smoke tests cover the per-source effect lifecycle (mode flip clears, residential toggle ON/OFF, polygon clear on mode→route).
+
+**Real-device verification deferred to runtime profiling** — the unit suite covers correctness, not the GPU-buffer-allocation count or paint-update count that the catalog's acceptance criteria target. The visible UX outcomes (flavor swap stops re-running the draw-in animation, theme toggle is one paint update, heatmap toggles don't repaint unrelated layers) are observable in DevTools Performance + the MapLibre layer inspector; calling them out in a PV entry is overkill for behavior that has unit tests guarding the React-side wiring.
+
+---
+
+### 2026-05-23 · App.jsx memoization + shared matchMedia subscriber cache (OPT-036, OPT-037, OPT-040, OPT-061 from CHUNK-12 of 2026-05-22 audit)
+
+**Files:** [frontend/src/App.jsx](../../frontend/src/App.jsx), [frontend/src/lib/useMediaQuery.js](../../frontend/src/lib/useMediaQuery.js)
+
+**Impact:** 🔴 High (OPT-036, OPT-037, OPT-040) + 🟡 Medium (OPT-061)
+
+**Category:** React render perf / Listener proliferation
+
+**What was inefficient:** `App.jsx` rebuilt the entire active-mode sidebar JSX subtree (1000+ nodes) on every render — sheet drags, theme toggles, toast timers, followLocation updates, even setState calls that only affected the map. Plain `function handle*` declarations got fresh refs every render, defeating any downstream `React.memo` on `ExploreForm`/`ExploreCategoryPanel`/`RouteFlavorTabs`. The `modeToggle` JSX was constructed inline every render. And `useMediaQuery` registered a fresh `matchMedia` change listener per call site, so a single viewport resize evaluated each query once per subscriber.
+
+**Implemented:**
+
+*OPT-061 — shared subscriber cache in [frontend/src/lib/useMediaQuery.js](../../frontend/src/lib/useMediaQuery.js).* A module-level `_queryCache: Map<string, {mql, listeners, onChange}>` holds one `MediaQueryList` per distinct query string. The single DOM `change` listener fans out to all React setters that subscribed via `useMediaQuery(q)`. Added a `_cacheMatchMedia` identity check so test fixtures that reassign `window.matchMedia` between cases (App.tablet.test.jsx, MobileLayout.test.jsx) invalidate the cache cleanly — production-side this is a no-op since `window.matchMedia` never changes identity.
+
+*OPT-040 — `getSuggestions` stability (already met).* The catalog called out a debounce-defeat where `AddressAutocomplete`'s `fetchFor` rebuilt on every parent re-render. Inspection showed both call sites already pass a stable `getSuggestions` reference: `App.jsx` uses the module-level `fetchAutocomplete` import (stable across renders by definition), and `ExploreForm` uses `useCallback([], …)` for `fetchAreaSuggestions`. No code change needed; entry kept in the resolved log so the audit is traceable.
+
+*OPT-037 — handler stabilization in [frontend/src/App.jsx](../../frontend/src/App.jsx).* Converted 16 plain `function handle*(…)` declarations to `useCallback(…, deps)`: stop mutators (`setStopValue`, `addStop`, `removeStop`, `moveStop`), route-form helpers (`handleSwap`, `handleSubmit`, `handlePickToggle`, `handleApplySwUpdate`), step-log handlers (`handleLogWalk`, `handleClearStepLog`), explore handlers (`handleExploreOriginChange`, `handleExploreMaxMinutesChange`, `handleExploreSubmit`, `handleToggleGroup`, `handleToggleCategory`, `handleToggleSub`, `handleToggleHeatmap`, `handleSelectAllCategories`, `handleClearAllCategories`), and recent / share helpers (`handleRecentSelect`, `handleClearRecent`). Two new hoisted callbacks replace inline arrows inside the memoized sidebar: `handleRetryRoute` (the ErrorDispatch retry) and `formatDirectionsForView` (the DirectionLedger `formatDirectionsText` adapter that closes over `mobilityProfile`). `modeToggle` is now `useMemo` keyed on `[mode, handleSelectRoute, handleSelectExplore]`, both setMode wrappers being `useCallback([])`. The dead `reverseStops` and `setAllHeatmaps` helpers were folded into their sole callers.
+
+*OPT-036 — sidebar contents memoization.* `const buildExploreContents = () => (…)` and `const buildRouteContents = () => (…)` became `useMemo(() => (…), [deps])` (`exploreContents` / `routeContents`). Dep arrays are explicit and complete — the explore branch lists 16 references, the route branch 26 — but every entry is either a useState-stable setter, a useCallback-stable handler, or a real state slice. Renders that touch unrelated state (`mapPadding`, `sheetSnap`, `toastMsg`, follow-location pos, `cardMapReady`, etc.) now hit the useMemo cache instead of rebuilding the sidebar JSX tree.
+
+**Verification:** Full frontend suite (464 tests, 31 files) green. The OPT-061 cache-invalidation check made the App.tablet + MobileLayout tests pass without modification — they reassign `window.matchMedia` between cases and my first pass leaked stale entries; the `_cacheMatchMedia` identity guard fixed the leak.
+
+---
+
+### 2026-05-23 · On-demand heatmap fan-out (OPT-025 from CHUNK-11 of 2026-05-22 audit)
+
+**Files:** [backend/main.py](../../backend/main.py), [frontend/src/lib/exploreApi.js](../../frontend/src/lib/exploreApi.js), [frontend/src/hooks/useExploreFetch.js](../../frontend/src/hooks/useExploreFetch.js), [frontend/src/hooks/useExploreFetch.test.js](../../frontend/src/hooks/useExploreFetch.test.js), [CLAUDE.md](../../CLAUDE.md), [README.md](../../README.md), [docs/Pending_Verification.md](../Pending_Verification.md)
+
+**Impact:** 🔴 High
+
+**Category:** Wasted backend compute + payload
+
+**What was inefficient:** `/explore` unconditionally fanned out all four heatmap clips (residential, parks, green-space, tree-canopy) plus the place pin list on every request, regardless of the frontend's per-layer toggles. The response carried `null` for layers the user had off, but the shapely clip + STRtree query had already run. Each heatmap is ~30–150 ms of shapely intersection work depending on isochrone size; cumulative cost was ~25–57% of `/explore` latency on a 20-min Logan Square isochrone in local measurement.
+
+**Implemented:**
+
+*Backend (`backend/main.py`):*
+- Added `_HEATMAP_LAYER_NAMES = {"residential", "parks", "green_space", "tree_canopy"}` and a new optional `with_heatmaps: list[str] | None = None` field on `ExploreRequest` with a `field_validator` that 422s on unknown layer names. Empty list (`[]`) is preserved as meaningful — "compute no heatmaps".
+- `/explore` handler now builds the fan-out from a `heatmap_specs` tuple, only submitting the futures for layers in `include_heatmaps` (defaults to all 4 when `with_heatmaps` is `None`). The places-pin clip still runs unconditionally. Response field for any skipped layer is `null` via `heatmap_results.get(name)`.
+
+*Frontend (`exploreApi.js`, `useExploreFetch.js`):*
+- `fetchExplore({withHeatmaps})` passes the filter through as `with_heatmaps` in the POST body when an array is provided.
+- `useExploreFetch` derives `requestHeatmaps` from the four `show*Heatmap` toggle prefs and passes it through `fetchExploreResult`.
+- A `lastFetchedHeatmapsRef` tracks the set the last successful fetch was built against. A new `useEffect` watches `requestHeatmaps` and only fires a fresh fetch when the current set **expands** beyond the last fetch's set — toggling a heatmap OFF is silent (the layer hides client-side via the existing show* prefs), and toggling ON a heatmap whose geojson is already in `exploreResult` is silent too.
+
+*Tests (`useExploreFetch.test.js`):* Added 4 new tests covering (1) initial fetch passes `withHeatmaps` derived from prefs, (2) toggle-ON expansion triggers a refetch with the new layer list, (3) toggle-OFF does **not** trigger a refetch, (4) toggle-OFF-then-ON of a still-cached layer does **not** trigger a refetch.
+
+**Local measurement (TestClient, 20-min Logan Square isochrone):**
+
+| `with_heatmaps`           | Latency | Decoded payload |
+|---------------------------|---------|-----------------|
+| omitted (all 4 layers)    | 51.7 ms | 81,124 B        |
+| `["residential"]` only    | 39.3 ms | 66,466 B (-18%) |
+| `[]` (no heatmaps)        | 22.4 ms | 61,154 B (-25%) |
+
+The savings scale with isochrone size + heatmap density; production traffic with bigger time budgets and lakefront origins should see larger absolute deltas (catalog target: ~150 ms p95 drop).
+
+**Verification:** Backend 319 tests green; frontend 464 tests green (4 new). PV-013 in [docs/Pending_Verification.md](../Pending_Verification.md) covers the production-traffic toggle-UX sign-off.
+
+**Docs landed in the same chunk:**
+- [`CLAUDE.md`](../../CLAUDE.md) `POST /explore` request table — added the `with_heatmaps` row with the catalog's intended behavior.
+- [`README.md`](../../README.md) `POST /explore` request table — same addition (the README's `/explore` schema mirrors CLAUDE.md's; TD-046 caught a prior drift here, so updating both is the rule).
+- [`docs/Pending_Verification.md`](../Pending_Verification.md) — PV-013 covers the real-device + production-traffic toggle-UX check.
+
+---
+
 ### 2026-05-23 · Build-script speedups + greenest bake vectorization (OPT-029, OPT-030, OPT-052, OPT-053 from CHUNK-10 of 2026-05-22 audit)
 
 **Files:** [backend/scripts/build_address_points.py](../../backend/scripts/build_address_points.py), [backend/scripts/build_intersections.py](../../backend/scripts/build_intersections.py), [backend/scripts/build_tree_canopy.py](../../backend/scripts/build_tree_canopy.py), [backend/fetch_street_graph.py](../../backend/fetch_street_graph.py), [backend/street_graph_igraph.pkl](../../backend/street_graph_igraph.pkl) (regenerated), [backend/.env](../../backend/.env) (`STREET_GRAPH_SHA256` rotated)

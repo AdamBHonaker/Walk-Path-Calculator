@@ -35,8 +35,13 @@ vi.mock("maplibre-gl", () => ({
       removeLayer() {}
       removeSource() {}
       getSource() { return null; }
+      getLayer() { return null; }
       getCanvas() { return null; }
       setPaintProperty() {}
+      setLayoutProperty() {}
+      setFeatureState() {}
+      removeFeatureState() {}
+      easeTo() {}
     },
     Marker: class {
       constructor() {}

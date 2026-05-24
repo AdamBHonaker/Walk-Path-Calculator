@@ -541,3 +541,126 @@ paste into BUGS.md, keep this entry, and consider rolling back the
 pickle to the prior bytes (the prior SHA-256
 `415d8be872887b6e0cfc3456954c26101d420584726aed0ae309d50e948b3eba` is
 recoverable from git history of `backend/.env`).
+
+---
+
+## PV-013 · `with_heatmaps` filter — production wire savings + toggle UX
+**Shipped:** 2026-05-23 (CHUNK-11 of the 2026-05-22 efficiency audit —
+OPT-025).
+**Why pending:** the backend now skips heatmap clip work for layers
+the frontend has toggled off; the frontend's `useExploreFetch` only
+re-fetches when the toggled-ON set expands beyond the last fetch's
+set. Unit tests (4 new in `useExploreFetch.test.js`) prove the
+fetch-on-expand / no-fetch-on-contract / no-fetch-on-redundant-ON
+logic. Local TestClient measurement shows ~25–57% wire size + latency
+savings on a 20-min Logan Square isochrone depending on how many
+heatmaps the user has off; the catalog's ~150 ms p95 estimate scales
+with isochrone size + heatmap density on real Chicago traffic, so the
+real-world delta needs production sign-off.
+
+**Quick summary of what to check** (run via `npm run dev`):
+
+- [ ] **Initial /explore on entry.** Open the Explorer with the
+  default prefs (`showResidentialHeatmap: true`, the other three off).
+  Network panel: one `POST /explore` request whose body includes
+  `"with_heatmaps": ["residential"]`. Response carries
+  `residential_heatmap` populated, the other three `null`.
+- [ ] **Toggle ON a previously-off heatmap (e.g. parks).** Network
+  panel: one new `POST /explore` request with
+  `"with_heatmaps": ["residential", "parks"]`. Response carries both
+  populated.
+- [ ] **Toggle OFF a heatmap.** Network panel: **no** new request.
+  Map layer hides immediately (client-side via the existing show*
+  prefs).
+- [ ] **Toggle ON a heatmap that's still in the last fetch's set.**
+  E.g. after the toggle-OFF above, toggle the same one back ON.
+  Network panel: **no** new request. The layer reappears using the
+  still-cached geojson from the prior response.
+- [ ] **Wire-size delta in DevTools.** A 25-minute Logan Square
+  isochrone with all 4 heatmaps on vs only residential on: confirm
+  the gzipped wire size drops noticeably (locally ~15 KB drop;
+  production should be similar or larger).
+- [ ] **Edge: explicit submit re-establishes the full set.** Toggle a
+  few heatmaps on, change `maxMinutes`, hit Discover. The new fetch
+  resets the cached `lastFetchedHeatmaps` ref to whatever's currently
+  on, and subsequent toggle-ON expansion works as expected.
+
+**When to delete this entry:** every checkbox passes on a live deploy
++ real device. Any failure → paste into BUGS.md, keep this entry.
+
+---
+
+## PV-014 · Editorial map tint — Cream/Dusk visual sign-off (OPT-042 from CHUNK-14)
+**Shipped:** 2026-05-23 (CHUNK-14 of the 2026-05-22 efficiency audit —
+OPT-042).
+**Why pending:** the prior `.maplibregl-canvas { filter: sepia(...)
+saturate(...) brightness(...) }` rules were removed. The editorial map
+tint is now applied via a MapLibre `background` layer
+(`MAP_TINT_LAYER_ID`, see [`mapHelpers.js`](../frontend/src/mapHelpers.js)
+`MAP_TINT`) installed in both [`MapView`](../frontend/src/MapView.jsx)
+and the share-card map in
+[`ShareDispatch`](../frontend/src/components/ShareDispatch.jsx). Tint
+hex + opacity values (`MAP_TINT.cream` = `#8B6F47` @ 0.12;
+`MAP_TINT.dusk` = `#0a0807` @ 0.45) were chosen by approximating the
+prior CSS-filter math, but the editorial tone is the design contract —
+a real-device side-by-side review is required before the tint values
+can be considered final.
+
+**Two known visual departures from the prior look:**
+- **Route + explore overlays render un-tinted.** The CSS filter tinted
+  the whole canvas (route polyline, explore polygon, place pins all
+  shifted into sepia). The background-layer approach sits BELOW the
+  route/explore overlays (added later by `MapRouteLayer` /
+  `MapExploreLayer`), so those overlays paint in true Wayfarer
+  colors. Route lines and category pins likely "pop" more against the
+  tinted base map. This may look better or worse — design call.
+- **Sepia is approximated, not computed.** CSS `sepia(0.18)
+  saturate(0.7) brightness(0.98)` applies a matrix that desaturates
+  AND hue-shifts. A single overlay color can't replicate the matrix
+  exactly — colors that were heavily desaturated by the prior filter
+  may now appear more saturated.
+
+**Quick summary of what to check** (run via `npm run dev`):
+
+- [ ] **Cream theme map tone.** Default Cream theme matches the
+  editorial look — warm tinted base map, no jarring saturation. If
+  the tint feels too brown / not brown enough, tune
+  `MAP_TINT.cream.color` (try `#a8896c` for warmer) or
+  `.opacity` (try 0.08-0.18) in `mapHelpers.js`.
+- [ ] **Dusk theme map tone.** Dusk theme reads as dark + muted; the
+  base map should still be legible (streets / labels). If too dark,
+  drop `MAP_TINT.dusk.opacity` from 0.45 toward 0.30. If not dark
+  enough, push it up toward 0.55.
+- [ ] **Route line pop against tinted base.** Plot a route in Cream
+  and Dusk. The route polyline is `#171310` (ink) by default and
+  ember (`#9c2a1a`) on the share card. Both should remain
+  high-contrast against the tinted base. If the route looks too
+  bright now (un-tinted), and the catalog's "unified tone" was
+  important to the editorial design, revert the layer order or apply
+  a tint to the route layers too — record the decision here.
+- [ ] **Explore polygon + pins.** Switch to Explore mode in Cream and
+  Dusk. The field-green polygon outline + categorical pins should
+  read clearly. Check that the tinted base doesn't muddy the polygon
+  outline.
+- [ ] **Share card PNG.** Open the share modal, render a card, export
+  the PNG (or use the in-page preview if the share button is unused).
+  The share-card map applies the same tint via the background layer
+  insert in `ShareDispatch.jsx`. Confirm the exported image looks
+  consistent with the prior look — same warm/dusk feel.
+- [ ] **Pan/zoom perf — the actual reason for this change.** Open
+  Chrome DevTools Performance panel, record a 5-second pan on a
+  mid-tier device profile. Look for the per-frame canvas-filter blit
+  in the rendering layer (which previously appeared as a
+  `Composite Layers` step with a fixed cost per frame). Confirm it's
+  gone. Expected fps stays above 50 on the mid-tier Android profile.
+
+**If the tint doesn't hit the editorial tone** after a few rounds of
+constant-tuning: the catalog's fallback option is to revert
+`MAP_TINT_LAYER_ID` install in `MapView` + `ShareDispatch`, restore the
+`.maplibregl-canvas { filter: ... }` rule in `App.css`, and re-open
+OPT-042 in the catalog with a note that the layer-based approach
+couldn't match the design contract.
+
+**When to delete this entry:** every checkbox passes on at least one
+desktop browser + one mobile device in both Cream and Dusk. Any
+failure → paste into BUGS.md, keep this entry.

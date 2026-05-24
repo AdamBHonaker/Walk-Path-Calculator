@@ -140,19 +140,23 @@ export default function App() {
   const destination = stops[stops.length - 1]?.value ?? "";
   const isMultiStop = stops.length > 2;
 
-  function setStopValue(id, value) {
+  // OPT-037: handlers use functional state updates so their closures don't
+  // capture mutable values — empty deps keep the references stable across
+  // every render so the memoized sidebar contents below (OPT-036) can hit
+  // their useMemo cache when nothing else changed.
+  const setStopValue = useCallback((id, value) => {
     setStops(prev => prev.map(s => s.id === id ? { ...s, value } : s));
-  }
-  function addStop() {
+  }, []);
+  const addStop = useCallback(() => {
     setStops(prev => prev.length >= MAX_STOPS
       ? prev
       : [...prev.slice(0, -1), { id: makeStopId(), value: "" }, prev[prev.length - 1]]
     );
-  }
-  function removeStop(id) {
+  }, []);
+  const removeStop = useCallback((id) => {
     setStops(prev => prev.length <= 2 ? prev : prev.filter(s => s.id !== id));
-  }
-  function moveStop(id, delta) {
+  }, []);
+  const moveStop = useCallback((id, delta) => {
     setStops(prev => {
       const idx = prev.findIndex(s => s.id === id);
       const target = idx + delta;
@@ -161,13 +165,7 @@ export default function App() {
       [next[idx], next[target]] = [next[target], next[idx]];
       return next;
     });
-  }
-  function reverseStops() {
-    // Reverse in place — keep ids stable so AddressAutocomplete instances
-    // don't unmount and drop focus / suggestion state mid-edit. The ids
-    // are React keys; React reconciles the reorder without remounting.
-    setStops(prev => prev.slice().reverse());
-  }
+  }, []);
 
   // ── Personalization ────────────────────────────────────────────────────
   const {
@@ -246,7 +244,24 @@ export default function App() {
     // floating over the Explorer's polygon. Clear it on every transition.
     if (next !== "route") setPickMode(null);
   }, []);
-  useEffect(() => { saveExplorePrefs(explorePrefs); }, [explorePrefs]);
+  // OPT-055: debounce the explorePrefs save. Each category / sub /
+  // heatmap toggle rewrites the same localStorage key synchronously;
+  // rapid toggling (the explore panel invites it) was firing 5-10
+  // writes per second. A 300 ms trailing-edge debounce collapses those
+  // into one write. The `beforeunload` flush guarantees prefs persist
+  // before navigation even if the timer hasn't fired — and uses a ref
+  // for the latest prefs so the listener doesn't capture stale state.
+  const explorePrefsLatestRef = useRef(explorePrefs);
+  useEffect(() => { explorePrefsLatestRef.current = explorePrefs; }, [explorePrefs]);
+  useEffect(() => {
+    const id = setTimeout(() => saveExplorePrefs(explorePrefs), 300);
+    return () => clearTimeout(id);
+  }, [explorePrefs]);
+  useEffect(() => {
+    const flush = () => saveExplorePrefs(explorePrefsLatestRef.current);
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, []);
 
   // ── Route fetch ────────────────────────────────────────────────────────
   const {
@@ -389,7 +404,7 @@ export default function App() {
     setActiveFlavor(result?.default_flavor ?? "fastest");
   }, [result]);
 
-  function handleLogWalk() {
+  const handleLogWalk = useCallback(() => {
     if (!viewResult || walkLogged) return;
     // Pass `stepLog` so logWalk skips the localStorage re-read + parse —
     // we already have the live list in state.
@@ -404,12 +419,12 @@ export default function App() {
     }, stepLog);
     if (entry) setStepLog(prev => [entry, ...prev]);
     setWalkLogged(true);
-  }
+  }, [viewResult, walkLogged, origin, destination, isMultiStop, stopValues, stepLog]);
 
-  function handleClearStepLog() {
+  const handleClearStepLog = useCallback(() => {
     clearStepLog();
     setStepLog([]);
-  }
+  }, []);
 
   // Register the PWA service worker with a needRefresh callback.
   useEffect(() => {
@@ -426,23 +441,25 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
-  function handleApplySwUpdate() {
+  const handleApplySwUpdate = useCallback(() => {
     const fn = swUpdateFnRef.current;
     if (typeof fn === "function") fn(true); // skipWaiting + reload
     else window.location.reload();
-  }
+  }, []);
 
-  function handleSwap() {
-    if (stops.some(s => !s.value.trim())) return;
-    reverseStops();
-  }
+  const handleSwap = useCallback(() => {
+    // Reverse in place — keep ids stable so AddressAutocomplete instances
+    // don't unmount and drop focus / suggestion state mid-edit. Functional
+    // update so deps stay empty; useState bails out on same-ref return.
+    setStops(prev => prev.some(s => !s.value.trim()) ? prev : prev.slice().reverse());
+  }, []);
 
-  async function handleSubmit(e) {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     const cleaned = stopValues.map(v => v.trim());
     if (cleaned.some(v => !v)) return;
     await fetchRoute(cleaned);
-  }
+  }, [stopValues, fetchRoute]);
 
   // ── Explore-mode handlers ──────────────────────────────────────────────
 
@@ -481,35 +498,35 @@ export default function App() {
     }
   }, [fetchExploreResult, setExploreError, explorePrefsRef]);
 
-  function handleExploreOriginChange(nextOrigin) {
+  const handleExploreOriginChange = useCallback((nextOrigin) => {
     setExplorePrefs(p => ({ ...p, origin: nextOrigin }));
     if (nextOrigin.kind === "community_area") {
       // Community-area picks have a deterministic centroid → fetch immediately.
       explorePrefsRef.current = { ...explorePrefsRef.current, origin: nextOrigin };
       fetchExploreResult({ origin: nextOrigin });
     }
-  }
+  }, [setExplorePrefs, explorePrefsRef, fetchExploreResult]);
 
-  function handleExploreMaxMinutesChange(next) {
+  const handleExploreMaxMinutesChange = useCallback((next) => {
     setExplorePrefs(p => ({ ...p, maxMinutes: next }));
     explorePrefsRef.current = { ...explorePrefsRef.current, maxMinutes: next };
-  }
+  }, [setExplorePrefs, explorePrefsRef]);
 
   // Slider release / "Discover" button.
-  function handleExploreSubmit() {
+  const handleExploreSubmit = useCallback(() => {
     fetchExploreResult();
-  }
+  }, [fetchExploreResult]);
 
-  function handleToggleGroup(groupKey) {
+  const handleToggleGroup = useCallback((groupKey) => {
     setExplorePrefs(p => {
       const set = new Set(p.expandedGroups);
       if (set.has(groupKey)) set.delete(groupKey);
       else set.add(groupKey);
       return { ...p, expandedGroups: Array.from(set) };
     });
-  }
+  }, [setExplorePrefs]);
 
-  function handleToggleCategory(catKey) {
+  const handleToggleCategory = useCallback((catKey) => {
     setExplorePrefs(p => {
       const set = new Set(p.selectedCategories);
       if (set.has(catKey)) set.delete(catKey);
@@ -521,9 +538,9 @@ export default function App() {
       }
       return { ...p, selectedCategories: Array.from(set), selectedSubs: nextSubs };
     });
-  }
+  }, [setExplorePrefs]);
 
-  function handleToggleSub(catKey, subKey) {
+  const handleToggleSub = useCallback((catKey, subKey) => {
     setExplorePrefs(p => {
       const fullKey = `${catKey}/${subKey}`;
       const subSet = new Set(p.selectedSubs);
@@ -531,35 +548,38 @@ export default function App() {
       else subSet.add(fullKey);
       return { ...p, selectedSubs: Array.from(subSet) };
     });
-  }
+  }, [setExplorePrefs]);
 
-  function handleToggleHeatmap(key, e) {
+  const handleToggleHeatmap = useCallback((key, e) => {
     const checked = !!(e?.target?.checked);
     const layer = HEATMAP_LAYERS.find(l => l.key === key);
     if (!layer) return;
     setExplorePrefs(p => ({ ...p, [layer.prefKey]: checked }));
-  }
+  }, [setExplorePrefs]);
 
-  function setAllHeatmaps(next, value) {
-    for (const { prefKey } of HEATMAP_LAYERS) next[prefKey] = value;
-    return next;
-  }
+  const handleSelectAllCategories = useCallback(() => {
+    setExplorePrefs(p => {
+      const next = {
+        ...p,
+        selectedCategories: PIN_CATEGORIES.map(c => c.key),
+        selectedSubs: [],
+      };
+      for (const { prefKey } of HEATMAP_LAYERS) next[prefKey] = true;
+      return next;
+    });
+  }, [setExplorePrefs]);
 
-  function handleSelectAllCategories() {
-    setExplorePrefs(p => setAllHeatmaps({
-      ...p,
-      selectedCategories: PIN_CATEGORIES.map(c => c.key),
-      selectedSubs: [],
-    }, true));
-  }
-
-  function handleClearAllCategories() {
-    setExplorePrefs(p => setAllHeatmaps({
-      ...p,
-      selectedCategories: [],
-      selectedSubs: [],
-    }, false));
-  }
+  const handleClearAllCategories = useCallback(() => {
+    setExplorePrefs(p => {
+      const next = {
+        ...p,
+        selectedCategories: [],
+        selectedSubs: [],
+      };
+      for (const { prefKey } of HEATMAP_LAYERS) next[prefKey] = false;
+      return next;
+    });
+  }, [setExplorePrefs]);
 
   // Mobile only: when a place pin is tapped, drop the sheet to peek so the
   // MapLibre popup over the pin isn't clipped under the sheet body.
@@ -607,23 +627,23 @@ export default function App() {
     fetchRouteRef.current([originName, neighborhoodName]);
   }, [setMode, explorePrefsRef, fetchRouteRef, showToast]);
 
-  function handleRecentSelect(item) {
+  const handleRecentSelect = useCallback((item) => {
     const itemStops = recentEntryStops(item);
     if (!itemStops.length) return;
     setStops(itemStops.map(v => ({ id: makeStopId(), value: v })));
     fetchRoute(itemStops);
-  }
+  }, [fetchRoute]);
 
-  function handleClearRecent() {
+  const handleClearRecent = useCallback(() => {
     safeRemove(RECENT_KEY);
     setRecentSearches([]);
-  }
+  }, []);
 
   // ── Pick on map ────────────────────────────────────────────────────────
 
-  function handlePickToggle(stopId) {
+  const handlePickToggle = useCallback((stopId) => {
     setPickMode(prev => prev === stopId ? null : stopId);
-  }
+  }, []);
 
   const resolveStopLabel = useCallback(async (lat, lon) => {
     try {
@@ -749,15 +769,33 @@ export default function App() {
     return out;
   }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
 
+  // Inline arrows used inside the memoized sidebar contents below. Hoisted
+  // so the useMemo deps are simple stable references (OPT-037).
+  const handleRetryRoute = useCallback(() => {
+    const cleaned = stopValues.map(v => v.trim());
+    if (cleaned.some(v => !v)) return;
+    fetchRoute(cleaned);
+  }, [stopValues, fetchRoute]);
+
+  const formatDirectionsForView = useCallback(
+    (d, r) => formatDirectionsText(d, r, mobilityProfile),
+    [mobilityProfile],
+  );
+
   // ── Mode toggle (Route ⇄ Explore) ─────────────────────────────────────
-  const modeToggle = (
+  // OPT-037: memoized so the JSX subtree is reused across renders that
+  // don't actually change `mode`. The setMode reference is stable (useState
+  // setter), so the onClick arrows here don't need their own useCallback.
+  const handleSelectRoute   = useCallback(() => setMode("route"),   []);
+  const handleSelectExplore = useCallback(() => setMode("explore"), []);
+  const modeToggle = useMemo(() => (
     <div className="mode-toggle" role="tablist" aria-label="Route planning mode">
       <button
         type="button"
         role="tab"
         aria-selected={mode === "route"}
         className={`mode-toggle-btn${mode === "route" ? " mode-toggle-btn--active" : ""}`}
-        onClick={() => setMode("route")}
+        onClick={handleSelectRoute}
       >
         <WPIcon name="stride" size={14} />
         <span>Route</span>
@@ -767,19 +805,20 @@ export default function App() {
         role="tab"
         aria-selected={mode === "explore"}
         className={`mode-toggle-btn${mode === "explore" ? " mode-toggle-btn--active" : ""}`}
-        onClick={() => setMode("explore")}
+        onClick={handleSelectExplore}
       >
         <WPIcon name="crosshair" size={14} />
         <span>Explore</span>
       </button>
     </div>
-  );
+  ), [mode, handleSelectRoute, handleSelectExplore]);
 
   // Explore-mode content: the form (origin selector + slider + chips) plus
-  // the category panel. Wrapped in a builder so only the active branch's
-  // JSX tree is constructed per render (see OPT-012) — sheet drags, theme
-  // toggles, and toast timers no longer pay to allocate the unused tree.
-  const buildExploreContents = () => (
+  // the category panel. Memoized (OPT-036) so re-renders that don't change
+  // any of the listed deps — theme toggles, toast timers, sheet drags,
+  // followLocation pos updates, etc. — hit the useMemo cache and skip the
+  // JSX rebuild + React reconciliation pass against the prior tree.
+  const exploreContents = useMemo(() => (
     <>
       {modeToggle}
       <ExploreForm
@@ -846,12 +885,20 @@ export default function App() {
         onClearAll={handleClearAllCategories}
       />
     </>
-  );
+  ), [
+    modeToggle,
+    explorePrefs,
+    exploreLoading, exploreResult, exploreError, locating,
+    handleExploreOriginChange, handleExploreMaxMinutesChange, handleExploreSubmit,
+    handleNeighborhoodChip, handleExploreLocateMe,
+    handleToggleGroup, handleToggleCategory, handleToggleSub, handleToggleHeatmap,
+    handleSelectAllCategories, handleClearAllCategories,
+  ]);
 
   // Form, results, and directions — composed once and slotted into either
-  // the desktop two-column layout or the mobile bottom sheet. Wrapped in
-  // a builder for the same reason as buildExploreContents above.
-  const buildRouteContents = () => (
+  // the desktop two-column layout or the mobile bottom sheet. Memoized for
+  // the same reason as exploreContents above (OPT-036).
+  const routeContents = useMemo(() => (
     <>
       {modeToggle}
       <form className="form" onSubmit={handleSubmit}>
@@ -989,11 +1036,7 @@ export default function App() {
       {error && (
         <ErrorDispatch
           error={error}
-          onRetry={() => {
-            const cleaned = stopValues.map(v => v.trim());
-            if (cleaned.some(v => !v)) return;
-            fetchRoute(cleaned);
-          }}
+          onRetry={handleRetryRoute}
         />
       )}
 
@@ -1023,7 +1066,7 @@ export default function App() {
             activeTurnIndex={activeTurnIndex}
             onStepClick={setActiveTurnIndex}
             legs={isMultiStop ? (result.legs ?? null) : null}
-            formatDirectionsText={(d, r) => formatDirectionsText(d, r, mobilityProfile)}
+            formatDirectionsText={formatDirectionsForView}
           />
 
           {!isMultiStop && (
@@ -1071,9 +1114,19 @@ export default function App() {
         </RouteErrorBoundary>
       )}
     </>
-  );
+  ), [
+    modeToggle,
+    stops, pickMode, loading, isMultiStop, error,
+    recentSearches, stepLog, dailyGoal, isWheeled,
+    viewResult, activeTurnIndex, result, mobilityProfile, activeFlavor, walkLogged,
+    showMobilityOverrideNotice,
+    handleSubmit, handlePickToggle, setStopValue, moveStop, removeStop, addStop, handleSwap,
+    handleRetryRoute, formatDirectionsForView,
+    handleRecentSelect, handleClearRecent, handleClearStepLog,
+    handleDismissMobilityOverride, handleOpenShare, handleLogWalk,
+  ]);
 
-  const sidebarContents = mode === "explore" ? buildExploreContents() : buildRouteContents();
+  const sidebarContents = mode === "explore" ? exploreContents : routeContents;
 
   const mapNode = (
     <Suspense fallback={<div className="map-lazy-fallback" aria-hidden="true" />}>
