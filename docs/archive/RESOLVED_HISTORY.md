@@ -1071,6 +1071,25 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Mobility profile prefer_pedestrian forced under Wheeled + follow-location mode gating (TD-063)
+
+**Files:** `frontend/src/hooks/useRouteFetch.js`, `frontend/src/components/PersonalizeModal.jsx`, `frontend/src/hooks/useRouteFetch.test.js`, `frontend/src/components/PersonalizeModal.test.jsx`, `frontend/src/App.jsx`.
+
+**Priority:** 🟢 Low.
+
+**What the debt was:** Two small UX/perf tweaks. The Wheeled mobility profile's hint copy promised "stairs avoided and pedestrian ways preferred," but [useRouteFetch.js](../../frontend/src/hooks/useRouteFetch.js) only forced `avoid_stairs=true` — `prefer_pedestrian` was passed through as the user's setting (F-03). And [`useFollowLocation`](../../frontend/src/hooks/useFollowLocation.js) was always wired with `enabled: true`, so a follow session that survived a mode flip from Explore to Route kept its `watchPosition` subscription alive in a mode where the route-specific recenter logic already covers the same affordance (F-09).
+
+**How it was resolved:**
+
+- **`prefer_pedestrian` joins the forced set in [useRouteFetch.js](../../frontend/src/hooks/useRouteFetch.js).** New `effectivePreferPedestrian = isWheeled ? true : preferPedestrian` parallels the existing `effectiveAvoidStairs`. The persisted `walkpath:accessPrefs.preferPedestrian` value is left untouched so a flip back to Walking restores the user's saved choice.
+- **PersonalizeModal mirrors the avoid_stairs UI treatment** for `prefer_pedestrian` (forced-checked + disabled when Wheeled). Resolves the visual mismatch where the hint promised an override the toggle didn't show. Updated [PersonalizeModal.test.jsx](../../frontend/src/components/PersonalizeModal.test.jsx) to assert the new disabled+checked state.
+- **`useFollowLocation` gated on `mode === "explore"` in [App.jsx](../../frontend/src/App.jsx).** The `watchPosition` subscription tears down automatically on flip to Route mode. The hook's own `enabled` effect already implements the auto-stop; passing a mode-derived value to it is the minimum-impact way to bind follow to Explore conceptually.
+- Updated [useRouteFetch.test.js](../../frontend/src/hooks/useRouteFetch.test.js) — replaced the "passes prefer_pedestrian through in both modes" assertion with two tests: one for the new forced-true case under Wheeled, one confirming Walking respects the user's setting.
+
+**Acceptance:** `npm test` → **470 passed (470)** in 18s. Wheeled profile now visibly disables the prefer_pedestrian toggle; the request body always carries `prefer_pedestrian=true` under Wheeled regardless of the persisted access pref.
+
+---
+
 ### 2026-05-24 · Frontend API-contract enums centralized + custom-flavor render + LocationIQ visual distinction + WF token validation (TD-060)
 
 **Files:** new `frontend/src/lib/apiEnums.js`, new `frontend/src/wayfarer/tokens.test.js`, `frontend/src/components/RouteFlavorTabs.jsx`, `frontend/src/App.css`.

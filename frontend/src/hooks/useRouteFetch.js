@@ -51,14 +51,16 @@ export function useRouteFetch({
       : { origin: cleanStops[0], destination: cleanStops[1] };
 
     // Mobility profile is the source of truth for accessibility routing prefs.
-    // Wheeled forces stairs avoided and pins pace to `normal`, but the
-    // persisted `walkpath:accessPrefs` / `walkpath:walkPace` values are left
-    // untouched so a flip back to Walking restores the user's saved choices.
-    // `prefer_pedestrian` is user-toggleable in both modes; the modal seeds it
-    // to true on first switch to wheeled.
+    // Wheeled forces stairs avoided, pedestrian ways preferred, and pins pace
+    // to `normal`. The persisted `walkpath:accessPrefs` / `walkpath:walkPace`
+    // values are left untouched so a flip back to Walking restores the user's
+    // saved choices. TD-063: `prefer_pedestrian` now joins `avoid_stairs` in
+    // the forced set so the Personalize copy ("Wheeled keeps stairs avoided
+    // and pedestrian ways preferred.") matches the request body actually sent.
     const isWheeled = mobilityProfile === "wheeled";
-    const effectiveAvoidStairs = isWheeled ? true : avoidStairs;
-    const effectivePace        = isWheeled ? "normal" : walkPace;
+    const effectiveAvoidStairs      = isWheeled ? true : avoidStairs;
+    const effectivePreferPedestrian = isWheeled ? true : preferPedestrian;
+    const effectivePace             = isWheeled ? "normal" : walkPace;
 
     try {
       const res = await fetchWithTimeout(`${BACKEND_URL}/route`, {
@@ -71,7 +73,7 @@ export function useRouteFetch({
           daily_goal:        dailyGoal,
           pace:              effectivePace,
           avoid_stairs:      effectiveAvoidStairs,
-          prefer_pedestrian: preferPedestrian,
+          prefer_pedestrian: effectivePreferPedestrian,
         }),
         signal,
       });

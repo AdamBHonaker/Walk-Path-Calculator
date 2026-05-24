@@ -65,9 +65,25 @@ describe("useRouteFetch — mobility profile override", () => {
     expect(body.pace).toBe("normal");
   });
 
-  it("passes prefer_pedestrian through in both modes (user-toggleable)", async () => {
+  it("forces prefer_pedestrian=true under the wheeled profile (TD-063)", async () => {
+    // Wheeled is the source of truth for accessibility routing prefs. The
+    // persisted `walkpath:accessPrefs.preferPedestrian` value is left
+    // untouched (so a flip back to Walking restores it) but the outgoing
+    // request body always carries true. Mirrors the avoid_stairs treatment.
     const { result } = renderHook(() =>
       useRouteFetch({ ...baseProps, mobilityProfile: "wheeled", preferPedestrian: false }),
+    );
+    await act(async () => {
+      await result.current.fetchRoute(["A", "B"]);
+    });
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(fetch.mock.calls[0][1].body);
+    expect(body.prefer_pedestrian).toBe(true);
+  });
+
+  it("respects the user's prefer_pedestrian setting under the walking profile", async () => {
+    const { result } = renderHook(() =>
+      useRouteFetch({ ...baseProps, mobilityProfile: "walking", preferPedestrian: false }),
     );
     await act(async () => {
       await result.current.fetchRoute(["A", "B"]);

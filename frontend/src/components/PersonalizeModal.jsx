@@ -315,8 +315,9 @@ export function PersonalizeModal({
               label="Avoid stairs and steep ascents"
             />
             <WFCheck
-              checked={!!preferPedestrian}
+              checked={mobilityProfile === "wheeled" ? true : !!preferPedestrian}
               onChange={e => onChangePreferPedestrian?.(e.target.checked)}
+              disabled={mobilityProfile === "wheeled"}
               label="Prefer pedestrian ways and footpaths"
             />
           </div>

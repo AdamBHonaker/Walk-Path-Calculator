@@ -259,21 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-063 · CHUNK-19 · Mobility profile UI + follow-location gating
-- **Files**: `frontend/src/components/PersonalizeModal.jsx`, `frontend/src/App.jsx`
-- **Category**: UX clarity / performance
-- **Priority**: 🟢 Low
-- **Findings**:
-  - **F-03** — Mobility profile forces `preferPedestrian=true` for Wheeled with no UI hint; user can't tell the toggle is overridden.
-  - **F-09** — `useFollowLocation({ enabled: true })` always-on; `watchPosition` runs in Route mode even though `followLocation` is rarely set.
-- **Description**: Two small UX/perf tweaks.
-- **Scope**:
-  - Add "Enabled for Wheeled profile" badge next to `prefer_pedestrian` toggle when wheeled is active (mirror the avoid_stairs disabled+badge treatment).
-  - Gate `useFollowLocation({ enabled: mode === "explore" && userInitiatedTracking })` (requires a new state flag for user intent).
-- **Acceptance**: Wheeled profile visibly marks the toggle as forced; in Route mode the geolocation watch is not active per DevTools / browser dev menu.
-
----
-
 ### TD-064 · CHUNK-20 · Frontend DRY + constants + comment cleanup
 - **Files**: new `frontend/src/lib/constants.js`, `frontend/src/lib/urlParams.js`, `frontend/src/lib/recentSearches.js`, `frontend/src/lib/explorePrefs.js`, `frontend/src/mapHelpers.js`, `frontend/src/lib/personaPrefs.js`, `frontend/src/hooks/useTurnCoords.js`, `frontend/src/components/PersonalizeModal.jsx`
 - **Category**: Code hygiene

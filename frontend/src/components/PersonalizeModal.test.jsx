@@ -67,18 +67,18 @@ describe("PersonalizeModal — Mobility profile", () => {
     expect(avoid).toBeDisabled();
   });
 
-  it("defaults Prefer pedestrian ways on when first switching to Wheeled and keeps it toggleable", async () => {
+  it("disables the Prefer pedestrian ways checkbox under the Wheeled profile (TD-063)", async () => {
+    // TD-063: the Wheeled hint copy says "stairs avoided and pedestrian ways
+    // preferred" — useRouteFetch now forces `prefer_pedestrian=true` to
+    // match. The Personalize toggle mirrors the avoid_stairs treatment so
+    // the UI doesn't suggest the user can un-toggle a setting the request
+    // body overrides.
     const user = userEvent.setup();
     render(<Harness />);
     await user.click(screen.getByRole("radio", { name: /wheeled/i }));
     const pp = screen.getByRole("checkbox", { name: /prefer pedestrian/i });
     expect(pp).toBeChecked();
-    expect(pp).not.toBeDisabled();
-    // User can still un-toggle it in wheeled mode. WFCheck's visible <input>
-    // has pointer-events:none (label-handled clicks), so fire the change event
-    // directly to simulate the user's intent.
-    fireEvent.click(pp);
-    expect(pp).not.toBeChecked();
+    expect(pp).toBeDisabled();
   });
 });
 

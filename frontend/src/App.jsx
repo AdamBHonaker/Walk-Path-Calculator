@@ -295,9 +295,15 @@ export default function App() {
   const [activeTurnIndex, setActiveTurnIndex] = useState(null);
   const [pickMode, setPickMode]             = useState(null); // stop id | null
   const [locating, setLocating]             = useState(false);
-  // Follow my location — continuous watchPosition + auto-recenter.
-  // `enabled` is wired below once `viewResult` / `exploreResult` exist.
-  const followLocation = useFollowLocation({ enabled: true });
+  // Follow my location — continuous watchPosition + auto-recenter. The
+  // watchPosition subscription only runs while `following === true` (the
+  // user toggled the follow button), so `enabled` just controls whether a
+  // flip in flight forces a teardown. F-09: gate on `mode === "explore"`
+  // so a follow session active in Explore mode releases its subscription
+  // on a flip to Route — follow is conceptually an Explore-mode feature
+  // (the user wants to see where they are within their walkshed), and
+  // Route mode has its own route-specific recenter affordances.
+  const followLocation = useFollowLocation({ enabled: mode === "explore" });
   const [toastMsg, setToastMsg]             = useState("");
   const [activeFlavor, setActiveFlavor]     = useState("fastest");
   // SW update prompt. With registerType: "prompt" in vite.config.js, a new
