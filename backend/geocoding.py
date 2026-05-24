@@ -150,7 +150,56 @@ _LOCATIONIQ_TIMEOUT_S = 5
 # results to inside the viewbox rather than just preferring them.
 _LOCATIONIQ_VIEWBOX = f"{CHICAGO_WEST},{CHICAGO_NORTH},{CHICAGO_EAST},{CHICAGO_SOUTH}"
 
-_http_session = requests.Session()
+# TD-055 / B-21: configure the long-lived HTTP session with three things:
+#   1. A descriptive User-Agent — LocationIQ's ToS (and good citizenship)
+#      asks every client to identify itself. Without this, requests goes
+#      out as "python-requests/2.x" which is indistinguishable from a
+#      scraper and unhelpful in their logs.
+#   2. A retry adapter on transient 5xx + rate-limit responses. We back
+#      off exponentially (0.5 s, 1.0 s, 2.0 s) on 502/503/504 — these are
+#      LocationIQ's own gateway hiccups, distinct from the 429-driven
+#      circuit breaker. Retries on 429 are intentionally OFF (the breaker
+#      handles that path so we don't double-count the budget).
+#   3. The session is closed at shutdown via the FastAPI lifespan
+#      teardown registered in main.py (TD-056 added that hook).
+def _build_http_session() -> requests.Session:
+    session = requests.Session()
+    session.headers["User-Agent"] = (
+        "Passage/1.0 (+https://wayfarer-passage.vercel.app/) "
+        "python-requests"
+    )
+    try:
+        from requests.adapters import HTTPAdapter
+        from urllib3.util.retry import Retry
+        retry = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=(502, 503, 504),
+            allowed_methods=frozenset(("GET", "HEAD")),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+    except ImportError:
+        # urllib3 retry support is optional — if it's somehow not
+        # installed (it ships with requests, so this is paranoid), the
+        # session still works without retries.
+        pass
+    return session
+
+
+_http_session = _build_http_session()
+
+
+def close_http_session() -> None:
+    """Close the geocoding HTTP session. Called from FastAPI lifespan
+    teardown so pooled keep-alive connections don't outlive the worker.
+    """
+    try:
+        _http_session.close()
+    except Exception:  # pragma: no cover — defensive
+        pass
 
 # Latch so the missing-API-key warning fires at most once per process.
 _missing_api_key_warned: bool = False
@@ -872,7 +921,7 @@ _neighborhood_kdtree_lock = threading.Lock()
 # cos(reference latitude) makes the pre-filter metric-consistent so it
 # cannot drop the genuinely-nearest neighborhood before the haversine
 # re-rank. (Same projection pattern as local_search.py.)
-_KDTREE_LON_SCALE: float = math.cos(math.radians(41.85))  # Chicago reference latitude
+from utils import KDTREE_LON_SCALE as _KDTREE_LON_SCALE  # noqa: E402
 
 
 def _get_neighborhood_kdtree():

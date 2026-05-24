@@ -109,25 +109,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-055 · CHUNK-11 · `geocoding.py` refactor + shared constants
-- **Files**: `backend/geocoding.py`, `backend/utils.py`, `backend/local_search.py`
-- **Category**: Code maintainability
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **B-02** — `geocoding.py` (950 LOC) mixes HTTP, cache, fuzzy match, KDTree, and cascade orchestration with inconsistent per-tier error handling.
-  - **B-05** — `_KDTREE_LON_SCALE` baked into the cached kdtree without versioning; a future scale change would silently consume the stale tree.
-  - **B-21** — `_http_session` never closed, no User-Agent, no retry adapter.
-  - **B-39** — `_KDTREE_LON_SCALE` informally consistent between `geocoding.py` and `local_search.py`; drift would silently diverge rankings.
-- **Description**: Decompose the cascade so each tier is a callable with consistent error handling; share the lat-scale constant.
-- **Scope**:
-  - Extract `_CachedGeocoder` and tier callables (`_NeighborhoodTier`, `_LocalSearchTier`, `_LocationIQTier`); compose them in `resolve_location` as a clean for-loop.
-  - Hoist `_KDTREE_LON_SCALE` to `utils.py`; import in both consumers.
-  - Include scale value in kdtree cache key (or invalidate on change).
-  - Set `requests.Session()` with UA header, retry adapter, and close-on-shutdown.
-- **Acceptance**: `pytest backend/tests/test_geocoding.py test_local_search.py` green; cascade unit tests cover the for-loop ordering.
-
----
-
 ### TD-056 · CHUNK-12 · FastAPI lifespan + rate-limiter robustness
 - **Files**: `backend/main.py`, `backend/walking.py` (eviction log), `backend/geocoding.py` (close), `backend/tests/conftest.py`, new `backend/tests/test_rate_limit.py`
 - **Category**: Backend ops / lifecycle

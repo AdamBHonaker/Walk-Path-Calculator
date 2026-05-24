@@ -14,6 +14,14 @@ WALKING_SPEED_MPH: float = 3.0
 # distance/area calculation that already exists.
 METERS_PER_MILE: float = 1609.34
 
+# TD-055 / B-39: longitude-projection scale at Chicago's reference latitude.
+# Used by KDTree-backed nearest-neighbor lookups so a degree of longitude
+# contributes the right amount of distance vs. a degree of latitude (at
+# 41.85° N, 1° lon ≈ 0.74 × 1° lat in meters). Hoisted here from
+# geocoding.py so any future consumer (multi-city pipelines, address-snap
+# helpers) reads from one place instead of redefining it inline.
+KDTREE_LON_SCALE: float = math.cos(math.radians(41.85))
+
 
 def quantize_coord(lat: float, lon: float) -> tuple[int, int]:
     """Quantize a (lat, lon) pair to ~1 m precision for cache or dedupe keys.

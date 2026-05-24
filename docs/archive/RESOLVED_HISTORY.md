@@ -1071,6 +1071,25 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · geocoding.py HTTP session hardening + KDTREE_LON_SCALE shared (TD-055)
+
+**Files:** `backend/geocoding.py`, `backend/utils.py`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Four findings on `geocoding.py`. **B-21** — `_http_session` was a bare `requests.Session()` with no User-Agent (LocationIQ ToS expects clients to identify; "python-requests/2.x" is unhelpful in their logs) and no retry adapter for transient 5xx hiccups. **B-39** — `_KDTREE_LON_SCALE` was a module-private constant in `geocoding.py`; the catalog flagged drift risk if a sibling module ever reimplemented the same lon-projection scale inline. **B-02** — 950 LOC mixing HTTP, cache, fuzzy match, KDTree, and cascade orchestration. **B-05** — kdtree cache wasn't keyed on the scale value, so a future scale change would silently consume a stale tree.
+
+**How it was resolved:**
+
+- **B-21 (HTTP session hardening).** New `_build_http_session()` configures the long-lived session with a descriptive `User-Agent: Passage/1.0 (+...) python-requests`, mounts an `HTTPAdapter` with a `Retry(total=3, backoff_factor=0.5, status_forcelist=(502, 503, 504))` adapter for transient gateway hiccups, and exposes a new `close_http_session()` callable for FastAPI lifespan teardown to invoke. Retries on 429 are intentionally OFF — the existing circuit breaker (`backend/geocoding.py` `_breaker_*`) handles that path, and double-counting against the budget would defeat it.
+- **B-39 (shared lon-scale constant).** Hoisted `_KDTREE_LON_SCALE` to [`utils.py`](../../backend/utils.py) as `KDTREE_LON_SCALE`. `geocoding.py` now imports it (re-exposed as `_KDTREE_LON_SCALE` to preserve the existing private name for minimal-blast-radius rename). `local_search.py`'s nearest-neighbor logic uses per-query `cos(radians(lat))` rather than a cached value, so it's unaffected by the shared constant — confirmed by inspection.
+- **B-02 (cascade restructure) — deferred.** Extracting `_CachedGeocoder` + tier-callable classes would touch 950 LOC of working code that's already covered by `test_geocoding.py` + `test_geocoding_cascade.py` integration paths. The catalog's "consistent error handling" goal is mostly already met (each tier catches its own exceptions and returns None on miss); the cleanup would be code-organization churn without a correctness or perf win. Same rationale as TD-054's deferred module split.
+- **B-05 (scale-in-kdtree-cache-key) — deferred.** The scale value (`cos(radians(41.85))`) is a compile-time constant tied to Chicago's reference latitude. It changes only when multi-city support arrives, at which point the cache key shape needs a city dimension anyway — better to handle there than to add bookkeeping now that doesn't shield against a current failure mode.
+
+**Acceptance:** `pytest backend/tests/` → **338 passed (338)** in 19s. Live LocationIQ calls now identify as `Passage/1.0` in the vendor's logs.
+
+---
+
 ### 2026-05-24 · `walking.py` algorithm docs + greenest formula reference (TD-054 — partial)
 
 **Files:** `backend/walking.py`, `CLAUDE.md`.
