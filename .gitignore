@@ -59,7 +59,7 @@ npm-debug.log*
 
 # Personal documentation (not for the repo)
 Human Documentation/
-docs/MOBILE_TESTING.md
+
 # IDE
 .vscode/
 .idea/
@@ -73,8 +73,14 @@ Thumbs.db
 # Backup directories
 backend copy/
 
-# Top-level dev/utility scripts (not backend/scripts/)
-/scripts/
+# Top-level dev/utility scripts (not backend/scripts/).
+# Ignores *contents* (not the directory itself) so the dev-tunnel orchestrator
+# below can be re-included — gitignore can't un-ignore a file inside an ignored
+# directory.
+/scripts/*
+# …except the mobile-testing tunnel orchestrator, which is documented in
+# CLAUDE.md / README and shipped to every fork.
+!/scripts/dev-tunnel.mjs
 
 # Temporary scratch files from data-ingestion development
 /tmp*

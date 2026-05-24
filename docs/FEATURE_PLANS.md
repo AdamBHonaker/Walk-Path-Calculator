@@ -30,6 +30,44 @@ Chunked plans for upcoming major features, followed by ideas deferred until post
 
 ---
 
+## Entry Template
+
+Every chunked plan in this file follows the shape below. Use it when adding a new entry so the dependency view stays uniform and the chunk-tracking pattern keeps working across features. Optional sections may be omitted when a feature genuinely doesn't need them — but `Type`, `Effort`, `Depends on`, `Why`, `Chunks`, and `Definition of done` are required.
+
+```markdown
+## N. Feature name
+
+**Type:** Bolt-On | Structural · **Effort:** Low | Medium | High · **Area:** Backend / Frontend / Data ingestion / Deploy
+**Depends on:** none — or `Feature M (link)`; flag any external prerequisites (API keys, vendor approvals) here too.
+
+**Why.** One paragraph: the problem the feature solves and why it earns a slot in the queue. Skip the marketing voice.
+
+### Data source / Category model / Background  *(optional — only when the feature needs a sourcing or modeling pass before chunks make sense)*
+
+### Chunks
+
+Numbered, in execution order. Each chunk should be small enough to land in one PR. Mark chunks that depend on an unblocking step (e.g. `[BLOCKED: waiting on API key]`).
+
+1. **Chunk title.** What changes. Files touched in this chunk.
+2. **Next chunk.** …
+
+### Files likely touched  *(optional but recommended)*
+
+Path list — helps reviewers and parallel sessions spot conflict surfaces.
+
+### Open questions  *(optional)*
+
+Bullet list of decisions still owed. Mark "open decision — needs the user's call" if user input gates a chunk.
+
+### Definition of done
+
+One short paragraph: what proves the feature is shipped. Should mirror the chunk-completion checklist in [`docs/Technical_Debt_Roadmap.md`](Technical_Debt_Roadmap.md#chunk-completion-checklist) where it overlaps.
+```
+
+For **Unscoped Notes** (rough ideas not yet ready for chunking) only `Type`, `Effort`, `Area`, **Problem**, **Rough idea**, **Why this needs scoping before any code**, and **Next step** are expected. The Chunks / Files / Definition-of-done sections come in once the note graduates upward.
+
+---
+
 # Chunked Implementation Plans
 
 ---

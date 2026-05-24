@@ -9,11 +9,23 @@ without blocking the merge itself.
 > this file**. If a check fails, paste the failure into a new entry in
 > [`BUGS.md`](BUGS.md) and leave this item in place until the bug is
 > resolved and the check passes.
+>
+> **Classifier convention:** Each entry carries a `Classifier:` line.
+> `blocks-ship` means the affected feature is **not fully usable for end
+> users** until verification completes — typically a pending data ingest
+> that leaves a category empty, or a pending operator action without
+> which the next deploy refuses to boot. `post-ship` means the feature
+> is wired correctly and live; verification confirms real-world behavior
+> on hardware or in production we can't simulate locally (mobile UX,
+> live-API probes, sustained-load characterization, visual sign-off).
+> The list is sorted by ID, not by classifier — scan the line if you
+> need to triage.
 
 ---
 
 ## PV-001 · Address autocomplete — real-device mobile parity
 **Shipped:** 2026-05-12 (Local-First Geocoding + LocationIQ Fallback, chunk 5).
+**Classifier:** `post-ship` — desktop wiring is unit-tested and live; verification is iPhone Safari + Android Chrome UX confirmation.
 **Why pending:** [`AddressAutocomplete`](../frontend/src/components/AddressAutocomplete.jsx)
 portals its listbox into `document.body` with `position: fixed` so the
 `WFSheet` (`transform: translateY(...)` + `overflow-y: auto`) can't clip
@@ -43,6 +55,7 @@ Android. Any failure → paste into BUGS.md, keep this entry.
 ## PV-002 · LocationIQ fallback live behavior
 **Shipped:** 2026-05-12 (Local-First Geocoding + LocationIQ Fallback,
 chunks 3 + 5).
+**Classifier:** `post-ship` — mocked-HTTP unit tests pass; verification probes the fallback against a real key + LocationIQ dashboard.
 **Why pending:** the LocationIQ Tier-3 fallback is fully implemented
 ([`geocode_external`](../backend/geocoding.py), [`_reverse_geocode_external`](../backend/geocoding.py))
 and unit-tested with mocked HTTP, but it's never been hit against a
@@ -92,6 +105,7 @@ a real key with the LocationIQ dashboard open. Failures → BUGS.md.
 
 ## PV-003 · Cross-street suggestion → /route round-trip
 **Shipped:** 2026-05-12 (chunk 2 — `local_search.parse_cross_street`).
+**Classifier:** `post-ship` — unit tests cover the canonical-pair + coord lookup; verification is e2e round-trip on a few famous intersections.
 **Why pending:** the `intersections` table stores coords lifted from
 geometric crossings of named OSM centerlines. The plan claims those
 coords are "guaranteed to land on routable graph nodes (strictly better
@@ -122,6 +136,7 @@ cleanly through `/route` end-to-end.
 ## PV-004 · Parks + green-space heatmap — real-device mobile parity
 **Shipped:** 2026-05-12 (FEAT-3 chunks 1–3 + the green-space extension
 chunks 3a–3c). Chunk 4 (mobile parity + tests + docs) shipped 2026-05-14.
+**Classifier:** `post-ship` — desktop wiring + persistence tested; verification is mobile-sheet UX + theme swap behavior on real hardware.
 **Why pending:** chunk 4 ships the mobile-sheet plumbing and the
 persistence tests. The wiring is structurally correct — both toggles
 are the same `WFCheck` row used on desktop, rendered inside
@@ -159,6 +174,7 @@ Android. Any failure → paste into BUGS.md, keep this entry.
 
 ## PV-005 · Tree Canopy heatmap — real-device mobile parity + share-card footer
 **Shipped:** 2026-05-14 (FEAT-2 chunks 1–4 — Tree Canopy Heatmap).
+**Classifier:** `post-ship` — desktop wiring + persistence tested; verification is mobile-sheet UX + share-card PNG capture on real hardware.
 **Why pending:** chunk 4 ships the mobile-sheet plumbing and the
 share-card `Data: …` attribution mirror. The wiring is structurally
 correct — the toggle is the same `WFCheck` row used on desktop, the
@@ -199,6 +215,7 @@ Android. Any failure → paste into BUGS.md, keep this entry.
 
 ## PV-006 · Greenest routing (FEAT-4) — production deploy verification
 **Shipped:** 2026-05-14 (FEAT-4 chunks 1–3 — Greenest Routing edge weights).
+**Classifier:** `post-ship` — fail-fast guard prevents a stale-pickle deploy from booting at all, so the failure mode is "deploy never gets healthy" rather than "deploy succeeds with bad routing". Local routing verified; this confirms the production bake + greenest divergence.
 **Why pending:** chunks 1–3 land in code: the bake step in
 [`fetch_street_graph.py`](../backend/fetch_street_graph.py) computes
 `tree_canopy_score` + `park_proximity_score` for every undirected edge,
@@ -251,6 +268,7 @@ gets healthy" rather than "deploy succeeds but routes look wrong."
 **Shipped:** 2026-05-21 (FEAT-5 — Divvy Bike-Share Stations in the
 Neighborhood Explorer). Code is complete; the data ingest is the
 pending step.
+**Classifier:** `blocks-ship` — the Explorer's "Divvy bike share" category surfaces zero pins until the regenerated `places_curated.json` lands. Feature is non-functional for end users in this state.
 **Why pending:** the feature shipped code-only. The new
 [`build_divvy.py`](../backend/scripts/build_divvy.py) ingest needs CDP
 credentials + network to run, which the build session did not have, so
@@ -299,6 +317,7 @@ paste into BUGS.md, keep this entry.
 
 ## PV-008 · Route turn segment differentiation — visual sign-off
 **Shipped:** 2026-05-21 (Route Turn Segment Differentiation).
+**Classifier:** `post-ship` — unit tests cover GeoJSON structure + layer presence; verification is the actual visual result (opacity alternation, number legibility, casing blur, animation swap) on real devices.
 **Why pending:** the three new visual layers (alternating tone wash,
 numbered turn circles, ember glow casing) are driven by MapLibre paint
 expressions and feature-state updates. Unit tests verify the GeoJSON
@@ -349,6 +368,7 @@ BUGS.md, keep this entry.
 ## PV-009 · El / Metra station split — Overpass ingest
 **Shipped:** 2026-05-22 (El / Metra Station Split — Neighborhood
 Explorer). Code is complete; the data ingest is the pending step.
+**Classifier:** `blocks-ship` — both new categories (`el_train_stations`, `metra_stations`) surface zero pins until the regenerated `places_osm.json` lands. Feature is non-functional for end users in this state.
 **Why pending:** the feature shipped code-only. Splitting the 228 mixed
 `train_stations` records into `el_train_stations` (CTA) + `metra_stations`
 needs the OSM `operator` tag, which the checked-in
@@ -400,6 +420,7 @@ failure → paste into BUGS.md, keep this entry.
 **Shipped:** 2026-05-22 (Coffee / Bakery Subcategory Split in the
 Neighborhood Explorer). Code is complete; the data ingest is the
 pending step.
+**Classifier:** `blocks-ship` — selecting any coffee/bakery sub-checkbox filters out **every** coffee_bakery pin until the regenerated `places_osm.json` lands. Feature is actively broken for end users in this state.
 **Why pending:** the feature shipped code-only. The committed
 `backend/data/places_osm.json` predates the split, so every
 `coffee_bakery` place still has `subcategory: null`. The four
@@ -442,6 +463,7 @@ Any failure → paste into BUGS.md, keep this entry.
 ## PV-011 · Multi-worker uvicorn — production load-test sign-off
 **Shipped:** 2026-05-23 (CHUNK-08 of the 2026-05-22 efficiency audit —
 OPT-035 / OPT-043 / OPT-044 / OPT-069).
+**Classifier:** `post-ship` — local TestClient passes 319/319; verification characterizes memory + p95 under sustained traffic on the actual Railway plan.
 **Why pending:** the Dockerfile now launches uvicorn with
 `--workers ${UVICORN_WORKERS:-2}`, the `/explore` heatmap fan-out runs
 through a dedicated `ThreadPoolExecutor(max_workers=8)`, CORS is now
@@ -496,6 +518,7 @@ heatmap pool + CORS reorder) or roll back the offending OPT.
 ## PV-012 · Greenest-routing pickle rebuild after vectorized bake (CHUNK-10)
 **Shipped:** 2026-05-23 (CHUNK-10 of the 2026-05-22 efficiency audit —
 OPT-029 / OPT-030 / OPT-052 / OPT-053).
+**Classifier:** `blocks-ship` — the next Railway rebuild that pulls CHUNK-10's code without the new pickle uploaded + `STREET_GRAPH_SHA256` rotated will refuse to boot (SEC-001 fail-fast guard). Operator coordination required before the next deploy.
 **Why pending:** CHUNK-10 rewrote `_bake_green_signals` in
 `backend/fetch_street_graph.py` (OPT-053 flattens edge geometry into a
 single vectorized arc-length-midpoint pass; OPT-030 swaps the per-edge
@@ -547,6 +570,7 @@ recoverable from git history of `backend/.env`).
 ## PV-013 · `with_heatmaps` filter — production wire savings + toggle UX
 **Shipped:** 2026-05-23 (CHUNK-11 of the 2026-05-22 efficiency audit —
 OPT-025).
+**Classifier:** `post-ship` — fetch-on-expand / no-fetch-on-contract logic is unit-tested; verification confirms the real wire-size delta on production Chicago traffic.
 **Why pending:** the backend now skips heatmap clip work for layers
 the frontend has toggled off; the frontend's `useExploreFetch` only
 re-fetches when the toggled-ON set expands beyond the last fetch's
@@ -593,6 +617,7 @@ real-world delta needs production sign-off.
 ## PV-014 · Editorial map tint — Cream/Dusk visual sign-off (OPT-042 from CHUNK-14)
 **Shipped:** 2026-05-23 (CHUNK-14 of the 2026-05-22 efficiency audit —
 OPT-042).
+**Classifier:** `post-ship` — the layer-based tint is functionally live in both themes; verification confirms the editorial tone matches the design contract, and is the gate on whether to keep the new approach or revert to the prior CSS filter.
 **Why pending:** the prior `.maplibregl-canvas { filter: sepia(...)
 saturate(...) brightness(...) }` rules were removed. The editorial map
 tint is now applied via a MapLibre `background` layer

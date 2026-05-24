@@ -1071,6 +1071,48 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Documentation drift sweep — README canopy + source enum, MOBILE_TESTING tracked, PV classifier, FEATURE_PLANS template (TD-046)
+
+**Files:** `README.md`, `.gitignore`, `docs/MOBILE_TESTING.md` (newly tracked), `docs/Pending_Verification.md`, `docs/FEATURE_PLANS.md`.
+
+**Priority:** 🟡 Medium (with one 🔴 High finding inside — README `/explore` enum drift).
+
+**What the debt was:** Five drift surfaces catalogued in the 2026-05-23 audit. README still described tree canopy as "OSM `natural=tree` baked into a 50 m KDE grid" across five sites after the 2026-05-19 TD-033 pivot to the NLCD Tree Canopy Cover 2021 raster (100 m output grid). The `/explore` `source` enum listed three values; CLAUDE.md and runtime emit eight. `.gitignore:62` blocked `docs/MOBILE_TESTING.md` from the repo while CLAUDE.md, README, the `.env.example`, the dev-tunnel script, and four other docs referenced it as committed. `Pending_Verification.md` lacked a triage signal distinguishing "feature is non-functional until verification" from "feature is live; verification confirms real-world behavior." `FEATURE_PLANS.md`'s entries already followed a consistent shape but the shape wasn't documented anywhere, so future entries could drift.
+
+**How it was resolved:**
+
+- **README tree-canopy reconciliation (5 sites).** Updated the Status bullet ([README.md:15](../../README.md#L15)), the Features bullet ([README.md:47](../../README.md#L47)), the project-tree comment ([README.md:96](../../README.md#L96)), the build-script comment ([README.md:112](../../README.md#L112)), and the `/explore` description ([README.md:366](../../README.md#L366)) to describe NLCD TCC 2021 / 100 m / ~2.7 MB. Kept a one-clause historical reference ("pivoted from OSM `natural=tree` to NLCD on 2026-05-19") so the lineage is discoverable from the README alone.
+- **README `/explore` `source` enum.** Updated [README.md:435](../../README.md#L435) from three values to the full eight (`osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy`, `cdp_landmarks`) to match CLAUDE.md and runtime. Also updated the canopy clause in the same paragraph from "baked from OSM `natural=tree` nodes" to "block-averaged from the NLCD Tree Canopy Cover 2021 raster."
+- **MOBILE_TESTING.md tracked.** Removed `docs/MOBILE_TESTING.md` from [.gitignore](../../.gitignore) (the file is referenced from 11 places across CLAUDE.md, README, `.env.example`, `dev-tunnel.mjs`, four PV entries, FEATURE_HISTORY, FEATURE_PLANS, and Technical_Debt — clearly meant to be tracked, not personal documentation). The doc contains no secrets — public-knowledge `cloudflared` install commands + a security-caveat block for the dev tunnel. `git check-ignore` confirms the file is now trackable.
+- **PV classifier convention.** Added a `Classifier:` line to all 14 entries in [`Pending_Verification.md`](../../docs/Pending_Verification.md): `blocks-ship` means the feature is **non-functional for end users** until verification completes (PV-007 Divvy ingest, PV-009 El/Metra ingest, PV-010 coffee subcategory ingest, PV-012 pickle-rotation operator step), and `post-ship` means the feature is live + functional and verification confirms real-world behavior on hardware / in production (the remaining ten). The convention paragraph at the top of the file defines the terms.
+- **FEATURE_PLANS template.** Added an explicit "Entry Template" section at the top of [`FEATURE_PLANS.md`](../../docs/FEATURE_PLANS.md) documenting the de-facto shape every entry already followed (Type / Effort / Area · Depends on · Why · Chunks · Files likely touched · Open questions · Definition of done). Also documented the lighter shape used by Unscoped Notes (Problem / Rough idea / Why this needs scoping / Next step) so a graduating note has a clear upgrade path.
+
+**Acceptance:** the audit's listed acceptance was "diff the doc claims against `backend/places.py:87` and `backend/tree_canopy.py` constants and find no mismatches" — verified by re-grepping `natural=tree`, `50 m`, and `50 m KDE` in README and finding only the historical-reference clause on line 15. The eight-value `source` enum now matches the runtime emit set.
+
+Verification: `grep -n "natural=tree\|50 m KDE\|50m KDE\|50 m OSM" README.md` returns only the one historical reference. `git check-ignore docs/MOBILE_TESTING.md` returns exit 1 (not ignored). Each of 14 PV entries carries a `Classifier:` line. FEATURE_PLANS.md opens with an Entry Template section.
+
+---
+
+### 2026-05-24 · `scripts/dev-tunnel.mjs` tracked in the repo (TD-047)
+
+**Files:** `.gitignore`, `scripts/dev-tunnel.mjs` (newly tracked).
+
+**Priority:** 🟡 Medium
+
+**What the debt was:** [`scripts/dev-tunnel.mjs`](../../scripts/dev-tunnel.mjs) — the Cloudflare-tunnel orchestrator that backs `npm run dev:tunnel` for real-device mobile testing — was documented in CLAUDE.md and README.md as present, but never actually tracked in git. `frontend/package.json` carried `"dev:tunnel": "node ../scripts/dev-tunnel.mjs"`, so a fresh clone produced a module-not-found error. Root cause: `.gitignore:77` ignored `/scripts/` wholesale to keep `scripts/explore_smoke.json` (a transient smoke-test fixture) private, and gitignore's "can't un-ignore a file under an ignored directory" rule meant the orchestrator quietly stayed out of the index alongside it.
+
+**How it was resolved:**
+
+- Reshaped the [`.gitignore`](../../.gitignore) rule from `/scripts/` to `/scripts/*` so contents (not the directory) are ignored, then added a `!/scripts/dev-tunnel.mjs` negation. `git check-ignore` confirms `dev-tunnel.mjs` is now trackable while `explore_smoke.json` remains blocked.
+- Added [`scripts/dev-tunnel.mjs`](../../scripts/dev-tunnel.mjs) to the index. The existing script is already cross-platform: it resolves `cloudflared` from `winget` + Homebrew fallback paths, picks `python` vs `python3` per `process.platform`, and bypasses `npm.cmd` (Node ≥ 20 CVE-2024-27980 hardening on Windows) by spawning Vite's JS entry directly via `process.execPath`. Tears down all four child processes on SIGINT/SIGTERM and removes `frontend/.env.local` so a subsequent `npm run dev` doesn't pick up a stale tunnel URL.
+- **No doc changes needed.** CLAUDE.md and README.md already document the script as present (which the audit caught as inaccurate); tracking the file makes those references accurate without further editing.
+
+**Acceptance:** `npm run dev:tunnel` resolves to a tracked file on a fresh clone (catalog acceptance was "either works cleanly or no longer exists in `package.json`" — went with the former, which is what users want).
+
+Verification: `git check-ignore scripts/dev-tunnel.mjs` returns exit 1 (not ignored); `git check-ignore scripts/explore_smoke.json` returns exit 0 (still ignored). Script itself unchanged from the developer's local copy that's been used through Wayfarer Phase 1.
+
+---
+
 ### 2026-05-19 · Tree canopy data source pivoted from OSM Overpass to NLCD TCC 2021 raster (TD-033)
 
 **Files:** `backend/scripts/build_tree_canopy.py` (rewrite), `backend/requirements-dev.txt`, `backend/data/tree_canopy_kde.json` (regenerated), `backend/street_graph_igraph.pkl` (rebaked), `backend/.env` (SHA rotated), `CLAUDE.md`.

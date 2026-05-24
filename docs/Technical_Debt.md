@@ -18,15 +18,15 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 | Wave | TD entries | Theme | Parallel-safe? |
 |------|------------|-------|----------------|
-| 0 | TD-045 / -046 / -047 | Repo basics & docs | Yes — different files |
+| 0 | TD-045 | Repo basics & docs | Standalone now (TD-046 / -047 resolved) |
 | 1 | TD-048 / -049 / -050 / -051 | Operational hardening | Yes; TD-051 (PV burn-down) is human-driven |
 | 2 | TD-052 → TD-059 | Backend correctness + API contract | Yes except TD-053 → TD-054 (walking.py) |
 | 3 | TD-060 → TD-066 | Frontend correctness + UX | TD-061 + TD-062 both touch App.jsx — keep in lockstep |
 | 4 | TD-067 | Security headers + input validation | Standalone |
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
-| 6 | TD-072 (+ TD-032, TD-044) | Polish / paused | Optional |
+| 6 | TD-072 (+ TD-032, TD-034, TD-044) | Polish / paused | Optional |
 
-**Audit priorities at a glance** — 12 High items concentrated in: response_model gap (TD-052), same-node routing (TD-053), recents-pollution + Explore error boundary (TD-061 / TD-062), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), README enum drift (TD-046), custom-flavor handling (TD-060), default_flavor consistency (TD-052), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
+**Audit priorities at a glance** — 12 High items concentrated in: response_model gap (TD-052), same-node routing (TD-053), recents-pollution + Explore error boundary (TD-061 / TD-062), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), custom-flavor handling (TD-060), default_flavor consistency (TD-052), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
 
 ---
 
@@ -43,41 +43,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
   - Move data-source attribution into a separate `ATTRIBUTION.md` so the license file stays clean.
   - Codify the commit-prefix + PR-flow conventions already followed in practice; include "test required before merge" expectation.
 - **Acceptance**: GitHub renders the license badge; `CONTRIBUTING.md` is linked from README; `ATTRIBUTION.md` satisfies each upstream data source's license requirements.
-
----
-
-### TD-046 · CHUNK-02 · Documentation drift sweep
-- **Files**: `README.md`, `CLAUDE.md`, `.gitignore`, `docs/Pending_Verification.md`, `docs/FEATURE_PLANS.md`
-- **Category**: Documentation accuracy
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **X-01** — README still describes tree canopy as "OSM `natural=tree` baked into a 50 m KDE grid"; the source pivoted to NLCD 2021 raster (100 m output grid, ~2.7 MB) on 2026-05-19. Also flags an internal CLAUDE.md 50 m vs 100 m drift to reconcile.
-  - **X-22** — README's `/explore` `source` enum lists three values; CLAUDE.md and code emit eight (`osm`, `cpl_locations`, `farmers_markets_2013`, `cps_schools`, `cpd_stations`, `cfd_stations`, `cdp_divvy`, `cdp_landmarks`).
-  - **X-03** — `.gitignore:62` references `docs/MOBILE_TESTING.md` while the doc is referenced as committed elsewhere. Verify and remove the rule if the file is intentionally tracked.
-  - **Secondary** — `docs/Pending_Verification.md` lacks a "blocks-ship vs post-ship" classifier per item; `docs/FEATURE_PLANS.md` mixes detailed plans (Multi-City) with one-line ideas — uniform template wanted.
-- **Description**: README, CLAUDE.md, and code drifted apart around the 2026-05-19 canopy pivot and 2026-05-21/22 curated-source ingest. Treat CLAUDE.md as the source of truth and either auto-generate the README API section from it or simplify what README claims.
-- **Scope**:
-  - Reconcile tree-canopy facts across README + CLAUDE.md (100 m output, NLCD 2021, ~2.7 MB).
-  - Update README `/explore` `source` enum to the full eight values.
-  - Verify `.gitignore:62` against the actual tracked state of `docs/MOBILE_TESTING.md`; remove or document.
-  - Add a one-line "blocks-ship vs post-ship" classifier to each PV item.
-  - Establish a uniform template for `FEATURE_PLANS.md` entries (effort, dependencies, scope).
-- **Acceptance**: `diff` the doc claims against `backend/places.py:87` and `backend/tree_canopy.py` constants and find no mismatches.
-
----
-
-### TD-047 · CHUNK-03 · `scripts/dev-tunnel.mjs` resolution
-- **Files**: `frontend/package.json`, `docs/MOBILE_TESTING.md`, potentially restore `scripts/dev-tunnel.mjs`
-- **Category**: Build / dev tooling
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **X-09** — Audit `find` confirms `scripts/dev-tunnel.mjs` is absent from the repo; CLAUDE.md and README document it as present, and `frontend/package.json` has `"dev:tunnel": "node ../scripts/dev-tunnel.mjs"`. Running the script today produces a module-not-found error.
-- **Description**: Mobile dev tunneling is broken for anyone who clones the repo. Either restore the file from the developer's local copy or remove the npm script + doc references so the dev experience matches reality.
-- **Scope**:
-  - Decide: restore (preferred — feature is documented and useful) or remove (lighter weight).
-  - If restoring, verify the script runs on Linux + macOS + Windows; commit it to `scripts/` and update `.gitignore` if the directory was ignored wholesale.
-  - If removing, drop the npm script, the CLAUDE.md project-tree entry, the README install line, and update `docs/MOBILE_TESTING.md` to point at the ngrok fallback only.
-- **Acceptance**: `npm run dev:tunnel` either works cleanly or no longer exists in `package.json`; docs match the chosen path.
 
 ---
 
@@ -140,7 +105,7 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 - **Scope**:
   - Sequence: PV-006 in prod first → PV-001 / PV-004 / PV-005 / PV-008 on iPhone + Android via `npm run dev:tunnel` → PV-002 with a live key → PV-007 / PV-009 / PV-010 once API access is available.
   - Update `Pending_Verification.md` checkboxes; move resolved items to `archive/RESOLVED_HISTORY.md` per the file's own process note.
-- **Acceptance**: All ten PV items either resolved or formally re-classified as post-ship per TD-046's added classifier.
+- **Acceptance**: All ten PV items either resolved or formally classified as `post-ship` per the classifier convention in [`Pending_Verification.md`](Pending_Verification.md).
 
 ---
 

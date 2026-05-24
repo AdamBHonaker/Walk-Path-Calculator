@@ -12,7 +12,7 @@ A walking route calculator for Chicago that shows exact step counts alongside tu
 - **Mobility profile** — Walking / Wheeled segmented control in `PersonalizeModal` (shipped 2026-05-12). Wheeled is the source of truth for accessibility routing; the rest of the UI reframes to miles + minutes.
 - **Chicago Data Portal integration** — libraries, CPS schools, CPD police stations, CFD fire stations, CPD park boundaries ingested via authenticated SODA (shipped 2026-05-12).
 - **Local-first geocoding + LocationIQ fallback** — five-tier cascade (regex → neighborhoods → fuzzy → SQLite/FTS5 over 519k OSM addresses + 45k cross-streets + curated POIs → LocationIQ) backing `/route`, `/explore`, `/reverse-geocode`, and `/autocomplete`. Shipped 2026-05-12; live-key behavior pending sign-off as PV-002.
-- **Heatmap overlays for the Explorer** — three optional layers alongside the existing residential heatmap: **Tree canopy** (OSM `natural=tree` baked into a 50 m KDE grid; shipped 2026-05-14), **CPD park footprints** (authoritative Chicago Park District polygons with per-park name + acres), and **Other green space** (OSM cemeteries / golf / nature reserves / recreation grounds). Parks + green-space shipped 2026-05-14. All three default OFF; mobile real-device sign-off pending as PV-004 / PV-005.
+- **Heatmap overlays for the Explorer** — three optional layers alongside the existing residential heatmap: **Tree canopy** (NLCD Tree Canopy Cover 2021 raster block-averaged onto a 100 m output grid; shipped 2026-05-14, pivoted from OSM `natural=tree` to NLCD on 2026-05-19), **CPD park footprints** (authoritative Chicago Park District polygons with per-park name + acres), and **Other green space** (OSM cemeteries / golf / nature reserves / recreation grounds). Parks + green-space shipped 2026-05-14. All three default OFF; mobile real-device sign-off pending as PV-004 / PV-005.
 - **Greenest routing — tree + park edge weights** — the `greenest` flavor's weight function now combines OSM footway/path tags with per-edge tree-canopy density and park-proximity (with park-size weighting), both baked into the street-graph pickle. Shipped 2026-05-14; production-deploy verification pending as PV-006. See [`docs/FEATURE_HISTORY.md`](docs/FEATURE_HISTORY.md).
 - **Open plans** — Multi-City Support (Feature 1) remains scoped but unstarted in [`docs/FEATURE_PLANS.md`](docs/FEATURE_PLANS.md).
 - **Mobile UI** — map-first composition (full-bleed map + draggable bottom sheet) below 480 px; tablet sidebar variant for 481–1023 px; desktop two-column above.
@@ -44,7 +44,7 @@ A walking route calculator for Chicago that shows exact step counts alongside tu
 - Walkable-isochrone polygon (concave hull of all reachable street-graph nodes) for a 5–45 minute budget
 - Origin = browser geolocation **or** any of Chicago's 77 community areas
 - Filterable place pins across 17 top-level categories (groceries, medical, El train stations, Metra stations, gyms, coffee/bakery, restaurants, bars, parks, art/museums, theaters, bookstores, schools, places of worship, libraries, police stations, fire stations) with subcategories where tagged
-- Four toggleable heatmap overlays — **Residential areas** (OSM `landuse=residential`, default ON), **Tree canopy** (3 density bands baked from OSM `natural=tree` via KDE), **CPD park footprints** (saturated `--field` green, name + acres per park), and **Other green space** (softer moss wash — OSM cemeteries / golf / nature reserves / recreation grounds). Layered z-order picks parks above green-space so authoritative CPD wins on overlap.
+- Four toggleable heatmap overlays — **Residential areas** (OSM `landuse=residential`, default ON), **Tree canopy** (3 density bands block-averaged from the NLCD Tree Canopy Cover 2021 raster onto a 100 m grid; bands denote true canopy fraction), **CPD park footprints** (saturated `--field` green, name + acres per park), and **Other green space** (softer moss wash — OSM cemeteries / golf / nature reserves / recreation grounds). Layered z-order picks parks above green-space so authoritative CPD wins on overlap.
 - "Within reach" neighborhood chips that hand off back to the routing flow
 
 ### UX & PWA
@@ -93,7 +93,7 @@ Passage/
 │   │   ├── residential_polygons.json
 │   │   ├── parks_polygons.json    # CPD park boundaries (982 KB, 617 parks w/ name + acres)
 │   │   ├── green_space_polygons.json  # OSM cemeteries / golf / nature reserves / rec grounds (303 KB)
-│   │   ├── tree_canopy_kde.json   # Sparse 50 m OSM tree-density grid (~500 KB)
+│   │   ├── tree_canopy_kde.json   # Sparse 100 m NLCD canopy-fraction grid (~2.7 MB, ~56k cells)
 │   │   │                          # Generated locally (gitignored — too large or built-on-demand):
 │   │   ├── chicago_geocode.db     # ~72 MB SQLite/FTS5: addresses + intersections + cached forward/reverse
 │   │   │                          #   Built by build_address_points + build_intersections + migrate_geocode_cache
@@ -109,7 +109,7 @@ Passage/
 │   │   ├── build_residential.py
 │   │   ├── build_parks.py              # CDP `ejsh-fztr.geojson` → parks_polygons.json
 │   │   ├── build_green_space.py        # Overpass cemetery/golf/nature_reserve/rec_ground
-│   │   ├── build_tree_canopy.py        # Overpass natural=tree → 50 m KDE grid
+│   │   ├── build_tree_canopy.py        # MRLC WCS NLCD TCC 2021 → 100 m output grid
 │   │   ├── build_chicago_boundary.py
 │   │   ├── build_address_points.py     # 519k Chicago OSM addresses → addresses + FTS5
 │   │   ├── build_intersections.py      # 45k cross-streets from the street graph → FTS5
@@ -363,7 +363,7 @@ Multi-stop direction steps additionally include `"leg_index": 0`.
 
 ### `POST /explore`
 
-Walkable-isochrone endpoint for the Neighborhood Explorer. Returns the alpha-shape polygon of every street-graph vertex reachable on foot from the origin within `max_minutes`, the Chicago neighborhoods whose centroids fall inside it, the matching places filtered by category, and four heatmap-layer geometries (residential land, CPD park footprints, non-CPD green space, and OSM-derived tree canopy). The polygon is clipped against the Chicago city boundary when `backend/data/chicago_boundary.json` is present so lakefront origins don't bleed into Lake Michigan.
+Walkable-isochrone endpoint for the Neighborhood Explorer. Returns the alpha-shape polygon of every street-graph vertex reachable on foot from the origin within `max_minutes`, the Chicago neighborhoods whose centroids fall inside it, the matching places filtered by category, and four heatmap-layer geometries (residential land, CPD park footprints, non-CPD green space, and NLCD-derived tree canopy). The polygon is clipped against the Chicago city boundary when `backend/data/chicago_boundary.json` is present so lakefront origins don't bleed into Lake Michigan.
 
 **Request — exactly one of the two origin modes:**
 ```json
@@ -432,7 +432,7 @@ Top-level place categories (matched against `places.category`):
 }
 ```
 
-`source` is one of `"osm"`, `"cpl_locations"`, `"farmers_markets_2013"`. `residential_heatmap` is `null` for isochrones with no `landuse=residential` overlap. `parks_heatmap` carries one Feature per CPD park (MultiPolygon parks grouped by name; `properties` carries `name` + `acres`) and is `null` when no park polygons overlap. `green_space_heatmap` carries one Feature per OSM `kind ∈ {cemetery, golf_course, nature_reserve, recreation_ground}` (intra-kind polygons unioned) and is `null` when no green-space polygons overlap. `tree_canopy_heatmap` carries up to three density bands (`low` ≥ 0.05, `mid` ≥ 0.15, `high` ≥ 0.40) baked from OSM `natural=tree` nodes and is `null` when the KDE artifact is missing or no cells overlap.
+`source` is one of `"osm"`, `"cpl_locations"`, `"farmers_markets_2013"`, `"cps_schools"`, `"cpd_stations"`, `"cfd_stations"`, `"cdp_divvy"`, `"cdp_landmarks"`. `residential_heatmap` is `null` for isochrones with no `landuse=residential` overlap. `parks_heatmap` carries one Feature per CPD park (MultiPolygon parks grouped by name; `properties` carries `name` + `acres`) and is `null` when no park polygons overlap. `green_space_heatmap` carries one Feature per OSM `kind ∈ {cemetery, golf_course, nature_reserve, recreation_ground}` (intra-kind polygons unioned) and is `null` when no green-space polygons overlap. `tree_canopy_heatmap` carries up to three density bands (`low` ≥ 0.05, `mid` ≥ 0.15, `high` ≥ 0.40 — true canopy fraction) block-averaged from the NLCD Tree Canopy Cover 2021 raster and is `null` when the canopy artifact is missing or no cells overlap.
 
 ## Notes
 
