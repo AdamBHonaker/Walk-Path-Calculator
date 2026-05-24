@@ -2,7 +2,9 @@
 
 Known technical debt catalogued for future resolution. Priority: 🔴 High · 🟡 Medium · 🟢 Low.
 
-> **Process:** When an item in this file is resolved, **delete its entry from this file** and add a corresponding entry to the **Technical Debt Paid Off** section of [`RESOLVED_HISTORY.md`](archive/RESOLVED_HISTORY.md) documenting what was changed and how. This file should only ever contain debt that has not yet been addressed.
+> **Process:** When an item in this file is resolved, follow the **[Chunk completion checklist](Technical_Debt_Roadmap.md#chunk-completion-checklist)** in the roadmap. At minimum: delete the entry from this file, add a corresponding entry to the **Technical Debt Paid Off** section of [`RESOLVED_HISTORY.md`](archive/RESOLVED_HISTORY.md) documenting what was changed and how, and prune the roadmap's dependency graph + tables. CLAUDE.md / README.md / Pending_Verification.md updates are conditional — see the checklist. This file should only ever contain debt that has not yet been addressed.
+>
+> **Sequencing:** Before picking up a new chunk, consult [`Technical_Debt_Roadmap.md`](Technical_Debt_Roadmap.md) for dependencies and parallel-safe lanes across the open items.
 
 ---
 

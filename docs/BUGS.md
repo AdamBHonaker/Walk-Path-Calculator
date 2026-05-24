@@ -7,5 +7,3 @@ Known bugs catalogued for future fixing. Severity: 🔴 High · 🟡 Medium · �
 ---
 
 _No outstanding bugs._
-
-All twelve entries from the 2026-05-21 fourth documentation-vs-implementation audit (BUG-001 … BUG-012) were resolved on 2026-05-22 — see the **Resolved Bugs** section of [`RESOLVED_HISTORY.md`](archive/RESOLVED_HISTORY.md).
