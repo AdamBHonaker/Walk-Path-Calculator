@@ -1071,6 +1071,31 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · `walking.py` correctness sweep — 8 findings + 15 new tests (TD-053)
+
+**Files:** `backend/walking.py`, new `backend/tests/test_walking_correctness.py`.
+
+**Priority:** 🔴 High.
+
+**What the debt was:** Eight correctness findings from the 2026-05-23 audit, ranging from a missing same-node short-circuit (B-40) and an unobserved NaN-rescue path (B-45) to dtype mixing (B-41), missing defensive guards (B-44, B-47), and undocumented geometric / threshold choices (B-42, B-43, B-46).
+
+**How it was resolved:**
+
+- **B-40 (same-node short-circuit):** `_compute_route` now quantizes origin + destination to ~1 m and short-circuits when they collapse to the same cell. Returns a single-point path + empty directions + zero minutes instead of letting igraph emit an empty epath that downstream code couldn't distinguish from a routing failure.
+- **B-41 (dtype consistency in `_get_avoid_stairs_weights`):** Weight vector is now float32 to match `_build_flavor_weights`'s native dtype. Halves the avoid-stairs cache memory footprint without losing precision at the meter scale.
+- **B-42 (reverse + skip_first asymmetry):** The catalog claimed asymmetric geometric meaning; investigation showed the two `range()` calls are geometrically equivalent — both skip the duplicate seam point at the start of each segment, just in different directions. Documented inline with the rationale so a future reader doesn't try to "fix" the working code.
+- **B-43 (cardinal direction snap):** Added an explicit 1° snap zone around each of the 8 cardinal axes (0°, 45°, 90°, …). Within the zone, the heading rounds to the cardinal; outside it, the standard `round(deg/45) % 8` bin wins. Kills jitter induced by float-precision drift in atan2 when the path is "due cardinal."
+- **B-44 (defensive epath/vpath guard):** `_build_path_and_directions` now logs an error and returns empty geometry if `len(epath) != len(vpath) - 1`. The igraph contract guarantees this invariant, but the guard surfaces a regression loudly instead of silently emitting a truncated route.
+- **B-45 (NaN-rescue WARNING):** New `_nan_rescue_warned` one-shot flag fires a WARNING the first time `np.nan_to_num` scrubs a non-finite greenest weight. Sticky after first fire so subsequent rebuilds don't spam.
+- **B-46 (`_BLOCK_TYPE_THRESHOLD` tie-handling):** Documented the deliberate choice of `>=` for the 150 m midpoint with the rationale (single 150 m edge renders as "1 long block," closer to Chicago pedestrian wayfinding than "1.5 short blocks").
+- **B-47 (`_kdtree_to_vertex` dtype assertion):** `assert valid_idx.dtype == np.int64` at graph-load time. Catches a future refactor (e.g., a numpy version that defaults `np.where` to int32 on Windows) before it silently truncates vertex IDs on a large multi-city graph.
+
+**Tests:** New [`test_walking_correctness.py`](../../backend/tests/test_walking_correctness.py) — 15 cases covering same-node short-circuit (2), NaN-rescue one-shot warning (1), cardinal snap parametrized at ±0.5°/±0.1°/0° from N/S (10), epath/vpath length guard (1), kdtree dtype (1).
+
+**Acceptance:** All 8 findings addressed. `pytest backend/tests/` → **338 passed (338)** in 19s (was 323; 15 new).
+
+---
+
 ### 2026-05-24 · localStorage schema versioning + migration registry (TD-071)
 
 **Files:** new `frontend/src/lib/storageSchema.js`, new `frontend/src/lib/storageSchema.test.js`, `frontend/src/main.jsx`.

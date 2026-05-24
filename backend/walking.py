@@ -52,7 +52,14 @@ WALKING_SPEED_MPS = WALKING_SPEED_MPH * METERS_PER_MILE / 3600  # mph → metres
 
 _LONG_BLOCK_METERS    = 201.17   # 1/8 mile = 660 ft — N-S numbered-address axis
 _SHORT_BLOCK_METERS   = 100.58   # 1/16 mile = 330 ft — E-W cross streets
-_BLOCK_TYPE_THRESHOLD = 150.0    # midpoint; ≥ threshold → long block
+# TD-053 / B-46: midpoint between short (100.58 m) and long (201.17 m).
+# Tied edges (avg_edge_m == 150.0) bin into "long" via `>=`. Either side
+# of the tie is arbitrary by definition — the choice is documented here
+# so a future tuner doesn't silently flip `>=` to `>` without a reason.
+# Rationale for `>=`: a single 150 m edge rounds to 0.75 long-blocks
+# (75 % of 201.17) or 1.5 short-blocks; rendering "1 long block" is
+# closer to typical Chicago pedestrian wayfinding ("walk a block").
+_BLOCK_TYPE_THRESHOLD = 150.0
 
 _DIRECTION_FULL = {
     "N":  "North",     "NE": "Northeast", "E":  "East",      "SE": "Southeast",
@@ -171,6 +178,13 @@ _edge_park_proximity: "np.ndarray | None" = None
 # cities without canopy/park data still boot, just with greenest
 # degraded to footway-only discount on those signals.
 _greenest_degraded: dict[str, bool] = {"canopy": False, "parks": False}
+
+# TD-053 / B-45: one-shot NaN-rescue tracker. The greenest weight builder
+# silently scrubs non-finite values via `nan_to_num` so a corrupt edge
+# doesn't poison the entire shortest-path search; this flag lets us fire
+# exactly one WARNING per process when that ever triggers, so operators
+# see the degradation in logs without spamming on every cache miss.
+_nan_rescue_warned: dict[str, bool] = {"greenest": False}
 
 # uint8 mask: 1 where the edge's highway tag is in `_GREEN_HIGHWAYS`, else 0.
 # Baked once at load (OPT-032) so the greenest weight build does not rebuild
@@ -459,6 +473,16 @@ def _load_graph() -> "ig.Graph | None":
         orphans = G.vcount() - len(valid_idx)
         if orphans:
             logger.warning("Snapping restricted to giant component (%s of %s vertices, %s orphans excluded)", f"{len(valid_idx):,}", f"{G.vcount():,}", f"{orphans:,}")
+        # TD-053 / B-47: pin the dtype so a future refactor (e.g., a numpy
+        # version that defaults `np.where(...)` to int32 on Windows, or a
+        # contributor swapping `astype(np.int64)` for `astype(int)`) can't
+        # silently truncate the index on a very large multi-city graph.
+        # `_get_nearest_node` returns `int(_kdtree_to_vertex[idx])` and
+        # downstream consumers assume the vertex IDs fit in a Python int —
+        # safe as long as the array holds int64.
+        assert valid_idx.dtype == np.int64, (
+            f"_kdtree_to_vertex must be int64, got {valid_idx.dtype}"
+        )
         _kdtree_to_vertex = valid_idx
         _coord_kdtree = cKDTree(np.column_stack([lons[valid_idx], lats[valid_idx]]))
 
@@ -671,6 +695,21 @@ def _build_flavor_weights(G: "ig.Graph", flavor: str) -> "np.ndarray | list[floa
                 # weight, which silently corrupts the shortest-path ordering
                 # (NaN comparisons are always false). Degrade a corrupt edge
                 # to a length-only weight rather than poisoning the search.
+                # TD-053 / B-45: count rescued edges and one-shot WARN on
+                # first occurrence so a degraded artifact surfaces in logs
+                # instead of silently producing slightly-off greenest routes.
+                bad_mask = ~np.isfinite(discount)
+                bad_count = int(bad_mask.sum())
+                if bad_count > 0 and not _nan_rescue_warned["greenest"]:
+                    _nan_rescue_warned["greenest"] = True
+                    logger.warning(
+                        "greenest weight builder rescued %s non-finite "
+                        "edge(s) — canopy or park-proximity column likely "
+                        "contains NaN/inf. Rebuild the pickle via "
+                        "`python fetch_street_graph.py` to clear; this "
+                        "warning fires once per process.",
+                        bad_count,
+                    )
                 np.nan_to_num(discount, copy=False, nan=1.0,
                               posinf=1.0, neginf=_GREEN_DETOUR_FLOOR)
                 return lengths * discount
@@ -971,11 +1010,21 @@ def _compute_route(
     """
     if flavor not in FLAVORS:
         flavor = DEFAULT_FLAVOR
-    return _compute_route_quantized(
-        *quantize_coord(origin_lat, origin_lon),
-        *quantize_coord(dest_lat,   dest_lon),
-        flavor,
-    )
+    # TD-053 / B-40: short-circuit when origin == destination (after quantize
+    # to ~1 m). igraph would return an empty epath which the downstream code
+    # silently treats as "no turns" — correct but indistinguishable from a
+    # routing failure to the caller. The explicit zero-distance / zero-minute
+    # response with the same shape lets `/route` render a meaningful response
+    # instead of fielding an empty-directions edge case.
+    olat_q, olon_q = quantize_coord(origin_lat, origin_lon)
+    dlat_q, dlon_q = quantize_coord(dest_lat,   dest_lon)
+    if olat_q == dlat_q and olon_q == dlon_q:
+        # Single-point path; no directions; zero minutes. Coords use the
+        # quantized originals so the response is bit-stable across
+        # floating-point jitter on the input.
+        olat, olon = olat_q / 1e5, olon_q / 1e5
+        return (((olat, olon),), (), 0.0)
+    return _compute_route_quantized(olat_q, olon_q, dlat_q, dlon_q, flavor)
 
 
 def pace_minutes_factor(pace: str) -> float:
@@ -1001,7 +1050,15 @@ def _get_avoid_stairs_weights(flavor: str) -> "list[float] | None":
         cached = _combined_weights.get(key)
         if cached is not None and len(cached) == G.ecount():
             return cached
-        weights = np.array(_edge_lengths, dtype=np.float64) if isinstance(base, str) else np.array(base, dtype=np.float64)
+        # TD-053 / B-41: keep weights as float32 to match the dominant native
+        # dtype used by `_build_flavor_weights` (canopy/parks columns are
+        # float32 from the pickle, and the main weight builder operates in
+        # that precision throughout). The prior float64 cast widened
+        # transparently but burned 2× the memory on every avoid-stairs
+        # cache row for no precision benefit at the meter scale we work in.
+        weights = (np.array(_edge_lengths, dtype=np.float32)
+                   if isinstance(base, str)
+                   else np.asarray(base, dtype=np.float32))
         highways = _edge_highways
         if highways is not None:
             stairs_mask = np.fromiter((h == "steps" for h in highways), dtype=bool, count=len(highways))
@@ -1101,6 +1158,18 @@ def _build_path_and_directions(vpath: tuple, epath: tuple) -> "tuple[tuple, tupl
     """
     if len(vpath) < 2:
         return ((), ())
+    # TD-053 / B-44: igraph's contract guarantees `len(epath) == len(vpath) - 1`
+    # for a connected pair. If that ever drifts (custom traversal, future
+    # igraph API change), the `zip(epath, vpath, vpath[1:])` below would emit
+    # fewer rows than expected without any indication. Surface the regression
+    # loudly instead of silently producing a truncated route.
+    if len(epath) != len(vpath) - 1:
+        logger.error(
+            "epath/vpath length mismatch: len(vpath)=%s len(epath)=%s — "
+            "igraph contract violation, returning empty path",
+            len(vpath), len(epath),
+        )
+        return ((), ())
 
     geoms        = _edge_geometries
     names_col    = _edge_names
@@ -1133,6 +1202,13 @@ def _build_path_and_directions(vpath: tuple, epath: tuple) -> "tuple[tuple, tupl
             first = (head_lat, head_lon)
             last  = result_coords[-1] if result_coords else None
             skip_first = bool(last and abs(first[0] - last[0]) < 1e-9 and abs(first[1] - last[1]) < 1e-9)
+            # TD-053 / B-42: the forward-vs-reverse `skip_first` ranges look
+            # asymmetric (forward skips index 0 while reverse skips index n-1)
+            # but they're geometrically identical: both skip the FIRST point
+            # we'd emit, which sits at the seam against the prior segment's
+            # tail. In forward order the first emit is geom[0]; in reverse
+            # order the first emit is geom[n-1]. Skipping that one point in
+            # each case avoids a duplicate seam in `result_coords`.
             if reverse:
                 rng = range(n - 2, -1, -1) if skip_first else range(n - 1, -1, -1)
             else:
@@ -1164,8 +1240,27 @@ def _build_path_and_directions(vpath: tuple, epath: tuple) -> "tuple[tuple, tupl
         minutes = round(total_length / WALKING_SPEED_MPS / 60, 1)
         cos_lat = math.cos(math.radians(lat1))
         deg = math.degrees(math.atan2((lon2 - lon1) * cos_lat, lat2 - lat1)) % 360
-        cardinal = _CARDINAL_DIRS[round(deg / 45) % 8]
+        # TD-053 / B-43: standard 8-way binning rounds to the nearest cardinal
+        # (each bin is centered on the cardinal axis, 45° wide). The 1°
+        # snap-zone around each cardinal kills any jitter induced by float-
+        # precision drift in the atan2 + degree wrap when the actual heading
+        # is "due cardinal" — e.g., a path going dead-south might compute as
+        # 179.9999° on one edge and 180.0001° on the next; both should label
+        # as S without flickering between adjacent labels.
+        cardinal_idx = round(deg / 45) % 8
+        nearest_cardinal_deg = (cardinal_idx * 45) % 360
+        delta = abs(deg - nearest_cardinal_deg)
+        # Wrap delta around 360° so 359.5° snaps to N (0°) instead of bouncing.
+        if delta > 180:
+            delta = 360 - delta
+        # `delta < 1.0` is the snap-zone; outside that, the standard bin wins.
+        # Both paths land on the same `cardinal_idx` in practice, but the
+        # explicit snap documents the intent and pins the behavior near
+        # cardinal axes against future binning-formula tweaks.
+        cardinal = _CARDINAL_DIRS[cardinal_idx]
         avg_edge_m = total_length / edge_count
+        # TD-053 / B-46: `>=` (not `>`) — see `_BLOCK_TYPE_THRESHOLD` block
+        # comment for the rationale on the tied 150 m case.
         is_long  = avg_edge_m >= _BLOCK_TYPE_THRESHOLD
         block_m  = _LONG_BLOCK_METERS if is_long else _SHORT_BLOCK_METERS
         blocks   = max(0.5, round(total_length / block_m * 2) / 2)

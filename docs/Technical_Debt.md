@@ -26,7 +26,7 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
 | 6 | TD-072 (+ TD-032, TD-034, TD-044) | Polish / paused | Optional |
 
-**Audit priorities at a glance** — 12 High items concentrated in: same-node routing (TD-053), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
+**Audit priorities at a glance** — 12 High items concentrated in: PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045). Most other items are 🟡 Medium or 🟢 Low.
 
 ---
 
@@ -106,34 +106,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
   - Sequence: PV-006 in prod first → PV-001 / PV-004 / PV-005 / PV-008 on iPhone + Android via `npm run dev:tunnel` → PV-002 with a live key → PV-007 / PV-009 / PV-010 once API access is available.
   - Update `Pending_Verification.md` checkboxes; move resolved items to `archive/RESOLVED_HISTORY.md` per the file's own process note.
 - **Acceptance**: All ten PV items either resolved or formally classified as `post-ship` per the classifier convention in [`Pending_Verification.md`](Pending_Verification.md).
-
----
-
-### TD-053 · CHUNK-09 · `walking.py` correctness sweep
-- **Files**: `backend/walking.py`, `backend/tests/test_walking.py` (or new dedicated test files)
-- **Category**: Backend correctness
-- **Priority**: 🔴 High
-- **Findings**:
-  - **B-40** — Same-node origin/destination not short-circuited; igraph returns empty `epath` and the code silently returns an empty directions tuple.
-  - **B-41** — dtype mixing in `_get_avoid_stairs_weights:909-915`: float32 source cast to float64 then penalty added; inconsistent with the main `_build_flavor_weights` path which stays in float32.
-  - **B-42** — `_build_path_and_directions:1029-1047` reverse + `skip_first` is asymmetric: forward skips index 0, reverse skips index `n-1`, with different geometric meanings.
-  - **B-43** — Cardinal-direction binning brittle near 0/180° (`walking.py:1070-1072`); float drift causes jitter between adjacent labels.
-  - **B-44** — No defensive guard for empty `epath` when `len(vpath) >= 2`; theoretically impossible per igraph contract, but silent on regression.
-  - **B-45** — NaN handling in greenest discount (`walking.py:579-590`) silently degrades a corrupt edge to length-only weight; no operator-visible indicator.
-  - **B-46** — `_BLOCK_TYPE_THRESHOLD = 150.0` classifies exactly-150m as "long" — closer to short-block range but `>=` flips it.
-  - **B-47** — `_kdtree_to_vertex` int64 dtype assumed by consumers; a future refactor could silently truncate on very large graphs.
-- **Description**: Land these tests + fixes before the module-split refactor in TD-054 so the new test surface lives in the new structure from day one.
-- **Scope**:
-  - Same-node short-circuit (return zero-distance, zero-direction route with a clear marker).
-  - Standardize dtype across all flavor weight paths (pick float32 — the dominant native dtype — and convert once at module boundary).
-  - Audit reverse + skip_first asymmetry; fix or document the geometric semantics.
-  - One-shot WARNING (counter) when `nan_to_num` rescues an edge in greenest.
-  - Snap cardinal direction to exact label within a 1° tolerance band.
-  - Defensive `if not raw: log + return` for empty epath.
-  - Pick `>` or `>=` for the block threshold deliberately and add a docstring comment.
-  - Assert `_kdtree_to_vertex` dtype at load.
-- **Acceptance**: New unit tests for: same-node route, NaN-poisoned canopy edge, near-cardinal heading (179.5° / 180.5°), reverse + skip_first round-trip. `pytest backend/tests/test_walking*.py -v` green.
-- **Sequencing**: **Land before TD-054**.
 
 ---
 
