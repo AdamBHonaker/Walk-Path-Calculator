@@ -490,22 +490,54 @@ export default function App() {
   }, []);
 
   // Register the PWA service worker with a needRefresh callback.
+  // TD-066 / F-22: log a short breadcrumb at each lifecycle waypoint so a
+  // user reporting "the update banner didn't show" (or "it showed but
+  // nothing happened on accept") can paste a console snippet without
+  // bringing up the SW DevTools panel. Console-only — no telemetry payload
+  // — but enough to diagnose silent failures.
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line no-console
+    console.info("[sw] registering");
     import(/* @vite-ignore */ "virtual:pwa-register")
       .then(({ registerSW }) => {
-        if (cancelled || typeof registerSW !== "function") return;
+        if (cancelled || typeof registerSW !== "function") {
+          // eslint-disable-next-line no-console
+          console.info("[sw] registerSW unavailable (non-PWA build or cancelled)");
+          return;
+        }
         const updateSW = registerSW({
-          onNeedRefresh() { if (!cancelled) setSwUpdateReady(true); },
+          onNeedRefresh() {
+            // eslint-disable-next-line no-console
+            console.info("[sw] needRefresh — new SW waiting");
+            if (!cancelled) setSwUpdateReady(true);
+          },
+          onOfflineReady() {
+            // eslint-disable-next-line no-console
+            console.info("[sw] offlineReady — first install complete");
+          },
+          onRegisteredSW(swUrl) {
+            // eslint-disable-next-line no-console
+            console.info("[sw] registered at", swUrl);
+          },
+          onRegisterError(err) {
+            // eslint-disable-next-line no-console
+            console.warn("[sw] register error", err);
+          },
         });
         swUpdateFnRef.current = updateSW;
       })
-      .catch(() => { /* not in a PWA build (tests/dev) — no-op */ });
+      .catch((err) => {
+        // eslint-disable-next-line no-console
+        console.info("[sw] register import failed (likely test/dev build)", err?.message);
+      });
     return () => { cancelled = true; };
   }, []);
 
   const handleApplySwUpdate = useCallback(() => {
     const fn = swUpdateFnRef.current;
+    // eslint-disable-next-line no-console
+    console.info("[sw] applying update", typeof fn === "function" ? "via skipWaiting" : "via reload (no updateSW fn)");
     if (typeof fn === "function") fn(true); // skipWaiting + reload
     else window.location.reload();
   }, []);

@@ -1071,6 +1071,26 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · PWA + service worker + screenshot resilience (TD-066)
+
+**Files:** `frontend/src/lib/fetchWithTimeout.js`, `frontend/src/hooks/useShareCard.js`, `frontend/src/App.jsx`, `frontend/vite.config.js`.
+
+**Priority:** 🟢 Low.
+
+**What the debt was:** Four small resilience + observability gaps catalogued in the 2026-05-23 audit. `useShareCard` dynamic-imported `modern-screenshot` with no timeout, so a slow CDN or service-worker miss on a flaky connection could hang the share modal indefinitely waiting for chunk bytes (F-26). The three fetch timeouts (5 s / 10 s / 12 s) lived in `fetchWithTimeout.js` and `autocompleteApi.js` with no documented rationale — future tuners would have no way to know which budget could move (F-27). The SW lifecycle (`onNeedRefresh`, accept callback, etc.) emitted no breadcrumbs, so a user reporting "the update banner didn't show" had no console signal to share (F-22). And the Workbox `runtimeCaching` whitelist only covered `/route` + `/health`; `/explore`, `/autocomplete`, `/reverse-geocode` fell back to the default strategy (S-07). F-21 — externalizing the manifest from `vite.config.js` to a static file — was scoped optional and skipped; no concrete failure mode justifies the lift.
+
+**How it was resolved:**
+
+- **F-26 (screenshot import timeout):** Wrapped `import("modern-screenshot")` in `Promise.race` against a 5 s timeout in [useShareCard.js](../../frontend/src/hooks/useShareCard.js). The 5 s budget matches the adjacent map-render-race timeout — both are "the share-card flow gave up" budgets. On timeout the catch block surfaces the same error path as any other PNG capture failure (toast + leave the modal in an actionable state).
+- **F-27 (fetch budget documentation):** Block comment at the top of [fetchWithTimeout.js](../../frontend/src/lib/fetchWithTimeout.js) documents why each budget is what it is — `/route` 10 s covers the greenest Dijkstra worst case; `/explore` 12 s adds 2 s of heatmap fan-in slack; `/autocomplete` 5 s kills stalled typeahead within ~33 keystroke generations.
+- **F-22 (SW lifecycle telemetry):** Added breadcrumb `console.info` calls at each waypoint — registering, registered, needRefresh, offlineReady, register-error, apply-update. Console-only (no telemetry payload), but enough to diagnose silent failures from a user's pasted console snippet. The catch on the import promise also logs a benign info when running in non-PWA builds (tests/dev).
+- **S-07 (SW caching whitelist):** Expanded the Workbox `runtimeCaching` regex in [vite.config.js](../../frontend/vite.config.js) to cover all five endpoints — `/(route|explore|autocomplete|reverse-geocode|health)` with `NetworkOnly`. Forward-compatible against a future Workbox upgrade that might start caching by default.
+- **F-21 (manifest externalization) — skipped.** The catalog explicitly marked it optional. The inline manifest is generated correctly by `vite-plugin-pwa`; no env-override or custom-header use case justifies the lift today.
+
+**Acceptance:** `npm test` → **470 passed (470)** in 20s. SW lifecycle telemetry visible in DevTools console under the `[sw]` prefix.
+
+---
+
 ### 2026-05-24 · Frontend micro-perf — mapPadding rAF coalesce + theme MutationObserver retired (TD-065)
 
 **Files:** `frontend/src/lib/theme.js`, `frontend/src/App.jsx`, `frontend/src/map/MapExploreLayer.jsx`.

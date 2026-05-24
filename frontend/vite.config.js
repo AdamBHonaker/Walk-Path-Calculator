@@ -138,7 +138,16 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,ico,svg,woff2}"],
         runtimeCaching: [
           {
-            urlPattern: /\/(route|health)(\?.*)?$/i,
+            // TD-066 / S-07: explicit NetworkOnly for every backend
+            // endpoint. The prior rule only covered /route + /health,
+            // which meant /explore, /autocomplete, and /reverse-geocode
+            // fell back to Workbox's default strategy. The default is
+            // already NetworkOnly for navigation requests but ambiguous
+            // for fetches — pin them all so a future Workbox upgrade or
+            // global-handler addition can't silently start caching live
+            // route + isochrone JSON. The single combined pattern
+            // matches all five public endpoints.
+            urlPattern: /\/(route|explore|autocomplete|reverse-geocode|health)(\?.*)?$/i,
             handler: "NetworkOnly",
           },
         ],

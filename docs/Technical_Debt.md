@@ -259,27 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-066 · CHUNK-22 · PWA / service worker / screenshot resilience
-- **Files**: `frontend/vite.config.js`, optionally `frontend/public/manifest.webmanifest`, `frontend/src/hooks/useShareCard.js`, `frontend/src/App.jsx`
-- **Category**: PWA / resilience
-- **Priority**: 🟢 Low
-- **Findings**:
-  - **F-21** — PWA manifest generated inline in `vite.config.js:106-136`; not a static file, can't be overridden per env or served with custom headers.
-  - **F-22** — No telemetry on SW update lifecycle (`App.jsx:414-431`); can't tell whether the swap succeeded or whether the prompt was accepted.
-  - **F-26** — `useShareCard` dynamic-imports `modern-screenshot` with no timeout fallback (`useShareCard.js:102`).
-  - **F-27** — Three different fetch timeouts (5s / 10s / 12s) with no documented rationale.
-  - **S-07** — Service-worker runtime caching whitelist is incomplete (`vite.config.js:137-144`); `/explore`, `/autocomplete`, `/reverse-geocode` fall back to the default strategy.
-- **Description**: PWA polish; not user-blocking but improves observability and resilience on slow networks.
-- **Scope**:
-  - Optionally externalize the manifest to `frontend/public/manifest.webmanifest`.
-  - Console checkpoints in the SW update lifecycle (`onNeedRefresh`, `fn(true)` callback).
-  - Race `modern-screenshot` import against a 5s timeout; surface download-fallback UI on timeout.
-  - Document the three timeout values inline with their rationale.
-  - Explicit `NetworkOnly` rules for `/explore`, `/autocomplete`, `/reverse-geocode`.
-- **Acceptance**: Throttle to slow-3G; share-card export shows fallback toast after 5s rather than hanging.
-
----
-
 ### TD-067 · CHUNK-23 · Security headers + input validation hardening
 - **Files**: `backend/main.py`, frontend attribution components
 - **Category**: Defense-in-depth security

@@ -99,7 +99,21 @@ export function useShareCard({
     if (!cardRef.current) return;
     let overlay = null;
     try {
-      const { domToBlob } = await import("modern-screenshot");
+      // TD-066 / F-26: race the dynamic chunk fetch against a 5 s timeout
+      // so a slow CDN or service-worker miss on a slow connection doesn't
+      // hang the share modal indefinitely waiting for `modern-screenshot`
+      // bytes. On timeout the catch block surfaces the same error path as
+      // any other PNG capture failure (toast + leave modal in actionable
+      // state). 5 s matches the map-render-race budget below — both are
+      // "the share-card flow gave up" budgets.
+      const importPromise = import("modern-screenshot");
+      const importTimeout = new Promise((_, reject) => {
+        setTimeout(
+          () => reject(new Error("modern-screenshot import timed out after 5 s")),
+          5000,
+        );
+      });
+      const { domToBlob } = await Promise.race([importPromise, importTimeout]);
 
       // iOS Safari can clear the WebGL backbuffer between MapLibre's `idle`
       // and the moment the screenshot lib reads canvas.toDataURL() during
