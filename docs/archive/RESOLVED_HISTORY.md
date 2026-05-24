@@ -1071,6 +1071,24 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Backend test coverage gaps — geocoding cascade + redaction (TD-059)
+
+**Files:** new `backend/tests/test_geocoding_cascade.py`, new `backend/tests/test_redaction.py`, `backend/tests/test_explore_perf.py`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Three coverage gaps. **B-12** — individual geocoding tiers were unit-tested in isolation, but the *order* of cascade traversal was untested. A refactor that accidentally ran LocationIQ before the local cascade would burn API quota silently with no test signal. **B-13** — `test_explore_perf.py` runs locally but isn't gated in CI, so isochrone regressions are invisible until someone manually re-runs. **B-37** — `_redact_coord` (the coordinate-PII-quantization helper in `geocoding.py`) had no test asserting its output never carries full-precision coords; a new log site that forgets to call the helper would silently bypass redaction.
+
+**How it was resolved:**
+
+- **B-12 (cascade integration test):** New [`test_geocoding_cascade.py`](../../backend/tests/test_geocoding_cascade.py) — 4 tests pinning the cascade order. Each test mocks the downstream tiers and confirms (a) a tier-1 hit short-circuits without firing tiers 2-5; (b) a tier-5 LocationIQ call happens only when every local tier misses; (c) a tier-4 `local_search.forward` hit short-circuits LocationIQ (the cost-control invariant); (d) coord-pair regex bypasses every tier.
+- **B-37 (redaction coverage):** New [`test_redaction.py`](../../backend/tests/test_redaction.py) — 6 tests. Parametrized check on `_redact_coord` confirms 4 representative Chicago coords + the None-handling path collapse to ≤2 decimal places. Integration check exercises the outside-Chicago error path and scans every captured log record for the leak pattern `41.x.\d{3,}, -87.x.\d{3,}` — fails loudly if any log site forgot to redact.
+- **B-13 (perf threshold) — documented gate to TD-049:** [`test_explore_perf.py`](../../backend/tests/test_explore_perf.py) docstring updated with the catalog's CI-gating dependency. The +10% regression check the catalog scoped requires CI (TD-049) + a baseline persistence layer; that work moves with TD-049 rather than landing here. Existing absolute budgets (500 ms / 30 min, 1500 ms / 45 min) stay in place and continue to run locally.
+
+**Acceptance:** `pytest backend/tests/` → **356 passed (356)** in 21s (was 346; 10 new). The geocoding cascade order is now pinned in 4 tests; coordinate leak detection runs in 6 tests against the geocoding logger.
+
+---
+
 ### 2026-05-24 · Ingest-script defenses — atomic write helper + places-file schema/size guards (TD-058)
 
 **Files:** `backend/places.py`, new `backend/scripts/_atomic_write.py`, new `backend/tests/test_atomic_write.py`.

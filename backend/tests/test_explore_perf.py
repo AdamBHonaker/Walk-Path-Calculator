@@ -18,6 +18,14 @@ Each budget is taken as the median of three runs to reduce noise from
 GC / OS scheduling. CI machines vary; if these prove flaky in CI, the
 right fix is usually to widen the budget rather than retry, since the
 real-world budget is a hard SLO not a probabilistic one.
+
+TD-059 / B-13 note. This module's tests run locally on every `pytest`
+invocation but aren't gated in CI yet (CI baseline is TD-049, still
+open). The catalog scoped a +10% regression check against a stored
+baseline file; that needs CI to live in and a story for handling
+hardware variance across runners. When CI lands, this module's tests
+should be promoted to a required check + a baseline persistence layer
+added at that point.
 """
 
 import os

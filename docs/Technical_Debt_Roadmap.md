@@ -19,7 +19,6 @@ Hard deps are solid arrows; the dotted edge from TD-068 is optional pre-work. Ex
 
 ```mermaid
 graph LR
-  TD049[TD-049 CI baseline] --> TD059[TD-059 Backend test gaps]
   TD032[TD-032 React 18 → 19] --> TD034[TD-034 React Compiler eval]
   TD051[TD-051 PV burn-down] --> FEAT1[Multi-City Feature 1<br/>chunk 1<br/><i>external to TD catalog</i>]
   TD068[TD-068 Pickle forward-compat<br/>+ per-city breaker prep] -.optional pre-work.-> FEAT1
@@ -27,7 +26,6 @@ graph LR
 
 If Mermaid doesn't render, the same edges as text:
 
-- `TD-049 → TD-059`
 - `TD-032 → TD-034`
 - `TD-051 → Multi-City Feature 1 chunk 1` (Feature is external — scoped in [`FEATURE_PLANS.md`](FEATURE_PLANS.md) "Multi-City Support"; called out because TD-051 is the gate)
 - `TD-068 → Multi-City Feature 1 chunk 1` (optional front-loading; same external feature as above)
@@ -36,7 +34,6 @@ If Mermaid doesn't render, the same edges as text:
 
 | Predecessor | Successor | Why |
 |-------------|-----------|-----|
-| TD-049 | TD-059 | TD-059's perf-test gate runs in CI; CI must exist first. |
 | TD-032 | TD-034 | React Compiler is a React 19-only feature. |
 | TD-049 | TD-050 *(conditional)* | Only hard if TD-050's `ARTIFACT_REV` guard ships as a workflow step inside the TD-049 CI baseline. If TD-050 lands as a standalone script, no dep. See the soft-dep row below for the combined case. |
 
@@ -55,7 +52,7 @@ Within each wave, items in the same row can run in different sessions without co
 |------|-------------------|-------|
 | 0 | TD-045 | TD-046 + TD-047 resolved 2026-05-24; TD-045 remains as the lone Wave 0 item. |
 | 1 | TD-048, TD-049, TD-050, TD-051 | TD-051 is human-driven (device + key access); the other three are code-light. |
-| 2 | TD-059 | TD-052 / -053 / -054 / -055 / -056 / -057 / -058 resolved 2026-05-24. TD-059 waits on TD-049. |
+| 2 | — | All Wave 2 items resolved 2026-05-24. |
 | 3 | — | All Wave 3 items landed 2026-05-24. |
 | 4 | — | TD-067 landed 2026-05-24. |
 | 5 | — | TD-068 / -069 / -070 / -071 all landed 2026-05-24. |

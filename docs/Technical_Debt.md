@@ -20,7 +20,7 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 |------|------------|-------|----------------|
 | 0 | TD-045 | Repo basics & docs | Standalone now (TD-046 / -047 resolved) |
 | 1 | TD-048 / -049 / -050 / -051 | Operational hardening | Yes; TD-051 (PV burn-down) is human-driven |
-| 2 | TD-053 → TD-059 | Backend correctness + API contract | Yes except TD-053 → TD-054 (walking.py) |
+| 2 | — | All Wave 2 items resolved 2026-05-24. |
 | 3 | TD-060 → TD-066 | Frontend correctness + UX | TD-061 + TD-062 both touch App.jsx — keep in lockstep |
 | 4 | TD-067 | Security headers + input validation | Standalone |
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
@@ -106,23 +106,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
   - Sequence: PV-006 in prod first → PV-001 / PV-004 / PV-005 / PV-008 on iPhone + Android via `npm run dev:tunnel` → PV-002 with a live key → PV-007 / PV-009 / PV-010 once API access is available.
   - Update `Pending_Verification.md` checkboxes; move resolved items to `archive/RESOLVED_HISTORY.md` per the file's own process note.
 - **Acceptance**: All ten PV items either resolved or formally classified as `post-ship` per the classifier convention in [`Pending_Verification.md`](Pending_Verification.md).
-
----
-
-### TD-059 · CHUNK-15 · Backend test coverage gaps
-- **Files**: `backend/tests/test_geocoding.py` (or new `test_geocoding_cascade.py`), `backend/tests/test_explore_perf.py`, new `backend/tests/test_redaction.py`
-- **Category**: Test coverage
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **B-12** — No integration test for the full geocoding cascade; tiers tested in isolation but order is load-bearing.
-  - **B-13** — `test_explore_perf.py` not gated in CI; isochrone regressions invisible.
-  - **B-37** — `_redact_coord` coverage not asserted by any test; new log sites can silently bypass redaction.
-- **Description**: Three targeted test additions that close coverage gaps without restructuring existing tests.
-- **Scope**:
-  - Cascade integration test: mock each tier to None/fail, assert advancement order.
-  - Add CI threshold to `test_explore_perf.py` (e.g., 45-min budget < 200 ms; fail on +10% regression).
-  - Redaction coverage: monkey-patch `logger.warning`/`info`/`error`, fuzz coords through geocoding + walking, assert no `41.x, -87.x` in log lines.
-- **Acceptance**: New tests run green; CI (TD-049) gates the perf threshold.
 
 ---
 
