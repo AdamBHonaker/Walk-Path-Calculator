@@ -163,6 +163,15 @@ _edge_targets:    "np.ndarray        | None" = None   # int32 (v2) or list[int] 
 _edge_tree_canopy:    "np.ndarray | None" = None
 _edge_park_proximity: "np.ndarray | None" = None
 
+# TD-068: per-signal greenest-routing degradation flags. Updated in
+# `_load_graph` after the per-column presence check; `True` means the
+# loaded pickle didn't carry that column and the runtime zero-filled it.
+# Exposed via `greenest_degradation_status()` so /health can surface the
+# state. Multi-city support (Feature 1) is the motivating use case —
+# cities without canopy/park data still boot, just with greenest
+# degraded to footway-only discount on those signals.
+_greenest_degraded: dict[str, bool] = {"canopy": False, "parks": False}
+
 # uint8 mask: 1 where the edge's highway tag is in `_GREEN_HIGHWAYS`, else 0.
 # Baked once at load (OPT-032) so the greenest weight build does not rebuild
 # it from `_edge_highways` strings on every cache miss. None in the v1
@@ -351,6 +360,10 @@ def _load_graph() -> "ig.Graph | None":
     """Load street graph once; returns None (and never retries) if unavailable."""
     global _graph_cache, _coord_kdtree, _vertex_lats, _vertex_lons, _kdtree_to_vertex
     global _graph_load_failed, _last_graph_access
+    # TD-068: zero-fill assignment in the per-column degradation guard
+    # below rebinds these names, which Python treats as local without an
+    # explicit global declaration.
+    global _edge_tree_canopy, _edge_park_proximity
 
     if _graph_cache is not None:
         _last_graph_access = _time.monotonic()
@@ -454,35 +467,58 @@ def _load_graph() -> "ig.Graph | None":
         else:
             _populate_edge_caches(G)
 
-        # Feature 4 chunk 3: fail-fast posture for missing greenest signals.
-        # A v2 pickle / graphml-only load lacks `tree_canopy_score` +
-        # `park_proximity_score` columns, so greenest would silently degrade to
-        # the legacy footway-only discount. That's strictly worse than refusing
-        # to boot the route — operators will notice an unavailable `/route`
-        # quickly, but degraded greenest would ship silently. Matches the
-        # SHA-256 integrity check's "fail closed" posture above.
+        # Feature 4 chunk 3 + TD-068: per-column presence check with graceful
+        # degradation. Multi-city support (Feature 1) wants to onboard cities
+        # whose source datasets don't include canopy or park data — refusing
+        # to boot the whole router because one column is missing would block
+        # that work. The relaxed contract: any missing v3 column zero-fills,
+        # logs a clear "feature degraded" warning, and sets the
+        # `_greenest_degraded` module flag. Greenest still routes, but the
+        # missing signal's contribution to the weight collapses to zero —
+        # equivalent to footway-only discount for canopy, or no park boost
+        # for park-proximity. Operators see the warning on boot and can
+        # query the flag via `feature_degraded` on /health (TD-068 / X-19).
         n_edges = G.ecount()
         canopy_ok = _edge_tree_canopy    is not None and len(_edge_tree_canopy)    == n_edges
         parks_ok  = _edge_park_proximity is not None and len(_edge_park_proximity) == n_edges
-        if not (canopy_ok and parks_ok):
+        if not canopy_ok:
             fv = _pickle_data.get("format_version", 1) if _pickle_data else "graphml"
-            logger.error(
-                "Refusing to load %s — greenest routing requires per-edge "
-                "tree_canopy_score + park_proximity_score attributes (Feature 4 "
-                "chunk 1), but canopy_ok=%s parks_ok=%s vs %s edges. "
-                "format_version=%s. Rebuild the pickle: `python fetch_street_graph.py`. "
-                "This guard is intentional — silent degradation of `greenest` is a "
-                "worse outcome than haversine fallback for the whole route flow.",
-                IGRAPH_PATH if _pickle_data is not None else GRAPH_PATH,
-                canopy_ok, parks_ok, n_edges, fv,
+            logger.warning(
+                "%s missing edge_tree_canopy_f32 column (format_version=%s) — "
+                "greenest routing will degrade to footway-only discount for the "
+                "canopy term. Rebuild via `python fetch_street_graph.py` to restore. "
+                "Setting feature_degraded flag.",
+                IGRAPH_PATH if _pickle_data is not None else GRAPH_PATH, fv,
             )
-            _graph_load_failed = True
-            return None
+            _edge_tree_canopy = np.zeros(n_edges, dtype=np.float32)
+        if not parks_ok:
+            fv = _pickle_data.get("format_version", 1) if _pickle_data else "graphml"
+            logger.warning(
+                "%s missing edge_park_proximity_f32 column (format_version=%s) — "
+                "greenest routing will degrade to zero park-proximity boost. "
+                "Rebuild via `python fetch_street_graph.py` to restore. "
+                "Setting feature_degraded flag.",
+                IGRAPH_PATH if _pickle_data is not None else GRAPH_PATH, fv,
+            )
+            _edge_park_proximity = np.zeros(n_edges, dtype=np.float32)
+        # Record which greenest signals are degraded so /health can surface
+        # the state without the caller needing to ask `walking.py` directly.
+        _greenest_degraded["canopy"] = not canopy_ok
+        _greenest_degraded["parks"]  = not parks_ok
 
         _graph_cache = G
         _last_graph_access = _time.monotonic()
 
     return _graph_cache
+
+
+def greenest_degradation_status() -> "dict[str, bool]":
+    """Per-signal greenest-routing degradation flags. Each key is True when
+    the underlying column was missing from the loaded pickle and the runtime
+    zero-filled it (TD-068). `/health` reads this so operators can spot a
+    silent multi-city / multi-pickle drift without tailing logs.
+    """
+    return dict(_greenest_degraded)
 
 
 def _evict_graph() -> None:

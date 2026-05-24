@@ -226,17 +226,20 @@ class TestGreenestFixtureRoutes:
 
 
 # ---------------------------------------------------------------------------
-# Fail-fast posture (chunk 3) — a pickle missing the v3 greenest columns must
-# refuse to boot, not silently degrade greenest to the legacy footway-only
-# discount. Production deploys must surface the rebuild requirement.
+# Graceful degradation (TD-068) — the prior chunk-3 fail-fast guard refused to
+# boot when v3 columns were missing. Multi-city support (Feature 1) needs to
+# onboard cities whose source datasets don't include canopy or park data, so
+# the contract relaxed: missing columns now zero-fill, log a clear warning,
+# and set the `_greenest_degraded` flag so /health can surface the state.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.requires_artifact("street_graph_igraph.pkl")
-class TestV3FailFast:
-    def test_v2_shaped_pickle_refuses_to_load(self, _graph_loaded, tmp_path, monkeypatch, caplog):
-        """A pickle that lacks the v3 canopy + park columns must trip the
-        fail-fast guard in `_load_graph()` rather than silently falling back
-        to the legacy footway-only greenest discount."""
+class TestV3GracefulDegradation:
+    def test_v2_shaped_pickle_loads_with_degraded_flag(self, _graph_loaded, tmp_path, monkeypatch, caplog):
+        """A pickle that lacks the v3 canopy + park columns must still load —
+        greenest degrades to footway-only discount on the missing signals,
+        and `greenest_degradation_status()` reports the degradation so
+        /health can expose it (TD-068)."""
         import pickle as _pickle
 
         # Build a v2-shaped pickle by reading the v3 one and stripping the new keys.
@@ -266,19 +269,28 @@ class TestV3FailFast:
         # v3-attribute guard to be the failure point, not the integrity check.
         monkeypatch.setattr(walking, "_STREET_GRAPH_SHA256", "")
 
-        with caplog.at_level("ERROR", logger="walking"):
+        with caplog.at_level("WARNING", logger="walking"):
             result = walking._load_graph()
 
-        assert result is None, "v2 pickle must refuse to load"
-        assert walking._graph_load_failed is True, "load failure must be sticky"
-        assert any("greenest routing requires per-edge" in r.message for r in caplog.records), (
-            "fail-fast error log must point at the missing greenest attrs"
-        )
+        assert result is not None, "v2 pickle must load with graceful degradation (TD-068)"
+        assert walking._graph_load_failed is False, "graceful degradation must not flip the load-failed flag"
+        # Both degradation warnings should have fired — one per missing column.
+        canopy_warned = any("missing edge_tree_canopy_f32" in r.message for r in caplog.records)
+        parks_warned  = any("missing edge_park_proximity_f32" in r.message for r in caplog.records)
+        assert canopy_warned, "missing canopy column must log a clear degradation warning"
+        assert parks_warned,  "missing parks column must log a clear degradation warning"
+        # /health exposes this via greenest_degradation_status().
+        status = walking.greenest_degradation_status()
+        assert status["canopy"] is True, "canopy must report degraded after a v2-load"
+        assert status["parks"]  is True, "parks must report degraded after a v2-load"
 
         # Restore the real graph for any test that runs after this one in the
-        # same session — monkeypatch will undo the IGRAPH_PATH / GRAPH_PATH
-        # patches automatically, but `_graph_cache` / `_graph_load_failed`
-        # were set by us, so we have to clear them by hand.
+        # same session. monkeypatch undoes IGRAPH_PATH / GRAPH_PATH at test
+        # teardown — which hasn't happened yet — so we explicitly stop
+        # monkeypatch first, then clear our cache mutations and reload
+        # against the production paths. The TD-068 degradation flags will
+        # be reset by the per-column check inside the fresh load.
+        monkeypatch.undo()
         walking._graph_cache = None
         walking._graph_load_failed = False
         walking._load_graph()

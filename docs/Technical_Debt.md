@@ -259,24 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-068 · CHUNK-24 · Pickle format forward-compat + per-city circuit-breaker prep
-- **Files**: `backend/walking.py`, `backend/fetch_street_graph.py`, `backend/geocoding.py`, CLAUDE.md
-- **Category**: Architecture / multi-city readiness
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **X-19** — Pickle `format_version: 3` is all-or-nothing; multi-city needs to support cities without canopy or parks data.
-  - **X-20** — LocationIQ circuit breaker is global; post-multi-city, a Chicago 429 will gate Evanston too.
-  - **B-08** — Greenest can silently downgrade to footway-only on missing v3 columns mid-uptime (boot is fail-fast but hot-swap path isn't).
-- **Description**: Front-load the multi-city refactor groundwork so Feature 1 chunk 1 doesn't have to take it on.
-- **Scope**:
-  - Relax the fail-fast guard: check column presence per-column; zero-fill missing canopy/park columns with a clear "feature degraded" log instead of refusing to boot.
-  - Add a per-column schema version separate from `format_version`.
-  - Key the LocationIQ circuit breaker on `("forward", city)` instead of `"forward"` (no-op for single-city, ready for multi-city).
-  - Expose a `feature_degraded` flag on `/health`.
-- **Acceptance**: Build a synthetic v2-shaped pickle (no canopy/parks columns); confirm boot succeeds with greenest disabled but routing intact; `/health` shows the degraded flag.
-
----
-
 ### TD-069 · CHUNK-25 · Structured logging + observability
 - **Files**: `backend/requirements.txt`, `backend/main.py`, `backend/walking.py`, `backend/geocoding.py`
 - **Category**: Observability

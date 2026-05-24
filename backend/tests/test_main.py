@@ -13,7 +13,12 @@ class TestHealth:
     def test_health_returns_ok(self):
         resp = client.get("/health")
         assert resp.status_code == 200
-        assert resp.json() == {"status": "ok"}
+        data = resp.json()
+        assert data["status"] == "ok"
+        # TD-068: when greenest signals are degraded (e.g. a v2 pickle was
+        # loaded earlier in the test session), /health surfaces a
+        # `feature_degraded` map. The presence of the key is non-load-bearing
+        # for the liveness probe — just assert `status` is OK.
 
 
 class TestDefaultFlavorInvariant:

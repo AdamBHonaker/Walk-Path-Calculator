@@ -48,6 +48,7 @@ from walking import (
     _start_eviction_daemon,
     FLAVORS,
     DEFAULT_FLAVOR,
+    greenest_degradation_status,
 )
 from geocoding import (
     GeocoderDegradedError,
@@ -492,7 +493,16 @@ class ExploreRequest(BaseModel):
 
 @app.get("/health", response_model=HealthResponse)
 async def health(request: Request):
-    return {"status": "ok"}
+    # TD-068: surface greenest-routing degradation flags so an operator
+    # can spot a multi-city pickle drift (or a partial v3 pickle) without
+    # tailing logs. The flags are populated by `_load_graph` after the
+    # per-column presence check; an "all clear" response carries no
+    # `feature_degraded` key at all.
+    degraded = greenest_degradation_status()
+    payload: dict = {"status": "ok"}
+    if any(degraded.values()):
+        payload["feature_degraded"] = degraded
+    return payload
 
 
 @app.post("/explore", response_model=ExploreResponse)

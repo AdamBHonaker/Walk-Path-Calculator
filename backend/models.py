@@ -59,9 +59,24 @@ class HealthResponse(BaseModel):
     is up — the endpoint deliberately does not check downstream services,
     so a healthy response means "the FastAPI worker is responsive,"
     nothing more.
+
+    TD-068: optional ``feature_degraded`` map surfaces per-signal greenest
+    routing degradation. Keys are signal names (``canopy``, ``parks``);
+    a ``True`` value means the loaded pickle didn't carry that column and
+    the runtime zero-filled it. Absent / empty dict means greenest is
+    operating with all signals. Operators monitor this so a multi-city
+    pickle drift doesn't ship silently degraded routing.
     """
 
     status: Literal["ok"] = "ok"
+    feature_degraded: dict[str, bool] | None = Field(
+        default=None,
+        description=(
+            "Optional per-feature degradation map. Currently only "
+            "greenest-routing signals — `canopy`, `parks`. `True` means "
+            "that signal's column was missing from the loaded pickle."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
