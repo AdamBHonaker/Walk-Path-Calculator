@@ -136,6 +136,26 @@ def all_places() -> list[dict[str, Any]]:
     return places
 
 
+_known_categories_cache: "frozenset[str] | None" = None
+
+
+def known_categories() -> frozenset[str]:
+    """Return the set of top-level category keys present in the bundled
+    place data. Cached at first call so /explore's request-time category
+    validation runs in O(1) lookup against the set (TD-057 / B-04).
+
+    Subcategory composite keys (e.g. ``medical/pharmacy``) are NOT in this
+    set — the frontend post-filters subcategories from a single response,
+    so /explore's request schema only accepts the parent keys.
+    """
+    global _known_categories_cache
+    if _known_categories_cache is not None:
+        return _known_categories_cache
+    cats = {p["category"] for p in all_places() if "category" in p}
+    _known_categories_cache = frozenset(cats)
+    return _known_categories_cache
+
+
 def _ensure_index() -> tuple[list[dict[str, Any]], STRtree | None]:
     """Lazily build the in-memory point list + STRtree on first call."""
     global _places, _geoms, _tree

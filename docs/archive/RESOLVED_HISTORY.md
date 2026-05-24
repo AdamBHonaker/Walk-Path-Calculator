@@ -1071,6 +1071,25 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · /explore unknown-category 422 + autocomplete recovery + /health flag (TD-057)
+
+**Files:** `backend/places.py`, `backend/main.py`, `backend/local_search.py`, `backend/tests/test_explore_endpoint.py`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Two reliability fixes. **B-04** — `/explore` accepted unknown category strings silently; the validator cleaned whitespace and dropped empties but never cross-checked against the known set, so a typo (or a stale category-key rename in a deep-link share URL) returned 200 with an empty `places` array. **B-07** — `local_search._ensure_in_mem_index()` always set `_in_mem_built=True` after the try/except around `places.all_places()`, even when the POI load raised. A one-time failure (corrupt places JSON, half-baked ingest) permanently degraded autocomplete for the life of the process; only a restart could recover.
+
+**How it was resolved:**
+
+- **B-04 (known categories):** New `places.known_categories()` returns a cached frozenset of the top-level category keys in the bundled place data. `ExploreRequest.validate_categories` now cross-checks each submitted category against this set and 422s on the first unknown key, surfacing the failure in the validation-error envelope. The frontend's `__none__` sentinel (empty selection marker) is allowed through unchanged — the backend treats it as "filter out everything" by construction.
+- **B-07 (autocomplete recovery):** Split `_in_mem_built` into two flags — `_in_mem_built` (neighborhoods, in-memory dict; always succeeds) and `_poi_index_built` (POI load via `places.all_places()`; can fail). The function now retries the POI half on every call as long as `_poi_index_built` is False; the neighborhood half short-circuits after the first successful build. Exception path no longer flips the flag, so the next autocomplete call retries.
+- **Health surface:** New `local_search.autocomplete_degraded()` exposes the POI-build state. /health's `feature_degraded` map adds an `autocomplete: True` key when the POI index couldn't build, letting operators spot a silent place-data load failure without tailing logs.
+- **Test update:** [test_explore_endpoint.py](../../backend/tests/test_explore_endpoint.py) `test_unknown_category_returns_empty_places` rewritten as `test_unknown_category_returns_422` — pins the new behavior + asserts the validation envelope shape.
+
+**Acceptance:** `pytest backend/tests/` → **340 passed (340)** in 20s. `/explore` with `categories=["does_not_exist"]` now returns 422 with `"unknown key"` in the message.
+
+---
+
 ### 2026-05-24 · FastAPI lifespan cleanup + rate-limiter hardening + test (TD-056)
 
 **Files:** `backend/main.py`, `backend/walking.py`, new `backend/tests/test_rate_limit.py`.

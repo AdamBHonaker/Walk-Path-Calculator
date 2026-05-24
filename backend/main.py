@@ -584,7 +584,25 @@ class ExploreRequest(BaseModel):
         if len(v) > 32:
             raise ValueError("too many categories (max 32)")
         cleaned = [c.strip() for c in v if isinstance(c, str) and c.strip()]
-        return cleaned or None
+        if not cleaned:
+            return None
+        # TD-057 / B-04: cross-check against the known top-level category
+        # keys. The frontend's dropdown is closed-set, but a deep link or
+        # a hand-rolled API call could send a typo or a stale rename; 422
+        # at the boundary is much better than silently returning zero
+        # places (the prior behavior — no category match, empty list).
+        # The "__none__" sentinel is the frontend's "selection is empty"
+        # marker — it never matches any real category, but the backend
+        # treats it as "filter out everything" by construction; allow it
+        # through here so the existing semantics survive.
+        known = places.known_categories()
+        unknown = [c for c in cleaned if c not in known and c != "__none__"]
+        if unknown:
+            raise ValueError(
+                f"categories contains unknown key(s): {unknown!r}. "
+                f"Known top-level keys: {sorted(known)!r}."
+            )
+        return cleaned
 
     @field_validator("with_heatmaps")
     @classmethod
@@ -608,10 +626,16 @@ async def health(request: Request):
     # tailing logs. The flags are populated by `_load_graph` after the
     # per-column presence check; an "all clear" response carries no
     # `feature_degraded` key at all.
-    degraded = greenest_degradation_status()
+    # TD-057 / B-07: also surface autocomplete degradation. The POI half
+    # of the index can be transiently unavailable (corrupt places JSON,
+    # etc.); a `feature_degraded.autocomplete: true` lets operators
+    # notice without tailing logs.
+    flags = dict(greenest_degradation_status())
+    if local_search.autocomplete_degraded():
+        flags["autocomplete"] = True
     payload: dict = {"status": "ok"}
-    if any(degraded.values()):
-        payload["feature_degraded"] = degraded
+    if any(flags.values()):
+        payload["feature_degraded"] = flags
     return payload
 
 

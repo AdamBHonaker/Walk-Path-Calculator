@@ -148,14 +148,23 @@ class TestExploreSuccess:
         # curated source key otherwise. Used by the frontend for citation.
         assert all(p.get("source") for p in body["places"])
 
-    def test_unknown_category_returns_empty_places(self):
+    def test_unknown_category_returns_422(self):
+        """TD-057 / B-04: previously /explore returned 200 with empty
+        places for unknown categories — silent and unhelpful. Now the
+        validator rejects at the boundary so a typo / stale rename
+        surfaces immediately."""
         resp = client.post("/explore", json={
             "origin": {"community_area": "Loop"},
             "max_minutes": 15,
             "categories": ["does_not_exist"],
         })
-        assert resp.status_code == 200
-        assert resp.json()["places"] == []
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        # FastAPI's standard Pydantic-validation error shape.
+        assert any(
+            "unknown key" in (item.get("msg") or "").lower()
+            for item in detail
+        ), f"expected an 'unknown key' validation error, got {detail!r}"
 
     def test_no_categories_returns_all(self):
         # Omitting `categories` (or sending null) returns every place inside

@@ -145,6 +145,11 @@ def parse_cross_street(query: str) -> tuple[str, str] | None:
 
 _in_mem_lock = threading.Lock()
 _in_mem_built = False
+# TD-057 / B-07: track the POI half of the in-memory index separately so a
+# transient failure on POI load can be retried on subsequent calls without
+# permanently degrading autocomplete. False until `places.all_places()`
+# succeeds; never set to True under exception.
+_poi_index_built = False
 _neighborhood_index: list[tuple[str, str, float, float]] = []
 _poi_index: list[tuple[str, str, float, float]] = []  # (name_lower, display, lat, lon)
 # Parallel key-only arrays for `bisect`-based prefix windowing. Kept in
@@ -155,35 +160,63 @@ _poi_keys: list[str] = []
 
 
 def _ensure_in_mem_index() -> None:
-    """Build sorted prefix lists for neighborhoods + POIs once per process."""
-    global _in_mem_built
-    if _in_mem_built:
+    """Build sorted prefix lists for neighborhoods + POIs once per process.
+
+    TD-057 / B-07: neighborhoods always succeed (in-memory dict); the POI
+    section can fail if `places.all_places()` raises (corrupt JSON, etc.).
+    Previously a one-time POI failure permanently degraded autocomplete
+    for the life of the process — the function set `_in_mem_built=True`
+    unconditionally and the early-return at the top of the function
+    skipped subsequent retries. Now we track `_poi_index_built`
+    separately: when False on entry, we retry the POI load even though
+    neighborhoods are already cached. `autocomplete_degraded()` exposes
+    the current state for /health.
+    """
+    global _in_mem_built, _poi_index_built
+    if _in_mem_built and _poi_index_built:
         return
     with _in_mem_lock:
-        if _in_mem_built:
+        if _in_mem_built and _poi_index_built:
             return
-        # Avoid importing geocoding at module-top: it pulls in `requests` and
-        # the circuit-breaker plumbing, which we don't want as a hard dep
-        # if all you're doing is local-only autocomplete in a test fixture.
-        from geocoding import NEIGHBORHOOD_COORDS  # noqa: PLC0415
-        for name, (lat, lon) in NEIGHBORHOOD_COORDS.items():
-            _neighborhood_index.append((name, name.title(), lat, lon))
-        _neighborhood_index.sort(key=lambda t: t[0])
-        _neighborhood_keys.extend(t[0] for t in _neighborhood_index)
+        if not _in_mem_built:
+            # Avoid importing geocoding at module-top: it pulls in `requests`
+            # and the circuit-breaker plumbing, which we don't want as a hard
+            # dep if all you're doing is local-only autocomplete in a test
+            # fixture.
+            from geocoding import NEIGHBORHOOD_COORDS  # noqa: PLC0415
+            for name, (lat, lon) in NEIGHBORHOOD_COORDS.items():
+                _neighborhood_index.append((name, name.title(), lat, lon))
+            _neighborhood_index.sort(key=lambda t: t[0])
+            _neighborhood_keys.extend(t[0] for t in _neighborhood_index)
+            _in_mem_built = True
 
-        try:
-            from places import all_places  # noqa: PLC0415
-            for p in all_places():
-                nm = (p.get("name") or "").strip()
-                if not nm:
-                    continue
-                _poi_index.append((nm.lower(), nm, float(p["lat"]), float(p["lon"])))
-            _poi_index.sort(key=lambda t: t[0])
-            _poi_keys.extend(t[0] for t in _poi_index)
-        except Exception as exc:
-            logger.warning("POI index unavailable: %s", exc)
+        if not _poi_index_built:
+            try:
+                from places import all_places  # noqa: PLC0415
+                for p in all_places():
+                    nm = (p.get("name") or "").strip()
+                    if not nm:
+                        continue
+                    _poi_index.append((nm.lower(), nm, float(p["lat"]), float(p["lon"])))
+                _poi_index.sort(key=lambda t: t[0])
+                _poi_keys.extend(t[0] for t in _poi_index)
+                _poi_index_built = True
+            except Exception as exc:
+                # Don't flip `_poi_index_built` so the next autocomplete
+                # request retries the load. Log at WARNING — operators
+                # see the degradation but the endpoint stays available
+                # (neighborhoods + intersections + addresses still serve).
+                logger.warning(
+                    "POI index unavailable (will retry on next call): %s", exc,
+                )
 
-        _in_mem_built = True
+
+def autocomplete_degraded() -> bool:
+    """True when the POI half of the autocomplete index failed to build on
+    the most recent attempt (TD-057 / B-07). /health surfaces this so a
+    degraded place-data load doesn't ship silently.
+    """
+    return not _poi_index_built
 
 
 def _prefix_window(keys: list[str], q: str) -> tuple[int, int]:

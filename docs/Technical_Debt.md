@@ -109,21 +109,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-057 · CHUNK-13 · Local-search + autocomplete hardening
-- **Files**: `backend/main.py`, `backend/local_search.py`, `backend/places.py`, `backend/tests/test_local_search.py`
-- **Category**: Backend reliability
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **B-04** — `/explore` accepts unknown category strings silently; `ExploreRequest.validate_categories` cleans the list but never cross-checks against the known set.
-  - **B-07** — `local_search.autocomplete():174-184` permanently degrades when `all_places()` raises — `_in_mem_built=True` is set after the warning, so a corrupted places file silently strips POI suggestions for the life of the process.
-- **Description**: Two small but high-impact reliability fixes.
-- **Scope**:
-  - Build a cached `KNOWN_CATEGORIES` set from `places.all_places()`; validate `/explore` `categories` against it and 422 on unknowns.
-  - Reset `_in_mem_built=False` when `all_places()` raises so subsequent requests retry; surface an `autocomplete_degraded` flag in `/health`.
-- **Acceptance**: `/explore` with `categories=["bogus"]` → 422; symlink-corrupt `places_osm.json`, hit `/autocomplete`, restore, confirm recovery on next request.
-
----
-
 ### TD-058 · CHUNK-14 · Ingest-script standardization
 - **Files**: new `backend/scripts/_ingest_runner.py`; edits across `backend/scripts/build_*.py`
 - **Category**: Data ingest reliability
