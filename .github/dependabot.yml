@@ -1,0 +1,59 @@
+# TD-049 — Dependabot keeps both stacks current. Weekly cadence matches
+# how often the dependency tree drifts in practice; bumping more often
+# generates noise without proportional benefit (the dependency-auditor
+# skill is the active CVE-triage path, not Dependabot).
+
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    # Group all-non-major patch + minor bumps into one PR per week so the
+    # review queue doesn't fan out into 10 separate "bump Pydantic 2.12.0
+    # -> 2.12.1" pulls. Majors stay independent — those need code review.
+    groups:
+      backend-runtime:
+        applies-to: version-updates
+        update-types:
+          - patch
+          - minor
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "fastapi"
+          - "starlette"
+          - "pydantic"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      frontend-runtime:
+        applies-to: version-updates
+        update-types:
+          - patch
+          - minor
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "react"
+          - "react-dom"
+          - "vite"
+          - "maplibre-gl"
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"

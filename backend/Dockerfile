@@ -48,7 +48,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # string and forces a fresh download. Bump it whenever any asset above is
 # re-uploaded — with the new layer order, `ARTIFACT_REV` is the **only** knob
 # that busts the artifact-layer cache.
-ARG ARTIFACT_REV=2026-05-23
+ARG ARTIFACT_REV=2026-05-24
 
 # STREET_GRAPH_SHA256 also gates the pickle at build time. Railway feeds this
 # ARG from the service variable of the same name; locally pass --build-arg or
@@ -77,7 +77,25 @@ RUN set -eu; \
         [ "$actual" = "$expected" ] || { echo "ERROR: street_graph_igraph.pkl SHA-256 mismatch (expected $expected, got $actual)" >&2; exit 1; }; \
         echo "street_graph_igraph.pkl SHA-256 verified at build time"; \
     else \
-        echo "STREET_GRAPH_SHA256 not set - skipping build-time pickle verification"; \
+        # TD-050 / X-08 guard. Forgetting to rotate STREET_GRAPH_SHA256 \
+        # after a release-asset refresh ships stale bytes (the BuildKit \
+        # layer cache hides it). To defend without breaking legitimate \
+        # local-dev builds, we recognize ARTIFACT_REV=local-dev as the \
+        # opt-out token. Any other ARTIFACT_REV value paired with an \
+        # empty STREET_GRAPH_SHA256 now fails the build with a clear \
+        # message instead of warning + proceeding. \
+        if [ "${ARTIFACT_REV}" = "local-dev" ]; then \
+            echo "STREET_GRAPH_SHA256 not set; ARTIFACT_REV=local-dev — skipping verification (dev build)"; \
+        else \
+            echo "ERROR: STREET_GRAPH_SHA256 is empty but ARTIFACT_REV=${ARTIFACT_REV}" >&2; \
+            echo "  The pickle integrity hash must be set when shipping a real release tag." >&2; \
+            echo "  Either:" >&2; \
+            echo "    1. Set STREET_GRAPH_SHA256 to the expected SHA-256 of the pickle" >&2; \
+            echo "       (compute locally with: sha256sum street_graph_igraph.pkl)" >&2; \
+            echo "    2. Set ARTIFACT_REV=local-dev to opt out of verification" >&2; \
+            echo "  See docs/Release.md for the operator workflow." >&2; \
+            exit 1; \
+        fi; \
     fi
 
 # Copy the rest of the application code. Sits AFTER the artifact fetch (OPT-027)

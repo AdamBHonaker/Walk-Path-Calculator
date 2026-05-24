@@ -35,14 +35,12 @@ If Mermaid doesn't render, the same edges as text:
 | Predecessor | Successor | Why |
 |-------------|-----------|-----|
 | TD-032 | TD-034 | React Compiler is a React 19-only feature. |
-| TD-049 | TD-050 *(conditional)* | Only hard if TD-050's `ARTIFACT_REV` guard ships as a workflow step inside the TD-049 CI baseline. If TD-050 lands as a standalone script, no dep. See the soft-dep row below for the combined case. |
 
 ## Soft dependencies (file overlap — sequence to avoid conflicts)
 
 | Items | Shared surface | Recommended order |
 |-------|----------------|-------------------|
 | TD-065 | `frontend/src/App.jsx` | App.jsx is a hotspot. TD-060 / TD-061 / TD-062 / TD-063 landed 2026-05-24. |
-| TD-050 / TD-049 | release pipeline ↔ CI | TD-049's CI baseline can host TD-050's `ARTIFACT_REV` guard check as a workflow step. Land TD-049 first if combining them. |
 
 ## Parallel-safe lanes
 
@@ -51,7 +49,7 @@ Within each wave, items in the same row can run in different sessions without co
 | Wave | Parallel-safe set | Notes |
 |------|-------------------|-------|
 | 0 | TD-045 | TD-046 + TD-047 resolved 2026-05-24; TD-045 remains as the lone Wave 0 item. |
-| 1 | TD-048, TD-049, TD-050, TD-051 | TD-051 is human-driven (device + key access); the other three are code-light. |
+| 1 | TD-051 | TD-048 + TD-049 + TD-050 resolved 2026-05-24; TD-051 is human-driven (device + key + Railway-deploy access). |
 | 2 | — | All Wave 2 items resolved 2026-05-24. |
 | 3 | — | All Wave 3 items landed 2026-05-24. |
 | 4 | — | TD-067 landed 2026-05-24. |
@@ -86,9 +84,9 @@ Optional polish, no deps. The catalog itself says "skip unless `App.css` crosses
 
 If you're picking up the next chunk and don't want to think about deps, any of these can start immediately. The buckets are cross-cutting (priority × session-shape), not mutually exclusive — pick the row that matches the session you have.
 
-- **🔴 High, fast:** TD-045 (LICENSE), TD-050 (artifact pipeline guardrails).
-- **🔴 High, deeper:** TD-053 (walking.py correctness — unlocks TD-054), TD-051 (PV burn-down — unlocks Multi-City; **human-driven**, needs device + LocationIQ key access).
-- **Standalone (any priority, no coordination needed):** TD-045, TD-067 (security headers), TD-069 (structured logging), TD-070 (DR runbook), TD-071 (localStorage versioning).
+- **🔴 High, fast:** TD-045 (LICENSE).
+- **🔴 High, deeper:** TD-051 (PV burn-down — unlocks Multi-City; **human-driven**, needs device + LocationIQ key access).
+- **Standalone (any priority, no coordination needed):** TD-045.
 
 ## Chunk completion checklist
 

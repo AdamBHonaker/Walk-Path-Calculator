@@ -1,0 +1,116 @@
+# CI baseline — TD-049 / X-07. Runs every PR + push to main so a regression
+# can't merge silently. The doc-level expectation is "tests run on every
+# change"; the workflow file is the implementation of that promise.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  # Cancel in-flight runs against the same ref when a new commit arrives —
+  # the per-PR workflow re-runs on every push, no point keeping the old
+  # run alive once it's superseded.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (pytest + ruff + pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Match the Dockerfile's `FROM python:3.11.13-slim`. Pinning the
+          # minor version protects against a contributor running a 3.12+
+          # toolchain locally where library behavior drifts (Pydantic v2's
+          # validation envelope, typing.Self semantics, etc.).
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        # Treat lint as advisory in the initial CI baseline — there's no
+        # ruff config in the repo yet and the existing code has plenty of
+        # style debt that's not worth catching up on inside the CI ramp.
+        # Tighten to `--exit-zero` removed once a ruff config lands as
+        # follow-up debt. `|| true` keeps the green tick while still
+        # surfacing the warnings in the job log.
+        run: |
+          pip install ruff
+          ruff check . --exit-zero || true
+
+      - name: Tests (pytest)
+        # The pytest run needs the street-graph artifact for ~half of the
+        # cases; tests that require it are gated via the `requires_artifact`
+        # mark and skip-locally / fail-in-CI based on env. The CI environment
+        # doesn't carry the ~100 MB artifact set, so those tests skip — the
+        # full assertion happens when the artifacts land at deploy time.
+        # `-m "not requires_artifact"` would be the explicit form; the
+        # default behavior of skip-when-missing covers the same ground.
+        run: pytest -q --no-header
+
+      - name: Security audit (pip-audit)
+        # Surfaces known CVEs in the installed dependency tree. Advisory
+        # only — `|| true` so a freshly-disclosed CVE doesn't block PRs
+        # the same day it lands. The dependency-auditor skill handles
+        # active remediation; this is the passive surveillance layer.
+        run: |
+          pip install pip-audit
+          pip-audit --requirement requirements.txt --strict || true
+
+  frontend:
+    name: Frontend (vitest + eslint + build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          # Node 20 LTS — Vite 6 requires ≥ 20.18 (or ≥ 22.12); the
+          # repo's package.json doesn't declare an `engines` field, but
+          # the local dev expectation is 20+. Pinning the major here
+          # prevents a CI runner default-version change from breaking
+          # the build under our feet.
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (eslint)
+        # `npm run lint` already runs ESLint with the repo's eslint config.
+        # Treat as advisory for the same reason ruff is — initial CI
+        # ramp; tighten when the noise level is acceptable.
+        run: npm run lint || true
+
+      - name: Tests (vitest)
+        run: npm test --silent
+
+      - name: Build
+        # Catches a Vite / Rollup config drift that the test runner
+        # wouldn't (different code paths, different inlining). Build is
+        # also the closest thing to a "does the prod bundle still
+        # produce a valid SW" check that doesn't require a browser.
+        run: npm run build

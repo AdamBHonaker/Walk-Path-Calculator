@@ -19,14 +19,14 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 | Wave | TD entries | Theme | Parallel-safe? |
 |------|------------|-------|----------------|
 | 0 | TD-045 | Repo basics & docs | Standalone now (TD-046 / -047 resolved) |
-| 1 | TD-048 / -049 / -050 / -051 | Operational hardening | Yes; TD-051 (PV burn-down) is human-driven |
+| 1 | TD-051 | Operational hardening | Human-driven (TD-048 / -049 / -050 resolved 2026-05-24) |
 | 2 | — | All Wave 2 items resolved 2026-05-24. |
 | 3 | TD-060 → TD-066 | Frontend correctness + UX | TD-061 + TD-062 both touch App.jsx — keep in lockstep |
 | 4 | TD-067 | Security headers + input validation | Standalone |
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
 | 6 | TD-072 (+ TD-032, TD-034, TD-044) | Polish / paused | Optional |
 
-**Audit priorities at a glance** — 12 High items concentrated in: PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045). Most other items are 🟡 Medium or 🟢 Low.
+**Audit priorities at a glance** — 12 High items concentrated in: PV burn-down (TD-051), missing LICENSE (TD-045). Most other items are 🟡 Medium or 🟢 Low.
 
 ---
 
@@ -43,55 +43,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
   - Move data-source attribution into a separate `ATTRIBUTION.md` so the license file stays clean.
   - Codify the commit-prefix + PR-flow conventions already followed in practice; include "test required before merge" expectation.
 - **Acceptance**: GitHub renders the license badge; `CONTRIBUTING.md` is linked from README; `ATTRIBUTION.md` satisfies each upstream data source's license requirements.
-
----
-
-### TD-048 · CHUNK-04 · `railway.toml` + Railway env-var doc
-- **Files (potentially new)**: `railway.toml`, `docs/RAILWAY.md`, `backend/.env.example`
-- **Category**: Deployment configuration
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **X-11** — `backend/railway.toml` is minimal (per CLAUDE.md); Railway-required variables (`ARTIFACT_REV`, `STREET_GRAPH_SHA256`, `TRUSTED_PROXY_HOPS`, `LOCATIONIQ_API_KEY`, CDP creds) live only in the Railway dashboard.
-  - **X-24** — Audit pass-2 grep found no `railway.toml` at all; CLAUDE.md:78 documents it as present. Default Railway behavior (infer from Dockerfile, run `CMD`) is being relied upon.
-  - **X-12** — `backend/.env.example` documents runtime vars but doesn't mention build-time `STREET_GRAPH_SHA256` / `ARTIFACT_REV`.
-- **Description**: A new Railway deploy from a fresh fork can't succeed by reading the docs alone. Codify build/start/port/health-check + every Railway-only var.
-- **Scope**:
-  - Verify whether `railway.toml` exists; if not, create a minimal one (build cmd / start cmd / port / health check at `/health`).
-  - Document every Railway-only var in `docs/RAILWAY.md` with type + meaning.
-  - Split `.env.example` into "build-time only" and "runtime" sections.
-- **Acceptance**: A fresh fork-and-deploy succeeds by following `docs/RAILWAY.md` without operator out-of-band knowledge.
-
----
-
-### TD-049 · CHUNK-05 · GitHub Actions CI baseline
-- **Files (new)**: `.github/workflows/ci.yml`, optional `.github/dependabot.yml`
-- **Category**: CI / DevOps automation
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **X-07** — No `.github/workflows/` directory exists. Tests are documented (pytest, vitest) but there's no automation to run them on PRs; recent merges show no check-status context.
-- **Description**: Tests run locally only. A PR could merge with breaking tests and no one would know until the next manual run.
-- **Scope**:
-  - Workflow runs `pytest backend/tests/` and `npm test --prefix frontend` on every PR and push to `main`.
-  - Add `pip-audit` (or Dependabot) for backend, and a lint step (`ruff` + `eslint`).
-  - Pin Python (3.11) and Node (18 LTS) versions explicitly.
-- **Acceptance**: Open a throwaway PR; CI runs green; intentionally break a test and confirm CI fails the PR.
-
----
-
-### TD-050 · CHUNK-06 · Artifact pipeline guard rails
-- **Files**: `backend/Dockerfile`, new `docs/Release.md` or CLAUDE.md update
-- **Category**: Release operations
-- **Priority**: 🔴 High
-- **Findings**:
-  - **X-08** — Artifact refresh runbook (CLAUDE.md:424-514) is fully manual: rebuild `.pkl`, recompute SHA-256, upload to GitHub release, bump `ARTIFACT_REV`, rotate `STREET_GRAPH_SHA256`. Forgetting `ARTIFACT_REV` ships stale bytes (BuildKit layer cache).
-  - **X-23** — `backend/Dockerfile:50` `ARTIFACT_REV=2026-05-20`; recent commits (Divvy + Landmarks ingest on 2026-05-21) modify `places_curated.json`. If assets were re-uploaded without a bump, production has stale data.
-- **Description**: The runbook works but has no safety net. A pre-deploy guard + better docs + (optionally) an automation script would close the gap.
-- **Scope**:
-  - Add a build-time check that fails fast if `STREET_GRAPH_SHA256` is empty when `ARTIFACT_REV` looks recent.
-  - Verify whether the 2026-05-21/22 ingest commits required an `ARTIFACT_REV` bump; bump if so.
-  - Crisper operator workflow in a dedicated `docs/Release.md` (or expanded CLAUDE.md section).
-  - Optional: a GitHub Action that re-bakes `.pkl` and opens a PR with the bumped `ARTIFACT_REV` + new hash.
-- **Acceptance**: Manually rotate `ARTIFACT_REV` without rotating the hash → build fails fast with a clear message.
 
 ---
 

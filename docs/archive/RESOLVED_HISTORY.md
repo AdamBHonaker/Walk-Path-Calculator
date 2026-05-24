@@ -1071,6 +1071,47 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Wave 1 operational hardening — Railway docs + CI + artifact guard (TD-048 + TD-049 + TD-050)
+
+**Files:** new `docs/RAILWAY.md`, new `docs/Release.md`, new `.github/workflows/ci.yml`, new `.github/dependabot.yml`, `backend/railway.toml`, `backend/.env.example`, `backend/Dockerfile`.
+
+**Priority:** 🟡 Medium (TD-048, TD-049) / 🔴 High (TD-050).
+
+**What the debt was:** Three operational gaps in the deploy + CI surface. **TD-048** — Railway service config + env-var contract lived only in the dashboard; a fresh fork-and-deploy would fail without out-of-band knowledge. **TD-049** — no `.github/workflows/` directory; PRs could merge with broken tests because nothing ran them automatically. **TD-050** — the artifact refresh runbook was fully manual + had no safety net; forgetting `ARTIFACT_REV` after re-uploading the release assets would ship stale bytes silently (BuildKit layer-cache hit on the unchanged `RUN curl ...` command).
+
+**How it was resolved:**
+
+#### TD-048 (Railway env-var doc)
+
+- **[`backend/railway.toml`](../../backend/railway.toml)** expanded from the 3-line minimum to declare `healthcheckPath = "/health"`, `healthcheckTimeout = 90` (matches the worst-case lifespan warm-up), and a capped `restartPolicyMaxRetries = 10` so a crash loop stops instead of churning the compute budget.
+- **New [`docs/RAILWAY.md`](../../docs/RAILWAY.md)** is the operator-facing reference: tables for build-time vs runtime vars, first-deploy checklist, troubleshooting for the common "deploy hangs at 502" + "SHA-256 mismatch" failure modes, cost notes for the per-worker pickle footprint.
+- **[`backend/.env.example`](../../backend/.env.example)** reorganized into clear sections — **build-time only** (read by the Dockerfile, baked into the image), **runtime — public-facing**, **runtime — operational toggles**, **dev-only (never in production)**, **ingestion-only**. No vars renamed; no vars added/removed; the file structure makes the build-vs-runtime distinction legible for the first time.
+
+#### TD-049 (CI baseline)
+
+- **[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)** runs on every PR + push to main. Two parallel jobs:
+  - `backend`: Python 3.11 (matches Dockerfile pin) → pip install requirements-dev → ruff (advisory, no config yet) → `pytest -q` → pip-audit (advisory).
+  - `frontend`: Node 20 LTS (Vite 6 requires ≥ 20.18) → `npm ci` → `npm run lint` (advisory) → `npm test --silent` → `npm run build` (catches Vite/Rollup config drift the test runner misses).
+  - `concurrency: cancel-in-progress` so a new push supersedes the in-flight run instead of stacking.
+  - 15-minute timeout per job — both stacks currently run in ~3-4 min, the cap is a runaway-test safety net.
+- **[`.github/dependabot.yml`](../../.github/dependabot.yml)** — weekly cadence for pip + npm, monthly for GitHub Actions. `patch + minor` grouped into one PR per ecosystem; majors stay independent (React / FastAPI / Pydantic / Vite excluded from grouping). 5-PR cap per ecosystem.
+
+#### TD-050 (artifact pipeline guardrail)
+
+- **[`backend/Dockerfile`](../../backend/Dockerfile)** guard. Previously the `RUN` block warned + proceeded when `STREET_GRAPH_SHA256` was empty — fine for dev, dangerous when paired with a fresh `ARTIFACT_REV` bump (which signals "I just re-uploaded the release assets"). The new guard fails the build with a clear message in that case, with `ARTIFACT_REV=local-dev` as the explicit opt-out for unverified dev builds.
+- **`ARTIFACT_REV` bumped to `2026-05-24`** — the 2026-05-23 value predates the Wave 2-5 work that's now landed in `main`, so a Railway redeploy without the bump would have BuildKit-cached the old artifact-fetch layer.
+- **New [`docs/Release.md`](../../docs/Release.md)** documents the full operator workflow: rebuild → SHA capture → test → upload → atomic Railway-vars rotation → deploy → verify. Includes a guard-rails table mapping each failure mode to where it's caught + a rollback procedure.
+
+**Acceptance:**
+
+- TD-048: a fresh fork can reach a working deploy by following `docs/RAILWAY.md` end-to-end. Operators no longer need dashboard archaeology to find the variable contract.
+- TD-049: CI workflow exists; will run on the next push. Validating it requires a GitHub Actions run (not reproducible from the sandbox).
+- TD-050: `docker build --build-arg ARTIFACT_REV=2026-05-25 .` without `STREET_GRAPH_SHA256` will now fail with the catalog's required message: `ERROR: STREET_GRAPH_SHA256 is empty but ARTIFACT_REV=2026-05-25`.
+
+**Wave 1 status:** TD-051 (PV burn-down) remains, but it's not autonomously progressable — it needs real iPhone + Android devices, a live LocationIQ key, and a real Railway deploy with operator credentials. Each PV item's classifier in [`Pending_Verification.md`](../../docs/Pending_Verification.md) documents what's required.
+
+---
+
 ### 2026-05-24 · Backend test coverage gaps — geocoding cascade + redaction (TD-059)
 
 **Files:** new `backend/tests/test_geocoding_cascade.py`, new `backend/tests/test_redaction.py`, `backend/tests/test_explore_perf.py`.

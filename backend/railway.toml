@@ -1,3 +1,24 @@
+# Railway service config — TD-048 codified the deploy contract here so a
+# fresh fork doesn't have to reconstruct it by reading the Dockerfile +
+# guessing at Railway's defaults. Companion doc: ../docs/RAILWAY.md.
+
 [build]
 builder = "dockerfile"
 dockerfilePath = "Dockerfile"
+
+[deploy]
+# /health returns {"status": "ok"} once the lifespan handler has finished
+# loading the street graph + warming the heatmap STRtrees. The 90s timeout
+# matches the worst-case cold-start path (graph deserialization + STRtree
+# build on a fresh container) so the orchestrator doesn't kill a healthy
+# instance mid-warmup. Path matches the FastAPI route in main.py.
+healthcheckPath = "/health"
+healthcheckTimeout = 90
+
+# Restart on non-zero exit so a transient crash (OOM during a heatmap clip,
+# external service disconnect, etc.) self-heals. Capped retries prevent a
+# crash-loop from burning the Railway plan's compute budget — after 10
+# failures the service stops + the dashboard surfaces a clear status to
+# the operator instead of churning silently.
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
