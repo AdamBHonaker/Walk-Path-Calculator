@@ -101,7 +101,22 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.js"],
   },
   plugins: [
-    react(),
+    // TD-034: opt into the React Compiler (auto-memoization, available with
+    // React 19). `compilationMode: "infer"` is the default — the compiler
+    // analyzes each component and only emits memoization where it's safe.
+    // Components that hit unsafe patterns (mutation, deps that don't match
+    // the rules of hooks) are skipped silently with a build-time log.
+    //
+    // We keep the existing hand-written `useMemo` / `useCallback` calls in
+    // place; the compiler is additive, not a replacement. A future cleanup
+    // pass can audit which ones the compiler made redundant — that work
+    // is tracked as a follow-up if measurements justify it. For now: opt
+    // in and let the compiler optimize what it can.
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", {}]],
+      },
+    }),
     cspPlugin(),
     VitePWA({
       // "prompt" (not "autoUpdate") so a new SW doesn't silently skipWaiting +

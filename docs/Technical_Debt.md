@@ -183,6 +183,8 @@ A handful of audit "Confirms / clean" notes were positive findings (lazy-loading
 
   Opt-in requires: install `babel-plugin-react-compiler`, wire it into `@vitejs/plugin-react`'s `babel.plugins`, decide on `compilationMode` (`"infer"` is the default), run the suite, then audit for behavior changes around `useEffect` deps and ref identity. The compiler has known edge cases with non-idiomatic patterns; the audit is not trivial.
 
+- **Progress (2026-05-24 — autonomous run):** Compiler opt-in landed. `babel-plugin-react-compiler@^1.0.0` installed, wired into `@vitejs/plugin-react`'s babel.plugins with the default `"infer"` compilation mode. Tests: **474 / 474** still passing (no behavioral regressions in the test surface). Bundle impact: main `index` chunk **120.30 KB / 37.46 KB gz → 140.57 KB / 45.34 KB gz** (+20 KB / +8 KB gz from the compiler-injected memoization runtime). Build time **+5 s** in the transform phase (compiler analysis). Browser behavioral verification (route draw-in, map effects, share PNG, sheet drag — same surfaces as TD-032 chunks 5/6/7) is **PENDING USER**; same go/no-go gate as TD-032's chunks 5-7. If anything regresses, roll back by removing the `babel.plugins` entry in [vite.config.js](frontend/vite.config.js) — leaves React 19 intact.
+
 - **Verification when resolved**: Compiler enabled in `vite.config.js`, full test suite green, no behavioral regressions in the surfaces listed in TD-032's risk assessment (route draw-in, map layer effects, share PNG export, sheet drag). Note any bundle-size or runtime wins in the resolution entry.
 
 ---
