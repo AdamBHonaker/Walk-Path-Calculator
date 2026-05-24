@@ -1071,6 +1071,24 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Frontend micro-perf — mapPadding rAF coalesce + theme MutationObserver retired (TD-065)
+
+**Files:** `frontend/src/lib/theme.js`, `frontend/src/App.jsx`, `frontend/src/map/MapExploreLayer.jsx`.
+
+**Priority:** 🟢 Low.
+
+**What the debt was:** Two latent (not user-visible today) perf concerns that the catalog flagged as opportunistic. The bottom-sheet drag emitted `onObscuredChange` on every native pointermove sample (~60+ Hz), each call creating a new `mapPadding` object and forcing a setState that propagated through MapLibre's transform engine to recompute padding offsets per frame (F-19). `MapExploreLayer` learned about Cream / Dusk theme flips via a `MutationObserver` on `<html>`'s `class` attribute, bumping a `themeVersion` counter to invalidate paint-color memos — a lot of DOM-observation machinery for "did the theme change?" that coupled the paint layer to the side-effect of `applyTheme` writing to a class instead of a direct subscription (F-08).
+
+**How it was resolved:**
+
+- **rAF coalesce in `handleObscuredChange` ([App.jsx](../../frontend/src/App.jsx)).** Two new refs (`padRafTokenRef`, `pendingPadBottomRef`) collapse multiple pointermove samples within one paint frame into a single `setMapPadding` call. Trailing pointer value wins; clean-up on unmount cancels any pending RAF. The leading-edge guard (`if (padRafTokenRef.current !== null) return`) is what dedupes within a frame.
+- **`useTheme()` subscription in [lib/theme.js](../../frontend/src/lib/theme.js).** Added a module-level `_subscribers` set and a `useTheme()` hook backed by `useSyncExternalStore`. `applyTheme` is the single write path — it notifies every subscriber after the class flip. Tearing across concurrent rendering is impossible because `useSyncExternalStore` guarantees the render-time snapshot matches what subscribers observe.
+- **MapExploreLayer pivots from MutationObserver to `useTheme`.** The 17-line observer block (including OPT-060's rAF batching) collapses to a single `const themeVersion = useTheme()` call. The downstream `placeExpressions` memo's `[categoryStyles, themeVersion]` deps and the paint-update effect's `[themeVersion]` deps are unchanged — `themeVersion` is now a string ("cream"|"dusk") instead of an integer counter, but its only consumers compare-by-reference for invalidation, which works identically.
+
+**Acceptance:** `npm test` → **470 passed (470)** in 19s. The MapExploreLayer no longer registers a `MutationObserver`; the sheet drag drives `setMapPadding` at most once per animation frame.
+
+---
+
 ### 2026-05-24 · Frontend hygiene pass — MAX_STOPS dedupe + magic-number docs + reseedLocalInputs name (TD-064)
 
 **Files:** `frontend/src/lib/recentSearches.js`, `frontend/src/mapHelpers.js`, `frontend/src/hooks/useTurnCoords.js`, `frontend/src/components/PersonalizeModal.jsx`.

@@ -259,21 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-065 · CHUNK-21 · Frontend performance micro-optimizations
-- **Files**: `frontend/src/App.jsx`, `frontend/src/map/MapExploreLayer.jsx`
-- **Category**: Performance
-- **Priority**: 🟢 Low
-- **Findings**:
-  - **F-19** — `mapPadding` recomputed on every pointermove during sheet drag (`App.jsx:364-371`); new object per frame.
-  - **F-08** — `MapExploreLayer` detects theme flips via MutationObserver on `<html>` class; couples paint layer to a specific DOM side-effect.
-- **Description**: Both are latent (not user-visible today); fix when the area is being edited anyway.
-- **Scope**:
-  - Debounce / rAF the `mapPadding` updates (e.g., schedule via `requestAnimationFrame`, drop duplicates).
-  - Pass `themeVersion` (or theme identifier) as a prop down from App; remove the MutationObserver.
-- **Acceptance**: Drag the mobile sheet — confirm < 60 mapPadding updates / sec in profiler; theme flip — confirm MutationObserver no longer registered.
-
----
-
 ### TD-066 · CHUNK-22 · PWA / service worker / screenshot resilience
 - **Files**: `frontend/vite.config.js`, optionally `frontend/public/manifest.webmanifest`, `frontend/src/hooks/useShareCard.js`, `frontend/src/App.jsx`
 - **Category**: PWA / resilience

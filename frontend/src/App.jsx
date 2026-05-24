@@ -415,13 +415,37 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickMode, isMobile]);
 
+  // TD-065 / F-19: the sheet's pointermove drag streams `onObscuredChange`
+  // callbacks at native pointer-event rate (60+ Hz on most hardware). Each
+  // call previously created a new `mapPadding` object and forced a setState,
+  // which propagated through `MapView`'s `fitBounds` invocations and forced
+  // MapLibre's transform engine to recompute padding offsets per frame.
+  // Coalesce via a single rAF token — multiple pointermove samples within
+  // one paint frame collapse into one `setMapPadding` call. The leading
+  // value (first sample of the frame) wins so the trailing position is
+  // already settled by the time the next frame paints.
+  const padRafTokenRef = useRef(null);
+  const pendingPadBottomRef = useRef(null);
   const handleObscuredChange = useCallback((bottomPx) => {
-    setMapPadding({
-      top: 80,
-      bottom: bottomPx + 16,
-      left: 16,
-      right: 16,
+    pendingPadBottomRef.current = bottomPx;
+    if (padRafTokenRef.current !== null) return; // already scheduled this frame
+    padRafTokenRef.current = requestAnimationFrame(() => {
+      padRafTokenRef.current = null;
+      const bottom = pendingPadBottomRef.current;
+      if (bottom == null) return;
+      setMapPadding({
+        top: 80,
+        bottom: bottom + 16,
+        left: 16,
+        right: 16,
+      });
     });
+  }, []);
+  useEffect(() => () => {
+    if (padRafTokenRef.current !== null) {
+      cancelAnimationFrame(padRafTokenRef.current);
+      padRafTokenRef.current = null;
+    }
   }, []);
 
   // Overlay the active flavor's per-route fields onto top-level metadata

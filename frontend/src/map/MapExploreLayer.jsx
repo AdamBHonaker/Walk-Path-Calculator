@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import maplibregl from "maplibre-gl";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
@@ -13,6 +13,7 @@ import {
   EXPLORE_STROKE_COLOR,
   CANOPY_BAND_COLORS,
 } from "../mapHelpers.js";
+import { useTheme } from "../lib/theme.js";
 
 // Defer `fn` until the MapLibre style is loaded. Returns a cleanup
 // callback. The per-source render effects each call this so a freshly-
@@ -72,37 +73,16 @@ export function MapExploreLayer({
   // (category filter, heatmap toggle).
   const prevExploreResultRef = useRef(null);
 
-  // Theme observer: Wayfarer's Cream / Dusk swap is a class flip on
-  // `<html>` (e.g. `theme-dusk`). Pin colors come from CSS-var tokens
-  // that resolve differently per theme, so we bump a counter on each
-  // class mutation and feed it into `placeExpressions`' deps. The
-  // colors-only effect below then re-applies the new hex via
-  // `setPaintProperty` without re-tiling the supercluster source.
-  //
-  // OPT-060 — the observer can fire multiple class mutations for a single
-  // user-triggered theme toggle (React batches the `<html>` class write
-  // into two layout flushes when it co-occurs with another setState),
-  // which used to fan out into two `setThemeVersion` bumps and two
-  // MapLibre paint updates. Gate the callback with a single rAF token so
-  // any number of coalesced class mutations collapse into one bump per
-  // animation frame.
-  const [themeVersion, setThemeVersion] = useState(0);
-  useEffect(() => {
-    if (typeof window === "undefined" || !document?.documentElement) return;
-    let rafToken = null;
-    const obs = new MutationObserver(() => {
-      if (rafToken !== null) return; // already scheduled this frame
-      rafToken = requestAnimationFrame(() => {
-        rafToken = null;
-        setThemeVersion(v => v + 1);
-      });
-    });
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
-    return () => {
-      if (rafToken !== null) cancelAnimationFrame(rafToken);
-      obs.disconnect();
-    };
-  }, []);
+  // TD-065 / F-08: the prior implementation observed Wayfarer's Cream / Dusk
+  // swap via a MutationObserver on the `<html>` `class` attribute, then
+  // bumped a `themeVersion` state counter to invalidate paint-color memos.
+  // This worked but coupled the paint layer to a DOM side-effect — any
+  // unrelated `<html>` class mutation would trip the observer, and the
+  // observer + rAF batching layer was a lot of machinery for "did the
+  // theme change?". The replacement: `useTheme()` subscribes to the
+  // module-level publisher in `lib/theme.js`, which `applyTheme` notifies
+  // synchronously. One write path, no DOM observation, no batching needed.
+  const themeVersion = useTheme();
 
   // Build the GeoJSON FeatureCollection for the pin source from the
   // /explore response, filtered by the user's category/sub selection.
