@@ -949,7 +949,7 @@ export default function App() {
           <div className="explore-no-area" role="note">
             <strong>No reachable area from here.</strong>
             <span>
-              That spot doesn't connect to enough of the pedestrian network to
+              That spot doesn&apos;t connect to enough of the pedestrian network to
               survey. Try a community area, or pick a different point.
             </span>
           </div>

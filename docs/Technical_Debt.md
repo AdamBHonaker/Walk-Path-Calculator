@@ -159,6 +159,11 @@ A handful of audit "Confirms / clean" notes were positive findings (lazy-loading
 
 - **Suggested Improvement**: Run the eight chunks above sequentially, pausing for explicit go/no-go between each. Chunks 1–6 are doable in one session; Chunks 7–8 require user device access and a separate sitting. No need to bump `@vitejs/plugin-react`, `vite`, or `@testing-library/react`.
 
+- **Progress (2026-05-24 — autonomous run):**
+  - **Chunks 1-3 complete.** React + react-dom bumped to `^19.2.6`. `npm test` → **474 / 474 passing** (no regressions vs. the pre-bump baseline). `npm run build` → bundle sizes within tolerance (maplibre chunk ~1,055 KB / 285 KB gz, index ~120 KB / 37 KB gz — same as pre-bump). Lint sweep surfaced 3 errors and 27 warnings; the 3 errors fixed in this commit (two `process.env.NODE_ENV` references swapped to Vite's `import.meta.env.DEV`, one JSX `doesn't` → `doesn&apos;t`). No React-19-specific deprecation warnings — the predicted `forwardRef` warning on [ShareDispatch.jsx:28](frontend/src/components/ShareDispatch.jsx#L28) did NOT fire (React 19.2's `forwardRef` is still supported and the eslint config doesn't flag it).
+  - **Chunk 4 skipped per the locked decision above.** No follow-up TD opened — the forwardRef warning didn't fire.
+  - **Chunks 5, 6, 7 PENDING USER VERIFICATION.** Chunks 5 (desktop dev smoke) and 6 (effect-timing spot-checks) need a running browser; chunk 7 needs real iPhone + Android. User to run `npm run dev` for chunks 5-6, then `npm run dev:tunnel` for chunk 7. Per the locked decision the assistant handles chunk 8 (docs + this entry's deletion) after user sign-off.
+
 - **Decisions locked 2026-05-12 (pre-Chunk-2 pause — Chunk 1 ran, work paused before bump):**
   - **Version pin:** `^19.2.0` (latest minor as of 2026-05-12 is `19.2.6`). Mirrors the current `^18.3.1` pinning style. Chunk 2 install command becomes `npm install react@^19.2.0 react-dom@^19.2.0`.
   - **Isolation:** Work straight on `main`, no branch/worktree. Rollback via `git restore frontend/package.json frontend/package-lock.json && npm install` if needed.

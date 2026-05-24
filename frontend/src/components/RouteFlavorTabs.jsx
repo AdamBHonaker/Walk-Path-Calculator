@@ -20,7 +20,10 @@ const FLAVOR_META = {
 // emits. If they ever drift, lint with eslint-no-unused-vars catches the
 // orphan; this assertion catches the inverse (backend adds a flavor we
 // forgot to render).
-if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
+// Vite's standard build-time mode flag (replaces Node's `process.env.NODE_ENV`
+// which doesn't exist in the browser bundle). DEV is true under `vite dev`
+// + `vitest run`, false under `vite build`.
+if (import.meta.env.DEV) {
   for (const flavor of FLAVORS) {
     if (!(flavor in FLAVOR_META)) {
       // eslint-disable-next-line no-console

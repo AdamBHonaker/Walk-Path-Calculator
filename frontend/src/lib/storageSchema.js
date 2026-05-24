@@ -86,8 +86,10 @@ export function runStorageMigrations() {
     if (typeof migration !== "function") {
       // Gap in the registry — fail loud in dev, give up gracefully in
       // prod. A gap means a maintainer bumped CURRENT_SCHEMA_VERSION
-      // without adding the matching migration entry.
-      if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
+      // without adding the matching migration entry. Uses Vite's
+      // `import.meta.env.DEV` rather than `process.env.NODE_ENV` because
+      // the browser bundle doesn't define `process`.
+      if (import.meta.env.DEV) {
         // eslint-disable-next-line no-console
         console.warn(
           `[storageSchema] no migration registered for v${current} → v${current + 1}; ` +
