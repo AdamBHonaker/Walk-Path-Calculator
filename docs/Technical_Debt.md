@@ -259,22 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-069 · CHUNK-25 · Structured logging + observability
-- **Files**: `backend/requirements.txt`, `backend/main.py`, `backend/walking.py`, `backend/geocoding.py`
-- **Category**: Observability
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **X-17** — Backend uses default uvicorn text logs to stdout; no JSON / structured logging, no APM, no request correlation IDs, no custom metrics (route compute time, cache hit rate, LocationIQ call count).
-- **Description**: Debugging prod is currently blind. Structured logging unblocks log aggregation and alerting; an optional Sentry tier handles error tracking.
-- **Scope**:
-  - Add `structlog` (or `python-json-logger`) to `requirements.txt`.
-  - Emit JSON logs with `request_id`, `endpoint`, `latency_ms`, `flavor`, `cache_hit`.
-  - Wire FastAPI's logging config to route through the new structured logger.
-  - Optional: Sentry SDK behind a `SENTRY_DSN` env var.
-- **Acceptance**: uvicorn logs are valid JSON parseable by `jq`; a synthetic error reaches Sentry (if configured).
-
----
-
 ### TD-070 · CHUNK-26 · Backup / disaster-recovery runbook
 - **Files**: `CLAUDE.md`, optional new `docs/DR.md`
 - **Category**: Disaster recovery

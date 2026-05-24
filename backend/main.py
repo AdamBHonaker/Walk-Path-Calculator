@@ -1,8 +1,43 @@
 import asyncio
 import logging
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+
+
+# TD-069: structured logging opt-in. Set STRUCTURED_LOGS=true (or
+# anything in {"1", "true", "yes"}) to swap the root logger's handler
+# from uvicorn's default text formatter to python-json-logger's JSON
+# formatter. Every existing `logger.warning(...)` call works unchanged
+# — only the rendered line format flips. JSON lines are parseable by
+# `jq` directly and ingestable by every log aggregator that speaks
+# JSON-lines (Datadog, Loki, CloudWatch, etc.).
+def _configure_structured_logging() -> None:
+    if os.getenv("STRUCTURED_LOGS", "").lower() not in ("1", "true", "yes"):
+        return
+    try:
+        from pythonjsonlogger import jsonlogger
+    except ImportError:  # pragma: no cover — opt-in dep
+        logging.getLogger(__name__).warning(
+            "STRUCTURED_LOGS=true but python-json-logger not installed — "
+            "falling back to text logs.",
+        )
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(jsonlogger.JsonFormatter(
+        "%(asctime)s %(name)s %(levelname)s %(message)s",
+        rename_fields={"asctime": "ts", "levelname": "level", "name": "logger"},
+    ))
+    root = logging.getLogger()
+    # Replace existing handlers — uvicorn installs its own at startup and
+    # double-logging is noisy.
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
+_configure_structured_logging()
 
 logger = logging.getLogger(__name__)
 
@@ -279,6 +314,24 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # before paying the inner-middleware cost. The IP-stash middleware is
 # innermost so `request.state.client_ip` is set just before the route handler
 # (and its `@limiter.limit(...)` decorator) reads it.
+
+
+@app.middleware("http")
+async def stash_request_id(request: Request, call_next):
+    """TD-069: every request gets a uuid4 `request_id` for log correlation.
+    Honors an incoming `X-Request-Id` header so a reverse proxy or upstream
+    service can pin its own ID; otherwise we generate one. The ID is
+    available to handlers via `request.state.request_id` and echoed in the
+    response's `X-Request-Id` header so client logs can correlate too.
+    """
+    incoming = request.headers.get("x-request-id", "").strip()
+    # Cap incoming IDs to avoid log poisoning via gigantic headers. Standard
+    # uuid4 hex is 36 chars; allow some slack for prefixed formats.
+    request_id = incoming[:128] if 0 < len(incoming) <= 128 else uuid.uuid4().hex
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = request_id
+    return response
 
 
 @app.middleware("http")

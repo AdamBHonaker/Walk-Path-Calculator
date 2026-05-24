@@ -8,3 +8,9 @@ shapely>=2.0,<3.0
 requests==2.33.0
 orjson>=3.10,<4.0
 slowapi>=0.1.9,<1.0
+# TD-069: JSON-formatted logs in production (opt-in via STRUCTURED_LOGS=true).
+# python-json-logger is a thin Formatter on top of stdlib logging — every
+# existing `logger.warning(...)` call works unchanged; only the rendered
+# line format changes. Picked over structlog to avoid touching every log
+# site in the codebase.
+python-json-logger>=2.0,<4.0

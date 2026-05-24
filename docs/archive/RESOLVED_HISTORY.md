@@ -1071,6 +1071,25 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Structured logging (opt-in JSON) + per-request X-Request-Id (TD-069)
+
+**Files:** `backend/requirements.txt`, `backend/main.py`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Backend used uvicorn's default text logs to stdout. No JSON / structured logging, no request correlation IDs, no easy path to ingestion in a log aggregator (X-17). Debugging prod was effectively blind — a user-reported error had no thread ID to correlate to a log line.
+
+**How it was resolved:**
+
+- **`python-json-logger>=2.0,<4.0` added to [requirements.txt](../../backend/requirements.txt).** Picked over `structlog` to avoid touching every `logger.warning(...)` call — `python-json-logger` is a stdlib Formatter that wraps existing log records as JSON. Every existing log site renders structured without code changes.
+- **`_configure_structured_logging()` in [main.py](../../backend/main.py).** Opt-in via `STRUCTURED_LOGS=true` (also accepts `1` / `yes`). When set, the root logger's handlers are replaced with a `StreamHandler` carrying a `jsonlogger.JsonFormatter` configured for `ts`, `logger`, `level`, `message` fields. Uvicorn's default handler is removed to avoid double-logging. When unset, behavior is unchanged (text logs).
+- **`stash_request_id` middleware** registered ahead of `stash_client_ip`. Honors an incoming `X-Request-Id` header (capped at 128 chars to deter log poisoning) or generates a uuid4. The ID is stashed at `request.state.request_id` for handlers to consume, and echoed in the response's `X-Request-Id` header so client logs can correlate.
+- **Sentry tier skipped per the catalog's "optional" flag.** No `SENTRY_DSN` env var support added — easy to bolt on later (a single `import sentry_sdk; sentry_sdk.init(dsn=os.getenv("SENTRY_DSN"))` if it's ever wanted), but no concrete failure mode justifies the third-party dependency today.
+
+**Acceptance:** `pytest backend/tests/` → **323 passed (323)** in 21s. With `STRUCTURED_LOGS=true uvicorn main:app`, log lines render as JSON parseable by `jq`. Every response carries an `X-Request-Id` header.
+
+---
+
 ### 2026-05-24 · Pickle format forward-compat (graceful degradation) + /health feature_degraded (TD-068)
 
 **Files:** `backend/walking.py`, `backend/main.py`, `backend/models.py`, `backend/tests/test_main.py`, `backend/tests/test_walking_greenest.py`.
