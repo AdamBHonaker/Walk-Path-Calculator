@@ -259,21 +259,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-070 · CHUNK-26 · Backup / disaster-recovery runbook
-- **Files**: `CLAUDE.md`, optional new `docs/DR.md`
-- **Category**: Disaster recovery
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **X-27** — No off-machine backup of `street_graph.graphml` (~314 MB, lives only on the developer machine) or `chicago_geocode.db` source ingest data (only on GitHub release). If GitHub releases are corrupted or the dev machine dies, an OSM re-fetch yields a drifted snapshot.
-- **Description**: Low-probability but high-impact. Document the recovery procedure even if automation is deferred.
-- **Scope**:
-  - Document an off-site backup procedure (encrypted bucket, archive branch with Git LFS, periodic upload to private storage) for the `.graphml` and the SQLite DB sources.
-  - Keep dated snapshots in cloud storage; rotate retention.
-  - Add a step-by-step "Disaster recovery" section to CLAUDE.md.
-- **Acceptance**: Test rebuild from documented backup procedure produces a byte-identical (or formally-equivalent) artifact.
-
----
-
 ### TD-071 · CHUNK-27 · localStorage schema versioning
 - **Files**: `frontend/src/lib/storage.js`, all `walkpath:*` consumers
 - **Category**: Frontend data migration

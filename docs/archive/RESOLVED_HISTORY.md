@@ -1071,6 +1071,28 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Disaster recovery runbook (TD-070)
+
+**Files:** new `docs/DR.md`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** No off-machine backup procedure documented for `street_graph.graphml` (~314 MB OSM snapshot, lives only on the developer machine) or `chicago_geocode.db` source ingest data (only on GitHub release). Low-probability but high-impact — if the GitHub release vanishes or the developer machine dies, an OSM re-fetch produces a drifted snapshot rather than a faithful recovery (X-27).
+
+**How it was resolved:**
+
+- **New [`docs/DR.md`](../../docs/DR.md)** documents three failure scenarios end-to-end: GitHub release corrupted/deleted, developer machine lost, `chicago_geocode.db` lost. Each scenario carries a checklist with concrete `gh release upload` / Railway env-var rotation steps.
+- **Inventory table** at the top maps every artifact to its size, current location, and reproducibility profile — so a future maintainer doing the recovery for the first time can see at a glance which pieces are bit-exact-recoverable and which (OSM) drift over time.
+- **Backup cadence recommendation** — graphml after every full re-fetch (~quarterly), `chicago_geocode.db` after every address-points rebuild. Other JSON artifacts are tracked in git and don't need separate backups.
+- **Annual dry-run reminder** — once a year, regenerate the pickle from a backup snapshot in a scratch directory and diff the SHA-256 against production. The only way to know the runbook still works before you need it.
+- **Printable inventory checklist** at the bottom — the "where do I start?" cheat sheet that lives off-machine so a recovery doesn't require booting the dev environment first.
+
+The runbook's location (`docs/DR.md`) parallels the existing `docs/RELEASE_RUNBOOK.md` — happy-path / unhappy-path siblings, linked from each other.
+
+**Acceptance:** Documentation-only chunk; no code touched. The catalog's acceptance ("test rebuild from documented backup procedure produces a byte-identical artifact") is testable but requires a deliberate scratch-rebuild — slotted as an annual exercise in the runbook itself.
+
+---
+
 ### 2026-05-24 · Structured logging (opt-in JSON) + per-request X-Request-Id (TD-069)
 
 **Files:** `backend/requirements.txt`, `backend/main.py`.
