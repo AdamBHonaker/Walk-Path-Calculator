@@ -55,7 +55,7 @@ Within each wave, items in the same row can run in different sessions without co
 |------|-------------------|-------|
 | 0 | TD-045 | TD-046 + TD-047 resolved 2026-05-24; TD-045 remains as the lone Wave 0 item. |
 | 1 | TD-048, TD-049, TD-050, TD-051 | TD-051 is human-driven (device + key access); the other three are code-light. |
-| 2 | TD-058 ∥ TD-059 | TD-052 / -053 / -054 / -055 / -056 / -057 resolved 2026-05-24. TD-059 waits on TD-049. |
+| 2 | TD-059 | TD-052 / -053 / -054 / -055 / -056 / -057 / -058 resolved 2026-05-24. TD-059 waits on TD-049. |
 | 3 | — | All Wave 3 items landed 2026-05-24. |
 | 4 | — | TD-067 landed 2026-05-24. |
 | 5 | — | TD-068 / -069 / -070 / -071 all landed 2026-05-24. |

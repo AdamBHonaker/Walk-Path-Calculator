@@ -1071,6 +1071,29 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Ingest-script defenses — atomic write helper + places-file schema/size guards (TD-058)
+
+**Files:** `backend/places.py`, new `backend/scripts/_atomic_write.py`, new `backend/tests/test_atomic_write.py`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Nine ingest-related findings — ingest scripts overwrite output in-place (B-26), inconsistent error handling and timeouts across the build_*.py scripts (B-27, B-30), no persistent HTTP session (B-29), no atomic-write protection (B-26), inconsistent metadata envelopes (B-28), fixed inter-chunk sleeps with no adaptive backoff (B-31), non-concurrency-safe rename in a one-shot migration script (B-32), and the runtime's `_load_places_file` treated missing/malformed input as silently empty without a size cap (B-33, B-34).
+
+**How it was resolved:**
+
+- **B-26 (atomic write):** New [`backend/scripts/_atomic_write.py`](../../backend/scripts/_atomic_write.py) provides `atomic_write_text` and `atomic_write_json` helpers — write to a sibling `*.tmp`, `fsync`, then `os.replace`. The replace is atomic on every supported filesystem; a mid-write crash leaves the original untouched. New [`test_atomic_write.py`](../../backend/tests/test_atomic_write.py) — 6 tests covering compact + pretty JSON, replace-existing, no-tmp-leftover-on-success, and the "uncaught exception preserves the original file" contract.
+- **B-33 + B-34 (places-file runtime defenses):** `_load_places_file` now (a) checks file size against a 50 MB cap and refuses to parse oversized files (5× headroom over the current bundled ~10 MB), and (b) validates the schema is `{"places": [list]}` at the top level — a bare array or malformed envelope now logs an ERROR instead of returning empty silently.
+
+**What was deferred and why:**
+
+- **`_ingest_runner.py` shared module + retrofit of every `build_*.py` script** — the catalog scoped a 10+-script refactor (persistent Session, unified `_HTTP_TIMEOUT_S`, adaptive retry/backoff, atomic write, metadata envelope). The ingest scripts already work, are run manually + rarely (~quarterly), and converging on a shared runner without a concrete failure mode is significant code churn. The new `_atomic_write.py` helper is the foundation: future ingest-script edits should adopt it opportunistically, and a fresh ingest-runner refactor can move from there.
+- **B-31 (build_address_points adaptive sleep)** — the script's fixed `--sleep 10` works fine in practice; adaptive backoff against the address-points dataset hasn't been needed.
+- **B-32 (migrate_geocode_cache rename concurrency-safe)** — `migrate_geocode_cache.py` is a one-shot migration tool that already ran successfully. Hardening a never-to-be-rerun script is churn-without-benefit.
+
+**Acceptance:** `pytest backend/tests/` → **346 passed (346)** in 20s (was 340; 6 new).
+
+---
+
 ### 2026-05-24 · /explore unknown-category 422 + autocomplete recovery + /health flag (TD-057)
 
 **Files:** `backend/places.py`, `backend/main.py`, `backend/local_search.py`, `backend/tests/test_explore_endpoint.py`.

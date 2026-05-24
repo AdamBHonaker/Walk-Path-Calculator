@@ -60,6 +60,13 @@ _residential_polys: list[Polygon] | None = None
 _residential_tree: STRtree | None = None
 
 
+# TD-058 / B-34: cap places-file size at 50 MB. The bundled artifacts are
+# under 10 MB combined; a 5× headroom catches a malformed ingest (e.g., a
+# script writing the whole OSM Chicago bbox in one shot) without blocking
+# legitimate future growth.
+_PLACES_FILE_SIZE_CAP_BYTES = 50 * 1024 * 1024
+
+
 def _load_places_file(path: Path, default_source: str) -> list[dict[str, Any]]:
     """Load a places JSON file, normalizing each entry's `source` field.
 
@@ -68,16 +75,44 @@ def _load_places_file(path: Path, default_source: str) -> list[dict[str, Any]]:
     entries do (one tag per City data feed). The merge step in
     `_curated_common.merge_and_write` writes `_source`; we surface it as
     `source` to the caller (and the API response) and drop the underscore.
+
+    TD-058 / B-33 + B-34: schema check + size cap. A missing file logs a
+    WARNING; a malformed JSON or non-{"places": [...]} shape logs an
+    ERROR. A file larger than `_PLACES_FILE_SIZE_CAP_BYTES` refuses to
+    parse — defends against runaway ingest output exhausting memory.
     """
     if not path.exists():
         logger.warning("Places file missing at %s — affected categories will be empty", path)
+        return []
+    try:
+        size = path.stat().st_size
+        if size > _PLACES_FILE_SIZE_CAP_BYTES:
+            logger.error(
+                "Places file %s is %s bytes — exceeds %s-byte cap. Refusing "
+                "to parse; affected categories will be empty.",
+                path, size, _PLACES_FILE_SIZE_CAP_BYTES,
+            )
+            return []
+    except OSError as e:
+        logger.error("Failed to stat %s (%s: %s) — skipping this source", path, type(e).__name__, e)
         return []
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         logger.error("Failed to read %s (%s: %s) — skipping this source", path, type(e).__name__, e)
         return []
-    raw = data.get("places", [])
+    # Schema check (B-33): the file must be a dict with a `places` list at
+    # the top level. Prior behavior treated any other shape as empty
+    # silently — a malformed write (e.g., the array written without the
+    # envelope) would surface as "category has zero places" with no clue.
+    if not isinstance(data, dict) or not isinstance(data.get("places"), list):
+        logger.error(
+            "Places file %s has unexpected shape (expected {\"places\": [...]}); "
+            "skipping this source",
+            path,
+        )
+        return []
+    raw = data["places"]
     out: list[dict[str, Any]] = []
     for p in raw:
         try:

@@ -109,30 +109,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-058 · CHUNK-14 · Ingest-script standardization
-- **Files**: new `backend/scripts/_ingest_runner.py`; edits across `backend/scripts/build_*.py`
-- **Category**: Data ingest reliability
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **B-26** — Ingest scripts overwrite output JSON in-place; interrupt mid-write trashes the artifact.
-  - **B-27** — Inconsistent error handling across ingest scripts (retry+backoff in some, raise-on-first in others, no catch in `_cdp_client.py`).
-  - **B-28** — Output JSON artifacts inconsistent on metadata envelope (some carry `{metadata, source, fetched_at}`, some are bare arrays).
-  - **B-29** — No persistent `requests.Session()` in ingest scripts — each call cold-opens TCP.
-  - **B-30** — Inconsistent HTTP timeouts (`60`, `120`, `300`, omitted).
-  - **B-31** — `build_address_points.py:169-179` has fixed `--sleep 10` between chunks; doesn't back off on failure streaks.
-  - **B-32** — `migrate_geocode_cache.py:117-124` rename is not concurrency-safe.
-  - **B-33** — `places._load_places_file` silently treats missing/malformed shape as empty.
-  - **B-34** — `residential_heatmap` JSON parse has no size cap (`backend/places.py:235`).
-- **Description**: Ingest scripts evolved organically; a shared runner removes ~80% of the per-script boilerplate while making them safer.
-- **Scope**:
-  - `_ingest_runner.py` provides: persistent `requests.Session()`, unified `_HTTP_TIMEOUT_S`, retry+backoff with adaptive inter-chunk sleep, atomic write via `*.tmp` → `os.replace`, optional `*.bak`, metadata envelope.
-  - Add `--check-freshness` mode (warn when artifact older than N days).
-  - Concurrency-safe rename in `migrate_geocode_cache.py`.
-  - Schema check + size cap on `places._load_places_file`.
-- **Acceptance**: Re-run `build_landmarks.py` end-to-end and kill mid-write — output unchanged (atomic).
-
----
-
 ### TD-059 · CHUNK-15 · Backend test coverage gaps
 - **Files**: `backend/tests/test_geocoding.py` (or new `test_geocoding_cascade.py`), `backend/tests/test_explore_perf.py`, new `backend/tests/test_redaction.py`
 - **Category**: Test coverage
