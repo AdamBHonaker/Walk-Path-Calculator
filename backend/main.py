@@ -9,14 +9,34 @@ logger = logging.getLogger(__name__)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from models import (
+    AutocompleteResponse,
+    ErrorDetail,
+    ExploreResponse,
+    HealthResponse,
+    ReverseGeocodeResponse,
+    RouteResponse,
+    assert_default_flavor_in_routes,
+)
+
 load_dotenv()
+
+
+def http_error(status: int, message: str, *, stop_index: int | None = None) -> HTTPException:
+    """Raise an HTTPException carrying the standardized :class:`ErrorDetail`
+    payload nested under ``{detail: ...}``. Replaces the bare-string and
+    ad-hoc-dict shapes ``main.py`` previously emitted (C-09).
+    """
+    detail: dict = {"message": message}
+    if stop_index is not None:
+        detail["stop_index"] = stop_index
+    return HTTPException(status_code=status, detail=detail)
 
 from walking import (
     _compute_route,
@@ -242,7 +262,7 @@ def _client_ip_key(request: Request) -> str:
 
 limiter = Limiter(key_func=_client_ip_key, default_limits=[], enabled=_RATE_LIMIT_ENABLED)
 
-app = FastAPI(lifespan=lifespan, default_response_class=ORJSONResponse)
+app = FastAPI(lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -442,12 +462,12 @@ class ExploreRequest(BaseModel):
         return v
 
 
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health(request: Request):
     return {"status": "ok"}
 
 
-@app.post("/explore")
+@app.post("/explore", response_model=ExploreResponse)
 @limiter.limit("30/minute")
 async def explore_endpoint(request: Request, payload: ExploreRequest):
     """Return the walkable isochrone polygon for an origin + time budget.
@@ -475,10 +495,7 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
     if origin.community_area:
         coords = lookup_centroid(origin.community_area)
         if coords is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown community area: {origin.community_area!r}",
-            )
+            raise http_error(400, f"Unknown community area: {origin.community_area!r}")
         origin_lat, origin_lon = coords
     else:
         origin_lat, origin_lon = origin.lat, origin.lon
@@ -488,9 +505,9 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         None, compute_explore, origin_lat, origin_lon, payload.max_minutes,
     )
     if result is None:
-        raise HTTPException(
-            status_code=422,
-            detail=(
+        raise http_error(
+            422,
+            (
                 "Could not anchor the explorer at this origin — either it "
                 "falls outside the Chicago street graph, or no walkable "
                 "vertex is within snapping range."
@@ -564,11 +581,11 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
     })
 
 
-@app.get("/reverse-geocode")
+@app.get("/reverse-geocode", response_model=ReverseGeocodeResponse)
 @limiter.limit("60/minute")
 async def reverse_geocode(request: Request, lat: float, lon: float):
     if not (CHICAGO_SOUTH <= lat <= CHICAGO_NORTH and CHICAGO_WEST <= lon <= CHICAGO_EAST):
-        raise HTTPException(status_code=422, detail="Location is outside the Chicago coverage area.")
+        raise http_error(422, "Location is outside the Chicago coverage area.")
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(None, reverse_geocode_point, lat, lon)
     return result
@@ -587,7 +604,7 @@ def _looks_like_free_text_address(q: str) -> bool:
     return head.isdigit()
 
 
-@app.get("/autocomplete")
+@app.get("/autocomplete", response_model=AutocompleteResponse)
 @limiter.limit("60/minute")
 async def autocomplete_endpoint(request: Request, q: str, limit: int = 8):
     """Typeahead suggestions for the route / explore forms.
@@ -604,12 +621,9 @@ async def autocomplete_endpoint(request: Request, q: str, limit: int = 8):
     if not q:
         return {"suggestions": []}
     if len(q) > 200:
-        raise HTTPException(status_code=422, detail="query too long")
+        raise http_error(422, "query too long")
     if not (1 <= limit <= _AUTOCOMPLETE_MAX_LIMIT):
-        raise HTTPException(
-            status_code=422,
-            detail=f"limit must be between 1 and {_AUTOCOMPLETE_MAX_LIMIT}",
-        )
+        raise http_error(422, f"limit must be between 1 and {_AUTOCOMPLETE_MAX_LIMIT}")
 
     loop = asyncio.get_running_loop()
     suggestions = await loop.run_in_executor(None, local_search.autocomplete, q, limit)
@@ -703,7 +717,7 @@ def _stitch_legs(legs_raw: list[dict]) -> tuple[list, list[tuple[int, int]]]:
     return full_path, leg_slices
 
 
-@app.post("/route")
+@app.post("/route", response_model=RouteResponse)
 @limiter.limit("30/minute")
 async def route(request: Request, payload: RouteRequest):
     loop = asyncio.get_running_loop()
@@ -719,31 +733,24 @@ async def route(request: Request, payload: RouteRequest):
     ], return_exceptions=True)
     for i, coords in enumerate(resolved):
         if isinstance(coords, LocationOutsideChicagoError):
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "message": f"'{stops[i]}' isn't in Chicago. Try a Chicago neighborhood, landmark, or street address.",
-                    "stop_index": i,
-                },
+            raise http_error(
+                422,
+                f"'{stops[i]}' isn't in Chicago. Try a Chicago neighborhood, landmark, or street address.",
+                stop_index=i,
             )
         if isinstance(coords, GeocoderDegradedError):
-            raise HTTPException(
-                status_code=503,
-                detail={"message": GeocoderDegradedError.DEFAULT_MESSAGE},
-            )
+            raise http_error(503, GeocoderDegradedError.DEFAULT_MESSAGE)
         if isinstance(coords, BaseException):
             raise coords  # unexpected — let FastAPI's 500 handler surface it
         if not coords:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": (
-                        f"Could not find '{stops[i]}' in Chicago. "
-                        "Try a neighborhood name or a street address. "
-                        "Coverage: the full Chicago city limits (all 77 community areas)."
-                    ),
-                    "stop_index": i,
-                },
+            raise http_error(
+                400,
+                (
+                    f"Could not find '{stops[i]}' in Chicago. "
+                    "Try a neighborhood name or a street address. "
+                    "Coverage: the full Chicago city limits (all 77 community areas)."
+                ),
+                stop_index=i,
             )
 
     # Adjacent-duplicate validation: true haversine so the threshold is symmetric
@@ -752,19 +759,15 @@ async def route(request: Request, payload: RouteRequest):
         a, b = resolved[i], resolved[i + 1]
         if haversine_miles(a[0], a[1], b[0], b[1]) < _SAME_LOCATION_THRESHOLD_MILES:
             if not is_multi:
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "message": "Your origin and destination appear to be the same location.",
-                        "stop_index": 1,
-                    },
+                raise http_error(
+                    400,
+                    "Your origin and destination appear to be the same location.",
+                    stop_index=1,
                 )
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "message": f"Stop {i + 1} and {i + 2} are the same location.",
-                    "stop_index": i + 1,
-                },
+            raise http_error(
+                400,
+                f"Stop {i + 1} and {i + 2} are the same location.",
+                stop_index=i + 1,
             )
 
     step_len = (
@@ -860,6 +863,10 @@ async def route(request: Request, payload: RouteRequest):
         routes = [_summarize_alt(alt) for alt in alternatives]
         default = next((r for r in routes if r["flavor"] == DEFAULT_FLAVOR), routes[0])
         available_flavors = ["custom"] if has_routing_prefs else FLAVORS
+        # C-08: defensive assert. The line above picks default by exact match
+        # with `routes[0]` fallback, so the invariant holds by construction;
+        # this guard documents it so a future refactor can't silently break it.
+        assert_default_flavor_in_routes(default["flavor"], routes)
         return quantize_geojson({
             "stops":              stops_out,
             "stop_coords":        stop_coords_out,
@@ -943,6 +950,12 @@ async def route(request: Request, payload: RouteRequest):
     total_minutes_r = round(total_minutes, 1)
 
     flavor_label = "custom" if has_routing_prefs else DEFAULT_FLAVOR
+    # C-08: same invariant on the multi-stop branch — `routes` is built below
+    # as `[full_route]`, and `full_route["flavor"]` is `flavor_label`. Keeping
+    # the explicit call so a future refactor that decouples them still trips
+    # the guard.
+    _multi_routes_flavors_check = [{"flavor": flavor_label}]
+    assert_default_flavor_in_routes(flavor_label, _multi_routes_flavors_check)
     full_route = {
         "flavor":          flavor_label,
         "path":            full_path,

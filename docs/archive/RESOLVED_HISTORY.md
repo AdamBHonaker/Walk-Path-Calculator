@@ -1071,6 +1071,31 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Pydantic response models + standardized error shape (TD-052)
+
+**Files:** `backend/main.py`, `backend/walking.py`, new `backend/models.py`, `backend/tests/test_main.py`.
+
+**Priority:** 🔴 High.
+
+**What the debt was:** Eight findings catalogued in the 2026-05-23 audit. The five `/health`, `/explore`, `/reverse-geocode`, `/autocomplete`, `/route` endpoints all returned hand-built dicts (`B-22` — no `response_model=` anywhere; OpenAPI schema inferred-and-incomplete; FastAPI did no response validation). Pydantic constraints were duplicated in docstrings (`B-23`). The `default_flavor` field on /route had no invariant guard pinning it to a member of the `routes[]` array — the frontend silently fell back to `routes[0]` on a mismatch (`C-08`). Error shapes drifted across endpoints — `/reverse-geocode` and `/autocomplete` raised `HTTPException(detail="bare string")` while `/route` raised `HTTPException(detail={"message": ..., "stop_index": ...})` (`C-09`). `walk_paths_alternatives` had no return-type annotation (`C-11`). The response fields `step_length_inches` and `personalized_calories` were emitted but unused by the frontend (`C-12` / `C-13`). And `/reverse-geocode` lacked a response model entirely (`C-16`).
+
+**How it was resolved:**
+
+- **New [`backend/models.py`](../../backend/models.py)** defines every response model: `HealthResponse`, `ReverseGeocodeResponse`, `AutocompleteSuggestion` + `AutocompleteResponse`, `ExplorePlace` + `ExploreStats` + `ExploreResponse`, `DirectionStep` + `LegStats` + `RouteAlternative` + `RouteResponse`, and the shared `ErrorDetail` error payload. `Coord` is a list-of-floats alias (Pydantic v2 accepts the cached tuples from `walking.py` and serializes them as JSON arrays — no rebuild cost). GeoJSON geometries land as `dict[str, Any]` rather than a fully-modelled GeoJSON tree; the spec is well-known and the heatmap shapes vary across endpoints (MultiPolygon vs FeatureCollection vs `null`), so a tighter model would add brittleness without catching real bugs.
+- **`response_model=` wired on all five endpoints** in [`backend/main.py`](../../backend/main.py). FastAPI now serializes responses through Pydantic, validates field types, and exposes the full OpenAPI schema at `/openapi.json` — confirmed: schema's `components.schemas` lists all 12 response models plus the two FastAPI built-ins (`HTTPValidationError`, `ValidationError`).
+- **`ErrorDetail` standardization via `http_error()` helper.** New helper at [`main.py:38`](../../backend/main.py#L38) wraps `HTTPException` so every raise lands the unified `{detail: {message, stop_index?}}` shape. Replaced 8 raise-sites across `/reverse-geocode`, `/autocomplete`, `/explore`, and `/route`. The frontend's [`apiErrorMessage.js`](../../frontend/src/lib/apiErrorMessage.js) already handled both shapes (TD-041 reconciliation), so unifying the backend is forward-compatible with no UI change required.
+- **C-08 default_flavor invariant.** New `assert_default_flavor_in_routes` helper in `models.py`. The `/route` handler calls it on both the 2-stop and multi-stop branches before returning. Three new tests (`tests/test_main.py::TestDefaultFlavorInvariant`) cover the happy path, mismatch, and empty-routes cases — the mismatch test is the deliberately-broken acceptance check.
+- **`walk_paths_alternatives` return-type annotation.** New `RouteAlternativeDict` TypedDict in `walking.py` documents the cached-route shape. TypedDict (not Pydantic) intentionally — callers consume the dict directly through the LRU cache; constructing Pydantic instances at that boundary would pay an avoidable allocation cost per request.
+- **`step_length_inches` + `personalized_calories` kept, documented.** Both are marked as "informational — not currently consumed by the UI" in the model's `Field(description=...)`. Dropping them would be a contract-breaking change for any external consumer, and the catalog explicitly listed "document" as the alternative.
+
+**Acceptance:** `pytest backend/tests/` → **323 passed** (320 baseline + 3 new C-08 tests). OpenAPI schema at `/openapi.json` lists all five paths and all response models. The C-08 broken-test case (`TestDefaultFlavorInvariant::test_helper_raises_on_mismatch`) fires `AssertionError` as designed.
+
+**Wave 3 unblock:** TD-052 was the hard-dep keystone for Wave 3 — its resolution unblocks the partial TD-060 + TD-061 dependencies (frontend enum centralization + recents-keyed-off-normalized-stops + arrival-footer-when-directions-empty). The roadmap's gating notes have been struck accordingly.
+
+Verification: `pytest -q` → 323/323; manual OpenAPI inspection via `TestClient.get("/openapi.json")` confirmed schema completeness; 320-baseline + 3-new test count documented in the commit.
+
+---
+
 ### 2026-05-24 · Documentation drift sweep — README canopy + source enum, MOBILE_TESTING tracked, PV classifier, FEATURE_PLANS template (TD-046)
 
 **Files:** `README.md`, `.gitignore`, `docs/MOBILE_TESTING.md` (newly tracked), `docs/Pending_Verification.md`, `docs/FEATURE_PLANS.md`.

@@ -12,7 +12,15 @@ A walking route calculator for Chicago that shows exact step counts alongside tu
 Passage/
 ├── backend/              # Python FastAPI
 │   ├── main.py           # POST /route, POST /explore, GET /health, GET /reverse-geocode,
-│   │                     #   GET /autocomplete
+│   │                     #   GET /autocomplete. `http_error()` helper builds every
+│   │                     #   HTTPException around the standardized `{detail: {message, ...}}`
+│   │                     #   ErrorDetail shape (TD-052).
+│   ├── models.py         # Pydantic response models wired via `response_model=` on every
+│   │                     #   endpoint (TD-052). Defines HealthResponse, RouteResponse +
+│   │                     #   RouteAlternative + DirectionStep + LegStats, ExploreResponse +
+│   │                     #   ExplorePlace + ExploreStats, AutocompleteResponse +
+│   │                     #   AutocompleteSuggestion, ReverseGeocodeResponse, ErrorDetail,
+│   │                     #   and the `assert_default_flavor_in_routes` invariant guard (C-08).
 │   ├── walking.py        # Street network routing (ported from CTA-Transit-PWA).
 │   │                     #   `greenest` flavor combines OSM footway/path tags with
 │   │                     #   per-edge `tree_canopy_score` + `park_proximity_score`

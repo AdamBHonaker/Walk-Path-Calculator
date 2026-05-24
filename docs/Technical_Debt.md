@@ -20,13 +20,13 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 |------|------------|-------|----------------|
 | 0 | TD-045 | Repo basics & docs | Standalone now (TD-046 / -047 resolved) |
 | 1 | TD-048 / -049 / -050 / -051 | Operational hardening | Yes; TD-051 (PV burn-down) is human-driven |
-| 2 | TD-052 → TD-059 | Backend correctness + API contract | Yes except TD-053 → TD-054 (walking.py) |
+| 2 | TD-053 → TD-059 | Backend correctness + API contract | Yes except TD-053 → TD-054 (walking.py) |
 | 3 | TD-060 → TD-066 | Frontend correctness + UX | TD-061 + TD-062 both touch App.jsx — keep in lockstep |
 | 4 | TD-067 | Security headers + input validation | Standalone |
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
 | 6 | TD-072 (+ TD-032, TD-034, TD-044) | Polish / paused | Optional |
 
-**Audit priorities at a glance** — 12 High items concentrated in: response_model gap (TD-052), same-node routing (TD-053), recents-pollution + Explore error boundary (TD-061 / TD-062), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), custom-flavor handling (TD-060), default_flavor consistency (TD-052), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
+**Audit priorities at a glance** — 12 High items concentrated in: same-node routing (TD-053), recents-pollution + Explore error boundary (TD-061 / TD-062), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), custom-flavor handling (TD-060), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
 
 ---
 
@@ -106,30 +106,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
   - Sequence: PV-006 in prod first → PV-001 / PV-004 / PV-005 / PV-008 on iPhone + Android via `npm run dev:tunnel` → PV-002 with a live key → PV-007 / PV-009 / PV-010 once API access is available.
   - Update `Pending_Verification.md` checkboxes; move resolved items to `archive/RESOLVED_HISTORY.md` per the file's own process note.
 - **Acceptance**: All ten PV items either resolved or formally classified as `post-ship` per the classifier convention in [`Pending_Verification.md`](Pending_Verification.md).
-
----
-
-### TD-052 · CHUNK-08 · Pydantic response models + standardized error shape
-- **Files**: `backend/main.py`, `backend/walking.py`, new `backend/models.py`
-- **Category**: API contract / schema enforcement
-- **Priority**: 🔴 High
-- **Findings**:
-  - **B-22** — No `response_model=` declared on any endpoint. OpenAPI schema is inferred-and-incomplete; FastAPI does no response validation.
-  - **B-23** — Pydantic constraints duplicated in docstrings (e.g., `daily_goal` range).
-  - **C-08** — `default_flavor` may not be in `routes[].flavor`; frontend silently falls back to `routes[0]` on mismatch.
-  - **C-09** — Error response shape inconsistent across endpoints (`{detail: {message, stop_index}}` vs `{detail: "..."}` string).
-  - **C-11** — `walk_paths_alternatives` has no return-type annotation; consumers assume a list-of-dicts with known keys.
-  - **C-13** — `step_length_inches` echoed but unused by the frontend (mark informational or drop).
-  - **C-12** — `personalized_calories` boolean emitted but never consumed in the UI.
-  - **C-16** — `/reverse-geocode` lacks a response model (internal usage only, but contract still drifts).
-- **Description**: Endpoints return hand-built dicts. The B-22 fix unblocks most C-* contract items; standardized error shape (C-09) becomes possible once `ErrorDetail` exists.
-- **Scope**:
-  - Define `HealthResponse`, `RouteAlternative`, `RouteResponse`, `LegStats`, `DirectionStep`, `ExploreResponse`, `AutocompleteResponse`, `ReverseGeocodeResponse`, `ErrorDetail` in `backend/models.py`.
-  - Wire `response_model=` on every endpoint.
-  - Annotate `walk_paths_alternatives` return type (TypedDict or Pydantic).
-  - Assert `default_flavor ∈ {r.flavor for r in routes}` in the response builder.
-  - Either drop `step_length_inches` + `personalized_calories` or document them as informational-only.
-- **Acceptance**: `pytest backend/tests/`; `/docs` shows a complete OpenAPI schema; the C-08 assertion fires in a deliberately-broken test case.
 
 ---
 

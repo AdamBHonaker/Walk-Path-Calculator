@@ -16,6 +16,41 @@ class TestHealth:
         assert resp.json() == {"status": "ok"}
 
 
+class TestDefaultFlavorInvariant:
+    """C-08 — `default_flavor` must always correspond to an entry in `routes`.
+
+    The /route handler picks `default` by filtering for `DEFAULT_FLAVOR` with
+    a `routes[0]` fallback, so the invariant holds by construction in
+    production. These tests pin the guard helper (`assert_default_flavor_in_routes`)
+    so a future refactor that breaks the relationship surfaces loudly
+    instead of silently shipping a response the frontend has to fall back on.
+    """
+
+    def test_helper_accepts_matching_flavor(self):
+        from models import assert_default_flavor_in_routes
+        # The happy path: every flavor in `routes` is a candidate, default
+        # matches one of them.
+        assert_default_flavor_in_routes(
+            "greenest",
+            [{"flavor": "fastest"}, {"flavor": "fewest_turns"}, {"flavor": "greenest"}],
+        )
+
+    def test_helper_raises_on_mismatch(self):
+        """Deliberately-broken case — default flavor doesn't match any route."""
+        from models import assert_default_flavor_in_routes
+        with pytest.raises(AssertionError, match="not in routes flavors"):
+            assert_default_flavor_in_routes(
+                "greenest",
+                [{"flavor": "fastest"}, {"flavor": "fewest_turns"}],
+            )
+
+    def test_helper_raises_on_empty_routes(self):
+        """Empty routes list — no flavors to match against."""
+        from models import assert_default_flavor_in_routes
+        with pytest.raises(AssertionError):
+            assert_default_flavor_in_routes("fastest", [])
+
+
 class TestRouteValidation:
     def test_empty_origin_rejected(self):
         resp = client.post("/route", json={"origin": "", "destination": "Logan Square"})

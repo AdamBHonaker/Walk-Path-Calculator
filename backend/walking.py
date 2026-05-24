@@ -28,6 +28,7 @@ import time as _time
 from collections import OrderedDict
 from functools import lru_cache
 from pathlib import Path
+from typing import TypedDict
 from types import MappingProxyType
 
 logger = logging.getLogger(__name__)
@@ -1145,12 +1146,28 @@ def _build_path_and_directions(vpath: tuple, epath: tuple) -> "tuple[tuple, tupl
     return tuple(result_coords), tuple(steps)
 
 
+class RouteAlternativeDict(TypedDict):
+    """Shape of one entry in :func:`walk_paths_alternatives`'s return value.
+
+    Documented as a TypedDict (not a Pydantic model) because callers
+    consume the dict directly and would pay an avoidable allocation cost
+    per request to construct model instances at the cache boundary. The
+    /route handler converts these to the response-side
+    :class:`models.RouteAlternative` after pace + step-length scaling.
+    """
+
+    flavor: str
+    path: tuple  # tuple-of-tuples cached by _compute_route
+    directions: list[dict]
+    minutes: float
+
+
 def walk_paths_alternatives(
     origin_lat: float,
     origin_lon: float,
     dest_lat: float,
     dest_lon: float,
-) -> list[dict]:
+) -> list[RouteAlternativeDict]:
     """
     Return route data for all FLAVORS as a list of dicts:
       [{"flavor": "fastest", "path": [...], "directions": [...], "minutes": ...}, ...]
@@ -1160,7 +1177,7 @@ def walk_paths_alternatives(
     cached tuple-of-tuples — FastAPI's encoder serialises tuples and lists
     identically, so passing it through avoids an O(N) per-request rebuild.
     """
-    out: list[dict] = []
+    out: list[RouteAlternativeDict] = []
     for flavor in FLAVORS:
         path, directions, minutes = _compute_route(
             origin_lat, origin_lon, dest_lat, dest_lon, flavor,
