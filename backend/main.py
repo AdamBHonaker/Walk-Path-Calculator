@@ -544,7 +544,7 @@ class ExploreRequest(BaseModel):
         return v
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health", response_model=HealthResponse, response_model_exclude_none=True)
 async def health(request: Request):
     # TD-068: surface greenest-routing degradation flags so an operator
     # can spot a multi-city pickle drift (or a partial v3 pickle) without

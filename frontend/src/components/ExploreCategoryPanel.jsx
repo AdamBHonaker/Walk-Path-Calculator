@@ -15,7 +15,7 @@
 //     automatically, so the query still includes that category.
 //   - Map display: a category with NO subs selected shows every place under
 //     it; once ANY sub is selected the category narrows to just those subs
-//     (see activeSubsSet in App.jsx).
+//     (see `visibleCategories` in App.jsx).
 //   - "Select all" / "Clear all" affordances at the panel level operate over
 //     every group and every sub.
 

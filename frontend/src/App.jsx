@@ -30,6 +30,7 @@ import { StepHero } from "./components/StepHero.jsx";
 import { RecentSearches } from "./components/RecentSearches.jsx";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary.jsx";
 import { ExploreErrorBoundary } from "./components/ExploreErrorBoundary.jsx";
+import { MapErrorBoundary } from "./components/MapErrorBoundary.jsx";
 import { useMediaQuery } from "./lib/useMediaQuery.js";
 import { useViewportStable } from "./lib/useViewportStable.js";
 import { loadSheetSnap } from "./lib/sheetSnap.js";
@@ -1231,32 +1232,37 @@ export default function App() {
 
   const sidebarContents = mode === "explore" ? exploreContents : routeContents;
 
+  const mapErrorMessage = mode === "explore"
+    ? "Something went wrong drawing the explorer — try a different origin or time budget."
+    : "Something went wrong displaying your route — try a new search.";
   const mapNode = (
     <Suspense fallback={<div className="map-lazy-fallback" aria-hidden="true" />}>
-      <MapView
-        result={viewResult}
-        turnCoords={turnCoords}
-        activeTurnIndex={activeTurnIndex}
-        pickMode={pickMode}
-        onPickPoint={handleMapPick}
-        resolveLabel={resolveStopLabel}
-        onLocateMe={handleLocateMe}
-        locating={locating}
-        mapPadding={isMobile ? mapPadding : null}
-        mode={mode}
-        exploreResult={mode === "explore" ? exploreResult : null}
-        categoryStyles={EXPLORE_CATEGORY_STYLES}
-        activeSubs={visibleCategories}
-        showResidential={explorePrefs.showResidentialHeatmap}
-        showParks={explorePrefs.showParksHeatmap}
-        showTreeCanopy={explorePrefs.showTreeCanopyHeatmap}
-        showGreenSpace={explorePrefs.showGreenSpaceHeatmap}
-        onPlaceGoHere={handlePlaceGoHere}
-        onPlaceTap={handlePlaceTap}
-        userPosition={followLocation.position}
-        following={followLocation.following}
-        onToggleFollow={followLocation.toggle}
-      />
+      <MapErrorBoundary errorMessage={mapErrorMessage}>
+        <MapView
+          result={viewResult}
+          turnCoords={turnCoords}
+          activeTurnIndex={activeTurnIndex}
+          pickMode={pickMode}
+          onPickPoint={handleMapPick}
+          resolveLabel={resolveStopLabel}
+          onLocateMe={handleLocateMe}
+          locating={locating}
+          mapPadding={isMobile ? mapPadding : null}
+          mode={mode}
+          exploreResult={mode === "explore" ? exploreResult : null}
+          categoryStyles={EXPLORE_CATEGORY_STYLES}
+          activeSubs={visibleCategories}
+          showResidential={explorePrefs.showResidentialHeatmap}
+          showParks={explorePrefs.showParksHeatmap}
+          showTreeCanopy={explorePrefs.showTreeCanopyHeatmap}
+          showGreenSpace={explorePrefs.showGreenSpaceHeatmap}
+          onPlaceGoHere={handlePlaceGoHere}
+          onPlaceTap={handlePlaceTap}
+          userPosition={followLocation.position}
+          following={followLocation.following}
+          onToggleFollow={followLocation.toggle}
+        />
+      </MapErrorBoundary>
     </Suspense>
   );
 
