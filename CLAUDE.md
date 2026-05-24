@@ -440,6 +440,50 @@ Direction step object (present in all route types):
 ```
 Multi-stop direction steps additionally include `"leg_index": 0`.
 
+## Greenest formula — single-source-of-truth constants
+
+TD-054 documentation pass. The two halves of the greenest pipeline (bake-time score calculation in `fetch_street_graph.py`, runtime weight combiner in `walking.py`) use **disjoint** constant sets — there's no formula duplication, but tuners often need to look at both. This table is the cross-reference so a tuning round touches the right knobs.
+
+### Bake-time (score inputs) — `backend/fetch_street_graph.py`
+
+These constants control how `_bake_green_signals` derives the per-edge `tree_canopy_score` + `park_proximity_score` arrays that get pickled into `street_graph_igraph.pkl` as `edge_tree_canopy_f32` + `edge_park_proximity_f32`.
+
+| Constant | Value | Where it's read | Effect |
+|---|---|---|---|
+| `_PARK_CUTOFF_M` | `200.0` | `_bake_green_signals` | Linear cap on park-proximity distance (m). Edges further than this from any park score 0. |
+| `_PARK_ACRES_LOG_SAT` | `2.0` | `_bake_green_signals` | log₁₀(100) — parks ≥ ~100 acres saturate the size multiplier. |
+| `_PARK_MULT_MIN` / `_PARK_MULT_MAX` | `1.0` / `1.5` | `_bake_green_signals` | Range of the log-acreage multiplier on park proximity. |
+| `_LAT_REF_DEG` / `_M_PER_DEG_LAT` | `41.85` / `111_320.0` | `_bake_green_signals` | Chicago-centered equirectangular projection — meters per degree at Chicago's reference latitude. |
+
+### Runtime (weight combiner) — `backend/walking.py`
+
+These constants combine the baked scores into per-edge Dijkstra weights. Bumping them re-tunes greenest's behavior **without** re-baking the pickle.
+
+| Constant | Value | Where it's read | Effect |
+|---|---|---|---|
+| `_GREEN_FOOTWAY_WEIGHT` | `0.20` | `_build_flavor_weights` (v3 path) | Weight contribution of `_GREEN_HIGHWAYS` membership (footway / path / cycleway / pedestrian / track). Higher = more discount for these edges. |
+| `_GREEN_CANOPY_WEIGHT` | `0.15` | `_build_flavor_weights` (v3 path) | Weight contribution of the per-edge `tree_canopy_score`. |
+| `_GREEN_PARK_WEIGHT` | `0.15` | `_build_flavor_weights` (v3 path) | Weight contribution of the per-edge `park_proximity_score`. |
+| `_GREEN_DETOUR_FLOOR` | `0.5` | `_build_flavor_weights` (v3 path) | Lower bound on the combined discount so a single edge can't shrink below ½ length (caps pathological detours). |
+| `_GREEN_DISCOUNT` | `0.6` | `_build_flavor_weights` (v2 fallback path) | Legacy footway-only discount applied to pre-FEAT-4 v2 pickles + graphml fallback. |
+| `_GREEN_HIGHWAYS` | `{footway, path, cycleway, pedestrian, track}` | both paths | OSM `highway` tag set considered "green by virtue of being walking infrastructure." |
+
+The full v3 weight formula:
+
+```
+greenest_weight = L · max(_GREEN_DETOUR_FLOOR,
+                          1
+                          − _GREEN_FOOTWAY_WEIGHT · is_in_GREEN_HIGHWAYS
+                          − _GREEN_CANOPY_WEIGHT  · tree_canopy_score
+                          − _GREEN_PARK_WEIGHT    · park_proximity_score)
+```
+
+where each `_score` value is float32 in [0, 1] (baked at graph-build time, scrubbed for NaN at runtime — see TD-053 / B-45 for the one-shot WARN behavior on rescue).
+
+### Per-signal degradation
+
+If the pickle is missing the canopy or park column (e.g., a v2 pickle, or a multi-city onboard for a city without that data — TD-068), the runtime zero-fills the missing column and surfaces the degradation via `greenest_degradation_status()` exposed on `/health.feature_degraded`. Greenest still routes; the missing signal's contribution to the weight collapses to zero.
+
 ## Greenest-routing graph release runbook
 
 Build chain, artifact refresh procedures, pickle integrity check (SEC-001), manual rollback scenarios, and deploy checklist live in [`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md).

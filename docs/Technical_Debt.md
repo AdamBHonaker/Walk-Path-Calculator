@@ -109,28 +109,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-054 · CHUNK-10 · `walking.py` module split
-- **Files**: `backend/walking.py` → split into `backend/walking.py` + `backend/walking_weights.py` + `backend/walking_formula.py`. Update imports in `backend/main.py`, `backend/fetch_street_graph.py`, tests.
-- **Category**: Code maintainability
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **B-01** — `walking.py` is 1,116 LOC + 32 functions mixing graph load, edge caches, flavor weights, shortest-path, and directions.
-  - **B-09** — Greenest formula constants split across `walking.py:99-103` (runtime) and `fetch_street_graph.py:250-254` (bake) with no unified reference; a tuning round must touch both.
-  - **B-11** — Greenest weight formula partially duplicated between bake (`_bake_green_signals`) and runtime (`_build_flavor_weights`).
-  - **B-15** — `_build_path_and_directions:999-1087` is 88 lines with sparse inline docs.
-  - **B-38** — `green_mask` is rebuilt on every cache-miss instead of once per graph load.
-- **Description**: After the correctness sweep lands, split the module along natural boundaries so the formula has a single source of truth.
-- **Scope**:
-  - Move per-edge caches + flavor weight builder to `walking_weights.py`.
-  - Move greenest constants + bake helpers to `walking_formula.py` (consumed by both `walking.py` runtime and `fetch_street_graph.py` bake).
-  - Cache `green_mask` at module load alongside `_edge_highways`.
-  - Add algorithm-level docstring to `_build_path_and_directions`.
-  - Add a "Greenest formula" section to CLAUDE.md listing all constants and where they apply.
-- **Acceptance**: All existing tests pass; greenest formula constants exist in exactly one location; CLAUDE.md updated.
-- **Sequencing**: **After TD-053.**
-
----
-
 ### TD-055 · CHUNK-11 · `geocoding.py` refactor + shared constants
 - **Files**: `backend/geocoding.py`, `backend/utils.py`, `backend/local_search.py`
 - **Category**: Code maintainability

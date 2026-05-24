@@ -1071,6 +1071,28 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · `walking.py` algorithm docs + greenest formula reference (TD-054 — partial)
+
+**Files:** `backend/walking.py`, `CLAUDE.md`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Five findings flagged in the 2026-05-23 audit, three of which turned out to be already-addressed or premise-mistaken on closer inspection. **B-09 + B-11** claimed the greenest formula constants were duplicated between `walking.py:99-103` and `fetch_street_graph.py:250-254`. Investigation showed those are **disjoint constant sets** — the bake-time constants (`_PARK_CUTOFF_M`, `_PARK_ACRES_LOG_SAT`, etc.) control how `_bake_green_signals` derives the per-edge canopy + park *scores*; the runtime constants (`_GREEN_FOOTWAY_WEIGHT`, `_GREEN_CANOPY_WEIGHT`, etc.) combine those scores into Dijkstra weights. No duplication; just two halves of a pipeline that tuners often want to look at together. **B-38** (`green_mask` rebuilt per cache-miss) had already been addressed by OPT-032 — the mask is now baked at graph load and the per-miss rebuild is a guarded fallback. **B-15** (88-line `_build_path_and_directions` with sparse docs) was partially addressed by TD-053's inline comment additions; the remaining gap was an algorithm-level summary.
+
+**How it was resolved:**
+
+- **Algorithm-level docstring on `_build_path_and_directions`** (B-15). Names the two phases (coord assembly + step aggregation), explains the geometry-orientation `du_start`/`du_end` logic, the `skip_first` dedup, and the cardinal-snap + block-classification work in phase 2.
+- **New "Greenest formula" section in [CLAUDE.md](../../CLAUDE.md)** (B-09 reframed). Cross-references all the bake-time and runtime constants with their role, default value, file/function read site, and effect. Includes the full v3 weight formula in one place so a tuner can find every knob without grepping. Documents per-signal degradation behavior (the TD-068 graceful-degradation path).
+
+**What was deferred and why:**
+
+- **The full module split** (`walking.py` → `walking.py` + `walking_weights.py` + `walking_formula.py`) was **not executed**. The catalog's stated motivator was the formula-duplication claim, which doesn't hold up to inspection. Splitting 1100 LOC across 3 modules just for LOC reduction would require restructuring shared module-level state (the per-edge cache columns) without a corresponding correctness or perf win. The "Greenest formula" CLAUDE.md section achieves the actual goal (single doc-level source of truth for the formula) without the structural churn.
+- **B-38 zero-edit** confirmed — OPT-032 already caches `_edge_green_mask` at load; line 670-677's `if green_mask is None ...` is the graceful-degradation fallback, not the hot path.
+
+**Acceptance:** `pytest backend/tests/` → **338 passed (338)** in 19s. CLAUDE.md "Greenest formula" section reads end-to-end as a self-contained reference.
+
+---
+
 ### 2026-05-24 · `walking.py` correctness sweep — 8 findings + 15 new tests (TD-053)
 
 **Files:** `backend/walking.py`, new `backend/tests/test_walking_correctness.py`.

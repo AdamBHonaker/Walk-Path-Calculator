@@ -44,7 +44,6 @@ If Mermaid doesn't render, the same edges as text:
 
 | Items | Shared surface | Recommended order |
 |-------|----------------|-------------------|
-| TD-054 | `backend/walking.py` | TD-053 + TD-068 landed 2026-05-24. Only the optional module-split (TD-054) remains. |
 | TD-055 / TD-056 / TD-067 | `backend/main.py`, `backend/geocoding.py` | Any order, but rebase carefully — TD-055 refactors geocoding tiers, TD-056 adds lifespan cleanup, TD-067 adds security-header + validator changes in `main.py`. |
 | TD-065 | `frontend/src/App.jsx` | App.jsx is a hotspot. TD-060 / TD-061 / TD-062 / TD-063 landed 2026-05-24. |
 | TD-050 / TD-049 | release pipeline ↔ CI | TD-049's CI baseline can host TD-050's `ARTIFACT_REV` guard check as a workflow step. Land TD-049 first if combining them. |
@@ -57,7 +56,7 @@ Within each wave, items in the same row can run in different sessions without co
 |------|-------------------|-------|
 | 0 | TD-045 | TD-046 + TD-047 resolved 2026-05-24; TD-045 remains as the lone Wave 0 item. |
 | 1 | TD-048, TD-049, TD-050, TD-051 | TD-051 is human-driven (device + key access); the other three are code-light. |
-| 2 | TD-054 ∥ TD-055 ∥ TD-056 ∥ TD-057 ∥ TD-058 ∥ TD-059 | TD-053 resolved 2026-05-24. TD-059 waits on TD-049. TD-052 resolved earlier — Wave 3 is no longer gated. |
+| 2 | TD-055 ∥ TD-056 ∥ TD-057 ∥ TD-058 ∥ TD-059 | TD-052 + TD-053 + TD-054 resolved 2026-05-24. TD-059 waits on TD-049. |
 | 3 | — | All Wave 3 items landed 2026-05-24. |
 | 4 | — | TD-067 landed 2026-05-24. |
 | 5 | — | TD-068 / -069 / -070 / -071 all landed 2026-05-24. |

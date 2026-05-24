@@ -1155,6 +1155,33 @@ def _build_path_and_directions(vpath: tuple, epath: tuple) -> "tuple[tuple, tupl
     `_build_directions` route the routed case through here and pick the half
     they need; the haversine-fallback case in both callers builds its return
     value inline.
+
+    Algorithm (TD-054 / B-15):
+
+    Phase 1 — coord assembly. For each edge (eid, u, v) in the epath:
+      1. Pull (name, path_type, length, u, v) into a `raw` buffer for phase 2.
+      2. If the edge has explicit geometry, decode it (int32 -> float div 1e5
+         or pass through if already float) and orient it: `du_start` vs
+         `du_end` tells us whether the geometry's first point is closer to
+         `u` (forward) or `v` (reverse). `head_idx` then picks whichever end
+         is at `u`, and we walk geom from there. If that head coincides
+         with the previous segment's tail (within 1e-9), set `skip_first`
+         so we don't double-emit the seam.
+      3. If no geometry, fall back to straight u→v vertex coords.
+
+    Phase 2 — step aggregation. Walk the `raw` buffer in stride, grouping
+    consecutive rows that share the same (name, path_type) so a long block
+    of "W Belmont Ave" stays one direction step instead of one-per-edge.
+    For each group:
+      - Compute the cardinal heading from start_v → end_v in great-circle
+        terms (cos_lat correction so longitude deltas don't overweight in
+        the bearing). 1° snap zone around each cardinal axis kills the
+        float-drift jitter described in B-43.
+      - Classify the average edge length against `_BLOCK_TYPE_THRESHOLD`
+        (150 m) into "long" or "short" blocks; format as `0.5`-resolution
+        block counts (the resolution Chicago's grid renders cleanly at).
+
+    The return is `(tuple_of_(lat,lon)_pairs, tuple_of_step_dicts)`.
     """
     if len(vpath) < 2:
         return ((), ())
