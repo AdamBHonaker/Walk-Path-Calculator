@@ -121,6 +121,18 @@ export function DirectionLedger({
         </footer>
       )}
 
+      {/* C-15: when the backend returns a route whose directions array is
+          empty (e.g. an origin already adjacent to the destination on the
+          street graph, where no turns are required), still surface a clear
+          arrival footer so the ledger doesn't leave the user staring at an
+          empty list with no "you're here" cue. */}
+      {directions.length === 0 && (
+        <footer className="directions-arrival directions-arrival--empty">
+          Proceed directly to destination
+          <WFToMark size={14} />
+        </footer>
+      )}
+
       {hasMore && (
         <button
           type="button"

@@ -29,6 +29,7 @@ import { MobileLayout } from "./components/MobileLayout.jsx";
 import { StepHero } from "./components/StepHero.jsx";
 import { RecentSearches } from "./components/RecentSearches.jsx";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary.jsx";
+import { ExploreErrorBoundary } from "./components/ExploreErrorBoundary.jsx";
 import { useMediaQuery } from "./lib/useMediaQuery.js";
 import { useViewportStable } from "./lib/useViewportStable.js";
 import { loadSheetSnap } from "./lib/sheetSnap.js";
@@ -351,11 +352,43 @@ export default function App() {
   // to half so the form's inputs are actually visible. At peek (140 px) the
   // route/explore forms sit entirely offscreen, so a fresh mobile load in
   // either mode needs this nudge before the user can interact.
+  //
+  // F-35: reset `userMovedSheetRef.current` on every mode flip so the new
+  // mode's first result auto-promotes cleanly. Without this, a single drag
+  // in Route mode permanently disabled auto-promote for the rest of the
+  // session — including across mode toggles into Explore, where the user
+  // had never expressed a sheet-position preference at all.
   useEffect(() => {
+    userMovedSheetRef.current = false;
     if (!isMobile) return;
-    if (userMovedSheetRef.current) return;
     setSheetSnap(prev => prev === 0 ? 1 : prev);
   }, [mode, isMobile]);
+
+  // F-17: move keyboard focus to the active mode's first form input on a
+  // mode flip. Without this, a sighted-mouse-free user has to tab from the
+  // tablist back through the masthead into the form every time they switch
+  // between Route and Explore — exactly the friction the focus management
+  // is meant to eliminate. `didMountModeFocusRef` skips the very first
+  // commit so a cold page load doesn't yank focus away from whatever the
+  // browser was about to focus naturally (often the address bar or the
+  // last-restored focus).
+  const didMountModeFocusRef = useRef(false);
+  useEffect(() => {
+    if (!didMountModeFocusRef.current) {
+      didMountModeFocusRef.current = true;
+      return;
+    }
+    // useEffect runs after React's commit phase, so the new mode's form is
+    // already in the DOM. No RAF needed — that would also conflict with the
+    // route-animation test's "no RAF under prefers-reduced-motion" assertion.
+    const root = document.querySelector(".main") ?? document.body;
+    const target = root.querySelector(
+      'input:not([type="hidden"]):not([disabled]), [role="combobox"], [contenteditable]:not([contenteditable="false"])',
+    );
+    if (target && typeof target.focus === "function") {
+      target.focus({ preventScroll: true });
+    }
+  }, [mode]);
 
   // Mobile pick-on-map: drop the sheet to peek so the user can see the map,
   // remember the snap they were at, and restore it once the pick resolves.
@@ -757,7 +790,13 @@ export default function App() {
   // When a category has any subcategory selected, the bare parent key is
   // omitted: the user has narrowed that category, so only the composite keys
   // should pass and unselected subs (and untagged places) drop out.
-  const activeSubsSet = useMemo(() => {
+  //
+  // This memo is the single source of truth for "what's visible on the map
+  // right now" (F-02). The persisted `explorePrefs.selectedCategories` +
+  // `selectedSubs` are the user's saved selection; the rendered subset is
+  // derived here so the parent-vs-child resolution lives in exactly one
+  // place. Renamed from `activeSubsSet` to make that intent legible.
+  const visibleCategories = useMemo(() => {
     const narrowed = new Set(
       explorePrefs.selectedSubs.map(s => s.slice(0, s.indexOf("/"))),
     );
@@ -821,6 +860,7 @@ export default function App() {
   const exploreContents = useMemo(() => (
     <>
       {modeToggle}
+      <ExploreErrorBoundary>
       <ExploreForm
         origin={explorePrefs.origin}
         onOriginChange={handleExploreOriginChange}
@@ -884,6 +924,7 @@ export default function App() {
         onSelectAll={handleSelectAllCategories}
         onClearAll={handleClearAllCategories}
       />
+      </ExploreErrorBoundary>
     </>
   ), [
     modeToggle,
@@ -1143,7 +1184,7 @@ export default function App() {
         mode={mode}
         exploreResult={mode === "explore" ? exploreResult : null}
         categoryStyles={EXPLORE_CATEGORY_STYLES}
-        activeSubs={activeSubsSet}
+        activeSubs={visibleCategories}
         showResidential={explorePrefs.showResidentialHeatmap}
         showParks={explorePrefs.showParksHeatmap}
         showTreeCanopy={explorePrefs.showTreeCanopyHeatmap}
@@ -1267,12 +1308,22 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Toast ── */}
-      {toastMsg && (
-        <div className="toast" role="status" aria-live="polite">
-          {toastMsg}
-        </div>
-      )}
+      {/* ── Toast ──
+          F-18: the live region is kept in the DOM unconditionally (even when
+          empty) so assistive tech can attach to it and announce future
+          updates. The previous conditional render destroyed + recreated the
+          live region between announcements, which Safari/VoiceOver in
+          particular won't reliably re-bind to. Adding `aria-atomic="true"`
+          tells AT to read the whole message rather than only the diff
+          when the text changes from one toast to the next. */}
+      <div
+        className={`toast${toastMsg ? "" : " toast--empty"}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {toastMsg}
+      </div>
 
       {/* ── SW update banner ── */}
       {swUpdateReady && (

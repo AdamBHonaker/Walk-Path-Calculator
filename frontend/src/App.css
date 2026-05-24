@@ -1931,6 +1931,20 @@
   pointer-events: none;
 }
 
+/* TD-062 / F-18: the live region (`.toast`) stays in the DOM even when no
+ * message is showing so AT can attach. When empty we visually hide it
+ * without removing it — `display: none` would re-trigger the same
+ * "destroy + recreate live region" pattern the conditional render had.
+ * Setting visibility:hidden + zero metrics keeps the element parsed and
+ * its aria-live binding stable; the assistive tech still ignores it
+ * because there's no text content to announce. */
+.toast--empty {
+  visibility: hidden;
+  padding: 0;
+  border: 0;
+  animation: none;
+}
+
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(-50%) translateY(8px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }

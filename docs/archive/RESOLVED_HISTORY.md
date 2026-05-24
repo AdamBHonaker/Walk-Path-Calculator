@@ -1071,6 +1071,31 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · App.jsx state hygiene + Explore error boundary + a11y batch (TD-061 + TD-062)
+
+**Files:** `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useExploreFetch.js`, `frontend/src/hooks/usePersonalization.js`, `frontend/src/App.jsx`, `frontend/src/App.css`, `frontend/src/components/DirectionLedger.jsx`, new `frontend/src/components/ExploreErrorBoundary.jsx`.
+
+**Priority:** 🔴 High (F-33, F-15) / 🟡 Medium (rest).
+
+**What the debt was:** A cluster of state-correctness + accessibility issues clustered around `App.jsx` and its hooks. Recents could persist before validating the route response carried any actual routes (F-33). `exploreResult` + `exploreError` weren't cleared on a mode flip away from Explore — the next re-entry surfaced stale data before the fresh fetch landed (F-34). `userMovedSheetRef` never reset between modes, so a single drag in Route mode permanently disabled the auto-promote on subsequent mode flips into Explore (F-35). Share-link `hft` / `hin` only seeded personalization on mount; a second share link in the same session was silently ignored (F-37). `activeSubsSet` was the name of a memoized derived-visibility set that the codebase was treating as the source of truth — but the name said "set of active subs," not "the visible categories." (F-02). The frontend persisted user-typed stops to URL + recents rather than backend-normalized strings (C-14). Empty `directions` arrays left `DirectionLedger` with no "you arrived" footer (C-15). There was no `ErrorBoundary` around Explore mode (F-15), no focus management on mode flip (F-17), and the toast container was conditionally rendered which broke AT live-region binding (F-18).
+
+**How it was resolved:**
+
+- **F-33 + C-14 in [useRouteFetch.js](../../frontend/src/hooks/useRouteFetch.js):** Re-keyed both the URL params and `saveRecentSearch` off the backend's normalized `data.stops` when present (falls back to user-typed `cleanStops` on response-shape drift). Gated the recents write on `Array.isArray(data?.routes) && data.routes.length > 0` — a contract violation now silently no-ops rather than poisoning the chip strip.
+- **F-34 in [useExploreFetch.js](../../frontend/src/hooks/useExploreFetch.js):** Extended the mode-flip effect to also clear `exploreResult`, `exploreError`, `exploreLoading`, abort any in-flight fetch, and null the `lastFetchedHeatmapsRef` cache when `mode !== "explore"`. The next re-entry now fires a fresh fetch with no ghost data.
+- **F-35 + F-17 in [App.jsx](../../frontend/src/App.jsx):** Reset `userMovedSheetRef.current = false` inside the mode-change effect. Added a separate `useEffect` on `mode` that moves keyboard focus to the active mode's first input via `querySelector('input, [role="combobox"], [contenteditable]')`. `didMountModeFocusRef` skips the very first commit so a cold page load doesn't yank focus away from the browser's natural-focus target.
+- **F-37 in [usePersonalization.js](../../frontend/src/hooks/usePersonalization.js):** Added a `popstate` listener that re-reads URL params via `readUrlParams()` and re-applies `hft` + `hin` when both are present (treating a single param as "no override" so we don't wipe the user's saved values on a back-nav to a route that originally had no height).
+- **F-02 rename:** `activeSubsSet` → `visibleCategories` across `App.jsx` (definition + MapView prop). Added a doc comment pinning it as the single source of truth for "what's visible on the map right now."
+- **C-15 in [DirectionLedger.jsx](../../frontend/src/components/DirectionLedger.jsx):** When `directions.length === 0`, render a `.directions-arrival--empty` footer reading "Proceed directly to destination" so the ledger surfaces a clear arrival cue rather than an empty list.
+- **F-15 (Explore error boundary):** New [`ExploreErrorBoundary.jsx`](../../frontend/src/components/ExploreErrorBoundary.jsx) modeled on `RouteErrorBoundary` with an explore-specific error message ("Something went wrong drawing the explorer — try a different origin or time budget."). Wraps the form + result + category-panel subtree inside the memoized `exploreContents`.
+- **F-18 (toast a11y):** Toast container is now always in the DOM (with a `.toast--empty` class that hides it visually via `visibility: hidden` + zero padding/border/animation when no message). `aria-atomic="true"` added so AT reads the whole message on each update. The previous conditional render destroyed + recreated the live region between announcements, which Safari/VoiceOver in particular won't reliably re-bind to.
+
+**Acceptance:** `npm test` → **466 passed (466)** in 19s. The existing route-animation test that gates RAF calls on prefers-reduced-motion still passes because the focus effect runs synchronously in useEffect rather than scheduling a RAF.
+
+Verification: `npm test` clean; `grep -rn activeSubsSet frontend/src` returns no matches; the new ExploreErrorBoundary file exists and is wired in both desktop and mobile branches via the memoized `exploreContents`.
+
+---
+
 ### 2026-05-24 · Pydantic response models + standardized error shape (TD-052)
 
 **Files:** `backend/main.py`, `backend/walking.py`, new `backend/models.py`, `backend/tests/test_main.py`.

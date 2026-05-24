@@ -26,7 +26,7 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
 | 6 | TD-072 (+ TD-032, TD-034, TD-044) | Polish / paused | Optional |
 
-**Audit priorities at a glance** — 12 High items concentrated in: same-node routing (TD-053), recents-pollution + Explore error boundary (TD-061 / TD-062), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), custom-flavor handling (TD-060), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
+**Audit priorities at a glance** — 12 High items concentrated in: same-node routing (TD-053), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), custom-flavor handling (TD-060), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
 
 ---
 
@@ -278,50 +278,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
   - Surface autocomplete source distinction (icon or suffix).
   - Vitest that diff-checks `WF` token names against `tokens.css` declarations.
 - **Acceptance**: `npm test`; manual: drive `prefer_pedestrian=true` and confirm flavor strip renders cleanly.
-
----
-
-### TD-061 · CHUNK-17 · Recents + state hygiene in `App.jsx`
-- **Files**: `frontend/src/App.jsx`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useExploreFetch.js`, `frontend/src/components/DirectionLedger.jsx`, `frontend/src/lib/recentSearches.js`, `frontend/src/lib/explorePrefs.js`
-- **Category**: Frontend state correctness
-- **Priority**: 🔴 High (F-33) / 🟡 Medium (rest)
-- **Findings**:
-  - **F-33** — Recents persisted before route response validated; failed routes still pollute history (`useRouteFetch.js:108-113`).
-  - **F-34** — `exploreResult` not cleared on mode leave; render is guarded but state stays dirty.
-  - **F-35** — `userMovedSheetRef` never resets between modes; once dragged in Route mode, the auto-promote never fires again.
-  - **F-37** — Share-link `hft` / `hin` only seed personalization on mount; a second link in the same session is ignored.
-  - **F-02** — `explorePrefs` visibility logic split between persisted state + a computed memo; rename memo to `visibleCategories` and document as single source of truth.
-  - **C-14** — Frontend persists user-typed stops to URL/recents instead of the backend-normalized strings.
-  - **C-15** — Empty `directions` array leaves DirectionLedger without an arrival footer (`DirectionLedger.jsx:117`).
-- **Description**: Cluster of subtle state correctness issues in App.jsx + its hooks. Keep in lockstep with TD-062 since both touch App.jsx.
-- **Scope**:
-  - Gate `saveRecentSearch` on `data?.routes?.length > 0`.
-  - Clear `exploreResult` and `exploreError` when `mode !== "explore"`.
-  - Reset `userMovedSheetRef.current = false` on `mode` change.
-  - Re-read URL params on `popstate` for `hft` / `hin` reseed.
-  - Rename `activeSubsSet` → `visibleCategories`; document as the single visibility source.
-  - Re-key recents off `result.stops` (normalized).
-  - Show "Proceed directly to destination" when `directions.length === 0`.
-- **Acceptance**: Vitest covers each correction; manual confirms recents stays clean on failed routes.
-- **Sequencing**: Land alongside TD-062.
-
----
-
-### TD-062 · CHUNK-18 · Frontend error boundary + a11y batch
-- **Files**: `frontend/src/components/RouteErrorBoundary.jsx` (template), new `ExploreErrorBoundary.jsx`, `frontend/src/App.jsx`
-- **Category**: Error resilience / accessibility
-- **Priority**: 🔴 High (F-15) / 🟡 Medium (rest)
-- **Findings**:
-  - **F-15** — No ErrorBoundary around Explore mode; a render error in `ExploreForm` / `MapExploreLayer` crashes the whole app.
-  - **F-17** — Focus is not moved when toggling between Route ↔ Explore; keyboard users have to tab into the form.
-  - **F-18** — Toast messages have no `aria-live` region; screen readers don't announce route-fetch failures.
-- **Description**: Three additions that close real-user reliability + accessibility gaps.
-- **Scope**:
-  - Create `ExploreErrorBoundary` modeled on `RouteErrorBoundary`; wrap Explore content in both desktop and mobile branches.
-  - `useEffect` on `mode` that focuses the first form input of the active mode.
-  - Wrap the toast container in `role="status" aria-live="polite" aria-atomic="true"`, kept in the DOM (not conditionally rendered) so AT can attach.
-- **Acceptance**: Throw a synthetic error inside `MapExploreLayer` — boundary catches; keyboard-tab the mode toggle — focus lands on form input; trigger a route failure — toast announced by VoiceOver/NVDA.
-- **Sequencing**: Land alongside TD-061.
 
 ---
 

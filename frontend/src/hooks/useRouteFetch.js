@@ -85,15 +85,24 @@ export function useRouteFetch({
 
       const data = await res.json();
 
+      // Re-key URL + recents off the backend-normalized stop strings when
+      // available — they trim whitespace + collapse aliases the geocoder
+      // resolved, so reloading the URL or replaying from history hits the
+      // same coords without an extra round-trip (C-14). Fall back to the
+      // user-typed strings if the backend response shape changes.
+      const normalizedStops = Array.isArray(data?.stops) && data.stops.length >= 2
+        ? data.stops.map(s => String(s))
+        : cleanStops;
+
       // URL reflects the submitted request — write before the min-loading
       // delay so deep-link state is correct even if the user navigates away
       // mid-skeleton.
       const urlP = new URLSearchParams();
       if (multi) {
-        urlP.set("stops", cleanStops.join("|"));
+        urlP.set("stops", normalizedStops.join("|"));
       } else {
-        urlP.set("from", cleanStops[0]);
-        urlP.set("to",   cleanStops[1]);
+        urlP.set("from", normalizedStops[0]);
+        urlP.set("to",   normalizedStops[1]);
       }
       // hft/hin travel as an atomic pair — write both or neither, so a
       // recipient never lands on a half-set height (see usePersonalization).
@@ -108,9 +117,14 @@ export function useRouteFetch({
       // Persist to recents AFTER the abort/min-loading guard so a route that
       // gets superseded mid-skeleton (user submits a second search before the
       // 450 ms window closes) doesn't pollute the "Recent routes" chip strip
-      // with a search the user never actually saw.
-      const updatedRecents = saveRecentSearch(cleanStops);
-      if (updatedRecents) setRecentSearches(updatedRecents);
+      // with a search the user never actually saw. Additionally gate on a
+      // non-empty `routes` array — a successful response always carries at
+      // least one route, so an empty array is a contract violation rather
+      // than a stale-but-usable response (F-33).
+      if (Array.isArray(data?.routes) && data.routes.length > 0) {
+        const updatedRecents = saveRecentSearch(normalizedStops);
+        if (updatedRecents) setRecentSearches(updatedRecents);
+      }
       setResult(data);
     } catch (err) {
       if (err.name === "AbortError" || signal.aborted) return;

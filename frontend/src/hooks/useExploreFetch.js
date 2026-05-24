@@ -99,8 +99,21 @@ export function useExploreFetch({ mode, explorePrefs }) {
   // aborts the stale fetch and starts a fresh one with the current
   // params, rather than silently dropping the new request and letting
   // the prior one's stale params surface in the result.
+  //
+  // On leaving Explore (mode flip away) clear `exploreResult` + `exploreError`
+  // (F-34). The map already guards the render on `mode === "explore"` so the
+  // stale data wasn't visible, but holding it in state extended the lifetime
+  // of large heatmap geojson references and surfaced as a previously-rendered
+  // result on the very next explore re-entry before the fresh fetch landed.
   useEffect(() => {
-    if (mode !== "explore") return;
+    if (mode !== "explore") {
+      exploreAbortRef.current?.abort();
+      lastFetchedHeatmapsRef.current = null;
+      setExploreResult(null);
+      setExploreError("");
+      setExploreLoading(false);
+      return;
+    }
     if (exploreResult) return;
     fetchExploreResult();
     // Intentional: only run on mode-flip-into-explore + when result is empty.

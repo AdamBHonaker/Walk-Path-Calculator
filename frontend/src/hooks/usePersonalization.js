@@ -8,6 +8,7 @@ import {
   loadAccessPrefs, saveAccessPrefs,
   loadMobilityProfile, saveMobilityProfile,
 } from "../lib/personaPrefs.js";
+import { readUrlParams } from "../lib/urlParams.js";
 
 export function usePersonalization(initialUrlParams) {
   const initialAccessRef = useRef(null);
@@ -56,6 +57,26 @@ export function usePersonalization(initialUrlParams) {
     saveStoredWeightKg(weightKg);
     saveAccessPrefs({ avoidStairs, preferPedestrian });
   }, [walkPace, heightFt, heightIn, weightKg, avoidStairs, preferPedestrian]);
+
+  // F-37: re-seed `hft` / `hin` from a share link arriving mid-session.
+  // The mount-time block above only fires once, so a second link the user
+  // clicks (in-app navigation, back/forward, or pasted into the same tab)
+  // previously left the height stuck on whatever value the first link
+  // seeded — silently ignoring the new share's personalization. Listen for
+  // `popstate` and reapply when both params land as a pair. A single param
+  // (or none) is treated as "no override" so we don't wipe the user's saved
+  // values on a back-nav to a route that originally carried no height.
+  useEffect(() => {
+    const onPopState = () => {
+      const next = readUrlParams();
+      if (next.hft != null && next.hin != null) {
+        setHeightFt(next.hft);
+        setHeightIn(next.hin);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const handleHeightChange = useCallback((ft, inches) => {
     const toNum = v => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));

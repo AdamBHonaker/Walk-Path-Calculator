@@ -21,7 +21,6 @@ Hard deps are solid arrows; the dotted edge from TD-068 is optional pre-work. Ex
 graph LR
   TD049[TD-049 CI baseline] --> TD059[TD-059 Backend test gaps]
   TD053[TD-053 walking.py correctness] --> TD054[TD-054 walking.py split]
-  TD061[TD-061 Recents + App.jsx state] <--> TD062[TD-062 Explore error boundary + a11y]
   TD032[TD-032 React 18 → 19] --> TD034[TD-034 React Compiler eval]
   TD051[TD-051 PV burn-down] --> FEAT1[Multi-City Feature 1<br/>chunk 1<br/><i>external to TD catalog</i>]
   TD068[TD-068 Pickle forward-compat<br/>+ per-city breaker prep] -.optional pre-work.-> FEAT1
@@ -31,7 +30,6 @@ If Mermaid doesn't render, the same edges as text:
 
 - `TD-049 → TD-059`
 - `TD-053 → TD-054`
-- `TD-061 ↔ TD-062` (paired, land together)
 - `TD-032 → TD-034`
 - `TD-051 → Multi-City Feature 1 chunk 1` (Feature is external — scoped in [`FEATURE_PLANS.md`](FEATURE_PLANS.md) "Multi-City Support"; called out because TD-051 is the gate)
 - `TD-068 → Multi-City Feature 1 chunk 1` (optional front-loading; same external feature as above)
@@ -42,7 +40,6 @@ If Mermaid doesn't render, the same edges as text:
 |-------------|-----------|-----|
 | TD-049 | TD-059 | TD-059's perf-test gate runs in CI; CI must exist first. |
 | TD-053 | TD-054 | TD-053 adds tests + correctness fixes to `walking.py`; TD-054 then splits the module. Doing the split first leaves the new tests landing in a moving target. |
-| TD-061 | TD-062 (paired) | Both touch `App.jsx` and have explicit "land alongside" notes in the catalog. Treat as one PR or two PRs cut from the same branch. |
 | TD-032 | TD-034 | React Compiler is a React 19-only feature. |
 | TD-049 | TD-050 *(conditional)* | Only hard if TD-050's `ARTIFACT_REV` guard ships as a workflow step inside the TD-049 CI baseline. If TD-050 lands as a standalone script, no dep. See the soft-dep row below for the combined case. |
 
@@ -52,7 +49,7 @@ If Mermaid doesn't render, the same edges as text:
 |-------|----------------|-------------------|
 | TD-053 / TD-054 / TD-068 | `backend/walking.py` | TD-053 (correctness + tests) → TD-054 (split) → TD-068 (relax fail-fast guard in the new module). TD-053 → TD-054 is hard; TD-054 → TD-068 is soft. |
 | TD-055 / TD-056 / TD-067 | `backend/main.py`, `backend/geocoding.py` | Any order, but rebase carefully — TD-055 refactors geocoding tiers, TD-056 adds lifespan cleanup, TD-067 adds security-header + validator changes in `main.py`. |
-| TD-060 / TD-061 / TD-062 / TD-063 / TD-065 | `frontend/src/App.jsx` | App.jsx is a hotspot. Land TD-061 + TD-062 together first (the high-priority pair), then TD-060, then TD-063 / TD-065 (both 🟢 Low). |
+| TD-060 / TD-063 / TD-065 | `frontend/src/App.jsx` | App.jsx is a hotspot. TD-061 + TD-062 landed 2026-05-24; remaining items are TD-060, TD-063 / TD-065 (both 🟢 Low). |
 | TD-050 / TD-049 | release pipeline ↔ CI | TD-049's CI baseline can host TD-050's `ARTIFACT_REV` guard check as a workflow step. Land TD-049 first if combining them. |
 
 ## Parallel-safe lanes
@@ -64,7 +61,7 @@ Within each wave, items in the same row can run in different sessions without co
 | 0 | TD-045 | TD-046 + TD-047 resolved 2026-05-24; TD-045 remains as the lone Wave 0 item. |
 | 1 | TD-048, TD-049, TD-050, TD-051 | TD-051 is human-driven (device + key access); the other three are code-light. |
 | 2 | TD-055 ∥ TD-056 ∥ TD-057 ∥ TD-058 ∥ TD-059 | TD-053 → TD-054 sequential; everything else parallel. TD-059 waits on TD-049. TD-052 resolved 2026-05-24 — Wave 3 is no longer gated. |
-| 3 | (TD-061 + TD-062), then TD-060, then TD-063 ∥ TD-064 ∥ TD-065 ∥ TD-066 | "then" is **soft sequencing** (App.jsx merge-conflict avoidance — see soft-dep table), not a hard dep. TD-064 / TD-066 touch other files and can run alongside. |
+| 3 | TD-060, then TD-063 ∥ TD-064 ∥ TD-065 ∥ TD-066 | TD-061 + TD-062 landed 2026-05-24. "then" is **soft sequencing** (App.jsx merge-conflict avoidance — see soft-dep table), not a hard dep. TD-064 / TD-066 touch other files and can run alongside. |
 | 4 | TD-067 | Standalone. Can run in parallel with any wave. |
 | 5 | TD-068, TD-069, TD-070, TD-071 | Independent of each other. **TD-068 has a soft dep on TD-054 (Wave 2)** — both touch `walking.py`; land TD-068 after TD-054 if both are planned in the same window. |
 | 6 | TD-072, TD-032, TD-034, TD-044 | All optional / paused. TD-032 / TD-034 / TD-044 predate the audit batch — see [Wave 6 details (paused / optional items)](#wave-6-details-paused--optional-items) below before pulling them. |
