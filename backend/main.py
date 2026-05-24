@@ -228,6 +228,28 @@ async def lifespan(app: FastAPI):
             logger.warning("warm-up failed for %s: %r", name, result)
     _start_eviction_daemon()
     yield
+    # TD-056 / B-17 + B-18 + B-20: shutdown cleanup. Close the LocationIQ
+    # session (releases pooled keep-alive connections), close the geocoding
+    # SQLite cache (flushes WAL), and shut down the dedicated heatmap pool
+    # so its worker threads don't hang the process exit. Order: outbound
+    # network first (HTTP session), then storage (sqlite WAL flush), then
+    # in-process pools.
+    logger.info("Lifespan shutdown: releasing HTTP session, sqlite cache, thread pool ...")
+    try:
+        from geocoding import close_http_session as _close_geocoder_http
+        _close_geocoder_http()
+    except Exception as exc:
+        logger.warning("HTTP session close failed: %r", exc)
+    try:
+        from geocoding import _cache_db
+        if _cache_db is not None:
+            _cache_db.close()
+    except Exception as exc:
+        logger.warning("geocoding cache db close failed: %r", exc)
+    try:
+        _heatmap_pool.shutdown(wait=False, cancel_futures=True)
+    except Exception as exc:
+        logger.warning("heatmap pool shutdown failed: %r", exc)
 
 
 # Per-IP rate limiter. Limits are tuned per endpoint cost; see each route
@@ -264,6 +286,12 @@ def _resolve_trusted_proxy_hops() -> int:
 
 _TRUSTED_PROXY_HOPS = _resolve_trusted_proxy_hops()
 
+# TD-056 / B-24: one-shot WARN latch for the "X-Forwarded-For shorter than
+# TRUSTED_PROXY_HOPS" failure mode. Fires once per process so a
+# misconfigured proxy chain shows up in logs without spamming on every
+# request. Reset to False makes the next overshoot re-warn.
+_xff_overshoot_warned: bool = False
+
 
 def _client_ip(request: Request) -> str:
     """Rate-limit key: the real client IP rather than the proxy connection peer.
@@ -271,7 +299,17 @@ def _client_ip(request: Request) -> str:
     With TRUSTED_PROXY_HOPS proxies in front of the app, the client IP is the
     X-Forwarded-For entry that many positions from the end. Falls back to the
     connection peer when X-Forwarded-For is absent or shorter than the declared
-    hop count, so the limiter always has a usable key."""
+    hop count, so the limiter always has a usable key.
+
+    TD-056 / B-25: validates each X-Forwarded-For token as an IP via
+    `ipaddress.ip_address` before returning it as the rate-limit key. A
+    malformed XFF header (some proxies prepend hostnames, others double-
+    comma) would otherwise produce a bogus rate-limit bucket key that
+    couldn't be reconciled across requests.
+    """
+    global _xff_overshoot_warned
+    import ipaddress
+
     if _TRUSTED_PROXY_HOPS > 0:
         parts = [
             p.strip()
@@ -279,7 +317,26 @@ def _client_ip(request: Request) -> str:
             if p.strip()
         ]
         if len(parts) >= _TRUSTED_PROXY_HOPS:
-            return parts[-_TRUSTED_PROXY_HOPS]
+            candidate = parts[-_TRUSTED_PROXY_HOPS]
+            try:
+                ipaddress.ip_address(candidate)
+                return candidate
+            except ValueError:
+                # Malformed XFF token at the trusted-hop position — fall
+                # back to connection peer. Don't WARN on every request;
+                # a misconfigured upstream proxy would otherwise drown
+                # the log. The peer fallback below still produces a
+                # consistent (albeit collapsed) rate-limit key.
+                pass
+        elif not _xff_overshoot_warned:
+            _xff_overshoot_warned = True
+            logger.warning(
+                "X-Forwarded-For has %s entries but TRUSTED_PROXY_HOPS=%s — "
+                "falling back to the connection peer for the rate-limit key. "
+                "Verify the proxy chain depth; this warning fires once per "
+                "process.",
+                len(parts), _TRUSTED_PROXY_HOPS,
+            )
     return get_remote_address(request)
 
 

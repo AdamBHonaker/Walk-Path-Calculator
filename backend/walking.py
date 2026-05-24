@@ -555,6 +555,15 @@ def _evict_graph() -> None:
     global _edge_sources, _edge_targets, _graph_load_failed
     global _edge_tree_canopy, _edge_park_proximity, _edge_green_mask
 
+    # TD-056 / B-19: TOCTOU on `_last_graph_access` is advisory by design.
+    # The eviction daemon's outer check (in `_start_eviction_daemon`'s
+    # `_worker`) reads `_last_graph_access` without the lock — a request
+    # could arrive between that read and us acquiring `_graph_lock` here,
+    # bumping the access timestamp into the "should not evict" range. We
+    # re-check the idle window inside the lock below, so an in-flight
+    # request can never race the eviction itself. The outer unlocked read
+    # is just the "wake up and see if there's work to do" check; it's
+    # ALLOWED to be wrong as long as the inner check is authoritative.
     with _graph_lock:
         if _graph_cache is None:
             return
@@ -599,6 +608,16 @@ def _start_eviction_daemon() -> None:
     No-op when GRAPH_EVICTION_TTL_SECONDS=0 (eviction disabled).
     """
     if _EVICTION_TTL_SECONDS <= 0:
+        # TD-056 / B-36: surface the disabled state so an operator who set
+        # the env var to 0 (or left it at the legacy default that someone
+        # may have changed) sees the result on every boot. Prior behavior
+        # was a silent return, leaving "why isn't the graph evicting?" as
+        # a log-archaeology question.
+        logger.info(
+            "Graph eviction disabled (GRAPH_EVICTION_TTL_SECONDS=%s). "
+            "Set the env var to a positive number of seconds to enable.",
+            _EVICTION_TTL_SECONDS,
+        )
         return
 
     check_interval = max(60.0, _EVICTION_TTL_SECONDS / 10)

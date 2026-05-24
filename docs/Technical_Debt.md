@@ -109,31 +109,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 ---
 
-### TD-056 · CHUNK-12 · FastAPI lifespan + rate-limiter robustness
-- **Files**: `backend/main.py`, `backend/walking.py` (eviction log), `backend/geocoding.py` (close), `backend/tests/conftest.py`, new `backend/tests/test_rate_limit.py`
-- **Category**: Backend ops / lifecycle
-- **Priority**: 🟡 Medium
-- **Findings**:
-  - **B-17** — Lifespan yields with no shutdown cleanup; eviction daemon force-killed at exit; preload future fire-and-forget.
-  - **B-18** — Preload future's result is discarded — silent failure means next request synchronously blocks on `_load_graph()`.
-  - **B-19** — Eviction daemon has a TOCTOU race on `_last_graph_access` (outer unlocked check, inner authoritative recheck).
-  - **B-20** — `geocoding._cache_db` close runs via atexit; lifespan-shutdown ordering not guaranteed (WAL flush risk on graceful redeploy).
-  - **B-24** — `_client_ip` silently falls back to peer when `TRUSTED_PROXY_HOPS` overshoots header length; no log signal.
-  - **B-25** — `_client_ip` doesn't validate XFF token is an IP; malformed headers produce bogus rate-limit keys.
-  - **B-35** — `conftest.py:26` disables rate limiting globally — limiter is untested.
-  - **B-36** — `_start_eviction_daemon` returns silently when TTL=0 — operator can't confirm the setting.
-- **Description**: Tighten the startup / shutdown contract and add the missing rate-limit test surface.
-- **Scope**:
-  - After-yield cleanup: await preload future, close `_cache_db`, close `_http_session`.
-  - Capture preload future's done-callback; log + export a `preload_ready` flag.
-  - Document the TOCTOU pattern (advisory outer / authoritative inner) or move check inside the lock.
-  - Validate XFF tokens with `ipaddress.ip_address`; latch one-shot WARNING on overshoot.
-  - Log "Graph eviction disabled (TTL=0)" instead of silent return.
-  - Add `tests/test_rate_limit.py` with `RATE_LIMIT_ENABLED=true` that drives a 429.
-- **Acceptance**: New rate-limit test green; uvicorn logs show graceful-shutdown messages locally.
-
----
-
 ### TD-057 · CHUNK-13 · Local-search + autocomplete hardening
 - **Files**: `backend/main.py`, `backend/local_search.py`, `backend/places.py`, `backend/tests/test_local_search.py`
 - **Category**: Backend reliability

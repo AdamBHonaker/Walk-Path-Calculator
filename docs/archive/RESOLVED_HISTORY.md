@@ -1071,6 +1071,26 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · FastAPI lifespan cleanup + rate-limiter hardening + test (TD-056)
+
+**Files:** `backend/main.py`, `backend/walking.py`, new `backend/tests/test_rate_limit.py`.
+
+**Priority:** 🟡 Medium.
+
+**What the debt was:** Eight ops/lifecycle findings — the lifespan yielded with no shutdown cleanup (B-17), the preload future's result was discarded so a silent failure would make the next request block (B-18), the eviction daemon's outer + inner `_last_graph_access` check looked like a TOCTOU bug but was actually an advisory-vs-authoritative pattern (B-19), `geocoding._cache_db` closed via atexit with no guaranteed lifespan ordering (B-20), `_client_ip` silently fell back to the peer when `X-Forwarded-For` was shorter than `TRUSTED_PROXY_HOPS` (B-24), `_client_ip` didn't validate XFF tokens as IPs (B-25), the rate limiter was globally disabled by `conftest.py` and therefore untested (B-35), and `_start_eviction_daemon` returned silently when `TTL=0` (B-36).
+
+**How it was resolved:**
+
+- **B-17 + B-18 + B-20 (lifespan shutdown).** `lifespan` now does explicit teardown after `yield`: closes the geocoding HTTP session (calls `close_http_session()` added in TD-055), closes the geocoding SQLite cache (`_cache_db.close()` for WAL flush), and shuts down the heatmap thread pool with `cancel_futures=True`. Order: outbound network → storage → in-process pools. Each step is in a `try/except` so a partial-cleanup failure logs but doesn't block the next step. **B-18:** the preload `await loop.run_in_executor(None, _preload_graph)` already awaits the future — a silent failure would now surface as a startup error rather than block the first request.
+- **B-19 (TOCTOU pattern documented).** Inline block comment in `_evict_graph` names the outer/inner check pattern: the daemon's outer read is advisory ("is there work to do?"), the inner re-check inside `_graph_lock` is authoritative. An in-flight request can never race the eviction itself.
+- **B-24 + B-25 (XFF validation + overshoot WARN).** `_client_ip` now validates each XFF token via `ipaddress.ip_address` before returning it as the rate-limit key — a malformed header produces a fall-back to the connection peer rather than a bogus rate-limit bucket. New `_xff_overshoot_warned` one-shot latch fires a WARN exactly once per process when XFF is shorter than `TRUSTED_PROXY_HOPS`, so a misconfigured proxy chain surfaces in logs without spam.
+- **B-36 (TTL=0 logging).** `_start_eviction_daemon` now logs `Graph eviction disabled (GRAPH_EVICTION_TTL_SECONDS=0)...` instead of returning silently.
+- **B-35 (rate-limit test).** New [test_rate_limit.py](../../backend/tests/test_rate_limit.py) with a `_rate_limited_app` fixture that toggles `RATE_LIMIT_ENABLED=true`, reimports `main` (the limiter wires at module import), and drives a 35-request burst against `/route` (30/min limit). Confirms the limiter actually fires + that the un-limited `/health` doesn't 429 from adjacent-bucket pollution. Module-level fixture isolation undoes the env override + reload at teardown so the rest of the suite continues to run with rate-limiting disabled per conftest.
+
+**Acceptance:** `pytest backend/tests/` → **340 passed (340)** in 21s (was 338; 2 new rate-limit tests).
+
+---
+
 ### 2026-05-24 · geocoding.py HTTP session hardening + KDTREE_LON_SCALE shared (TD-055)
 
 **Files:** `backend/geocoding.py`, `backend/utils.py`.
