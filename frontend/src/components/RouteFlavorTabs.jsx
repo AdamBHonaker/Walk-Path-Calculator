@@ -1,11 +1,33 @@
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
 import { useMediaQuery, MQ_MOBILE } from "../lib/useMediaQuery.js";
+import { FLAVORS } from "../lib/apiEnums.js";
 
+// Keys mirror `FLAVORS` from `apiEnums.js` (which mirrors `backend/models.py`).
+// `custom` is the collapsed flavor a route with `avoid_stairs` /
+// `prefer_pedestrian` lands under — both 2-stop and multi-stop. Wheeled
+// profile takes its own branch below (the explanatory note) and never reaches
+// the tablist, but `custom` shows up for non-wheeled routes that opt into
+// the same access prefs, so the meta entry is needed to render the
+// single-tab case without falling through to the raw-flavor-name fallback.
 const FLAVOR_META = {
-  fastest:      { label: "Fastest",      icon: "bolt",   detail: "Shortest route" },
-  fewest_turns: { label: "Fewest turns", icon: "branch", detail: "Simpler path" },
-  greenest:     { label: "Greenest",     icon: "tree",   detail: "Through parks, under canopy" },
+  fastest:      { label: "Fastest",      icon: "bolt",     detail: "Shortest route" },
+  fewest_turns: { label: "Fewest turns", icon: "branch",   detail: "Simpler path" },
+  greenest:     { label: "Greenest",     icon: "tree",     detail: "Through parks, under canopy" },
+  custom:       { label: "Custom",       icon: "crosshair", detail: "Tailored to your access prefs" },
 };
+
+// Sanity guard: the FLAVOR_META keys must cover every flavor the backend
+// emits. If they ever drift, lint with eslint-no-unused-vars catches the
+// orphan; this assertion catches the inverse (backend adds a flavor we
+// forgot to render).
+if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
+  for (const flavor of FLAVORS) {
+    if (!(flavor in FLAVOR_META)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[RouteFlavorTabs] no FLAVOR_META entry for flavor "${flavor}"; tab will render the raw label`);
+    }
+  }
+}
 
 export function RouteFlavorTabs({ routes, activeFlavor, onChange, mobilityProfile = "walking" }) {
   // Below 480px the per-tab stats line ("X mi · Y min · Z STEPS") is too

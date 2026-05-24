@@ -3160,6 +3160,22 @@
   opacity: 0.7;
 }
 
+/* TD-060 / C-17: visually distinguish LocationIQ supplements from local
+ * sources so a user can tell at a glance whether a suggestion came from
+ * the offline Chicago dataset (neighborhood / intersection / address /
+ * place) vs. the hosted vendor fallback. Italics + an inline marker
+ * (·ext) are subtle enough not to fight the rest of the row but signal
+ * "this travels over the network" clearly. The marker is `::before` so
+ * it isn't part of the source label's text content (screen readers still
+ * read "external" via SOURCE_LABELS). */
+.address-autocomplete-item-source--locationiq {
+  font-style: italic;
+}
+.address-autocomplete-item-source--locationiq::before {
+  content: "· ";
+  margin-right: 1px;
+}
+
 /* Visually hidden, still announced by screen readers. Used for the
    live-region result-count announcement inside AddressAutocomplete. */
 .sr-only {

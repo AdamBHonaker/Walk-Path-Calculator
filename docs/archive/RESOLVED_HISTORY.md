@@ -1071,6 +1071,29 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Frontend API-contract enums centralized + custom-flavor render + LocationIQ visual distinction + WF token validation (TD-060)
+
+**Files:** new `frontend/src/lib/apiEnums.js`, new `frontend/src/wayfarer/tokens.test.js`, `frontend/src/components/RouteFlavorTabs.jsx`, `frontend/src/App.css`.
+
+**Priority:** 🔴 High (C-01) / 🟡 Medium (rest).
+
+**What the debt was:** Six findings from the 2026-05-23 audit. `FLAVOR_META` had no `"custom"` entry; the backend's collapsed-flavor response (sent when `avoid_stairs` or `prefer_pedestrian` is true) rendered as a literal `"custom"` string with no icon and the raw flavor key as the label (C-01). `places[].subcategory` / `address` null-coalescing in [MapExploreLayer.jsx](../../frontend/src/map/MapExploreLayer.jsx) was already in place from a prior change — confirmed `p.subcategory ?? ""` and `p.address ?? ""` at line 130/132 (C-03 was already paid). `places[].source` enum has no source→icon mapping and the audit suggested centralizing the contract values (C-04). Backend `pace` is an open string but frontend hardcodes the three-element `PACE_OPTIONS` list (C-10). LocationIQ supplements in the autocomplete dropdown were typographically identical to local-source rows — same color, same weight, same case (C-17). The `WF` token map in [primitives.jsx](../../frontend/src/wayfarer/primitives.jsx) referenced CSS custom properties (`var(--ink)` etc.) with no test guarding against a rename in [tokens.css](../../frontend/src/wayfarer/tokens.css) (F-32).
+
+**How it was resolved:**
+
+- **Centralized enums in [`frontend/src/lib/apiEnums.js`](../../frontend/src/lib/apiEnums.js).** Four frozen exports — `FLAVORS`, `PACES`, `PLACE_SOURCES`, `AUTOCOMPLETE_SOURCES` — that mirror the matching `models.py` types. Module docstring pins this as the single source of truth for the public-API contract values the frontend renders, with a note that new values land here first.
+- **`custom` flavor entry added.** [RouteFlavorTabs.jsx](../../frontend/src/components/RouteFlavorTabs.jsx) now imports `FLAVORS` from `apiEnums.js`, declares a `FLAVOR_META.custom` entry (label "Custom", icon `crosshair`, detail "Tailored to your access prefs"), and a dev-only sanity check warns if any flavor in `FLAVORS` lacks a meta entry. The Wheeled-profile note path is untouched (single-flavor responses there still render the "Optimized for accessible routes" explainer rather than the tab list).
+- **MapExploreLayer null-coalesce confirmed in place.** Already converting `null` to `""` for `address` and `subcategory` at the feature-properties stamp; left as-is with an inline comment so future readers don't re-add the same fix.
+- **LocationIQ visual distinction in [App.css](../../frontend/src/App.css).** Added `.address-autocomplete-item-source--locationiq` styling — italic + a leading `· ` marker — to differentiate hosted-fallback suggestions from the local cascade's rows. The `aria-hidden="true"` source pill is unchanged so screen readers still hit the SOURCE_LABELS-mapped "external" string.
+- **WF token validation test at [`frontend/src/wayfarer/tokens.test.js`](../../frontend/src/wayfarer/tokens.test.js).** Reads `tokens.css`, extracts every `--*` declaration, walks the `WF` map, and asserts every `var(--foo)` reference resolves. Catches the dangerous drift direction (`WF` references a token tokens.css no longer declares); new tokens land freely.
+- **PaceSelector left alone.** The `PACE_OPTIONS` array already centralized the three pace strings — the values match `PACES` from `apiEnums.js`. Documented the linkage in the new module rather than restructuring the existing API.
+
+**Acceptance:** `npm test` → **469 passed (469)** in 18s. The new tokens validation test ran clean (every WF reference resolves to a declared token).
+
+Verification: `npm test` clean; `apiEnums.js` imported from [RouteFlavorTabs.jsx](../../frontend/src/components/RouteFlavorTabs.jsx); the `custom` flavor meta entry is present; LocationIQ rows in the autocomplete dropdown now render in italic with a `·` marker.
+
+---
+
 ### 2026-05-24 · App.jsx state hygiene + Explore error boundary + a11y batch (TD-061 + TD-062)
 
 **Files:** `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useExploreFetch.js`, `frontend/src/hooks/usePersonalization.js`, `frontend/src/App.jsx`, `frontend/src/App.css`, `frontend/src/components/DirectionLedger.jsx`, new `frontend/src/components/ExploreErrorBoundary.jsx`.

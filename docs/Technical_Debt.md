@@ -26,7 +26,7 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
 | 6 | TD-072 (+ TD-032, TD-034, TD-044) | Polish / paused | Optional |
 
-**Audit priorities at a glance** — 12 High items concentrated in: same-node routing (TD-053), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), custom-flavor handling (TD-060), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
+**Audit priorities at a glance** — 12 High items concentrated in: same-node routing (TD-053), PV burn-down (TD-051), artifact pipeline guardrails (TD-050), missing LICENSE (TD-045), backups (TD-070). Most other items are 🟡 Medium or 🟢 Low.
 
 ---
 
@@ -256,28 +256,6 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
   - Add CI threshold to `test_explore_perf.py` (e.g., 45-min budget < 200 ms; fail on +10% regression).
   - Redaction coverage: monkey-patch `logger.warning`/`info`/`error`, fuzz coords through geocoding + walking, assert no `41.x, -87.x` in log lines.
 - **Acceptance**: New tests run green; CI (TD-049) gates the perf threshold.
-
----
-
-### TD-060 · CHUNK-16 · API contract enforcement: enums + place null-safety (frontend)
-- **Files**: new `frontend/src/lib/apiEnums.js`, `frontend/src/components/RouteFlavorTabs.jsx`, `frontend/src/map/MapExploreLayer.jsx`, `frontend/src/components/AddressAutocomplete.jsx`, `frontend/src/wayfarer/tokens.css` (validation test)
-- **Category**: API contract / UI correctness
-- **Priority**: 🔴 High (C-01) / 🟡 Medium (rest)
-- **Findings**:
-  - **C-01** — `FLAVOR_META` has no `"custom"` entry; backend's collapsed-flavor response renders as a literal "custom" string with no icon.
-  - **C-03** — `places[].subcategory` / `address` can be `null`; frontend stamps `null` into MapLibre feature properties.
-  - **C-04** — `places[].source` enum is open-ended (eight values today); frontend has no source→icon mapping.
-  - **C-10** — `pace` is an open string on the backend but a hardcoded enum on the frontend; a new pace name renders unlabeled.
-  - **C-17** — Autocomplete `source` (LocationIQ vs local DB) is visually indistinguishable to the user.
-  - **F-32** — `WF` token-name object has no build-time validation against `tokens.css`; renaming `--ink` silently breaks references.
-- **Description**: Centralize the contract enums so frontend / backend can drift only in one place.
-- **Scope**:
-  - Centralize enums in `apiEnums.js`: `FLAVORS` (incl. `custom`), `PACES`, `PLACE_SOURCES`, `AUTOCOMPLETE_SOURCES`.
-  - Add `custom` to `FLAVOR_META` with a clear label; consider hiding the flavor strip entirely in the collapsed case (mirror the "Optimized for accessible routes." treatment).
-  - Omit / coalesce null `subcategory` / `address` before stamping into feature properties.
-  - Surface autocomplete source distinction (icon or suffix).
-  - Vitest that diff-checks `WF` token names against `tokens.css` declarations.
-- **Acceptance**: `npm test`; manual: drive `prefer_pedestrian=true` and confirm flavor strip renders cleanly.
 
 ---
 
