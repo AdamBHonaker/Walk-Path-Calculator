@@ -1,5 +1,7 @@
 # Greenest-routing graph release runbook
 
+**For the day-to-day operator procedure** (rebuild → hash → upload → rotate Railway vars → deploy), see the shorter [`Release.md`](Release.md). This file is the architectural reference — bake pipeline, integrity contract, rollback recipe.
+
 How the production artifacts at the `street-graph` GitHub release tag are produced, what fails if any go wrong, and how to roll back. Two artifacts live on the tag:
 
 - **`street_graph_igraph.pkl`** (~28 MB) — the pedestrian routing graph with greenest-routing edge weights baked in. Loaded by `walking.py` at startup. SEC-001 SHA-256 integrity check enforced via `STREET_GRAPH_SHA256`.

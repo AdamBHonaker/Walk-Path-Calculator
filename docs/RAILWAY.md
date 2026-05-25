@@ -1,6 +1,6 @@
 # Railway deployment guide
 
-This is the **operator-facing** runbook for deploying Passage to Railway. For artifact rebuild + SHA rotation, see [`RELEASE_RUNBOOK.md`](RELEASE_RUNBOOK.md). For backup / disaster recovery, see [`DR.md`](DR.md).
+This is the **operator-facing** runbook for deploying Passage to Railway. For the day-to-day refresh procedure (rebuild → hash → upload → rotate vars → deploy), see [`Release.md`](Release.md). For the deeper bake-pipeline context, see [`RELEASE_RUNBOOK.md`](RELEASE_RUNBOOK.md). For backup / disaster recovery, see [`DR.md`](DR.md).
 
 > **Acceptance contract (TD-048).** Following this doc end-to-end on a fresh fork should produce a working Railway deploy without any out-of-band knowledge. If you hit a step that requires information not documented here, file a bug — the doc is the contract.
 
@@ -26,8 +26,8 @@ Read by the Dockerfile during `docker build`. Changing them re-runs the build.
 
 | Variable | Required? | Effect |
 |---|---|---|
-| `ARTIFACT_REV` | Recommended | Bust the artifact-fetch layer's BuildKit cache when the GitHub release assets are re-uploaded. Format: a date string (`2026-05-24`). Bump whenever you re-upload `.pkl` / `.db` / `chicago_boundary.json`. **Forgetting this ships stale bytes** even after a successful re-upload (TD-050 added a guard against this). |
-| `STREET_GRAPH_SHA256` | Recommended in production | Expected SHA-256 of the freshly-downloaded `street_graph_igraph.pkl`. When set, the build verifies the digest and fails on mismatch — earlier and louder than the runtime degradation. Leave unset to skip the verification (logs a warning at boot instead of failing the build). Rotate whenever you re-bake the pickle. |
+| `ARTIFACT_REV` | Yes | Bust the artifact-fetch layer's BuildKit cache when the GitHub release assets are re-uploaded. Format: a date string (`2026-05-24`). Bump whenever you re-upload `.pkl` / `.db` / `chicago_boundary.json`. To opt out of the integrity check below (only for unverified dev builds), set the literal string `local-dev` — any other value pairs with the requirement to also set `STREET_GRAPH_SHA256`. |
+| `STREET_GRAPH_SHA256` | Yes (unless `ARTIFACT_REV=local-dev`) | Expected SHA-256 of the freshly-downloaded `street_graph_igraph.pkl`. The build verifies the digest and fails on mismatch — earlier and louder than runtime degradation. **TD-050 guard:** an empty value paired with any real `ARTIFACT_REV` value now fails the build with a clear message. Rotate whenever you re-bake the pickle (see [`Release.md`](Release.md)). |
 
 ### Runtime
 

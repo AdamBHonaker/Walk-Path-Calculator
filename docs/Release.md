@@ -1,6 +1,11 @@
 # Release runbook — refreshing the pickle + redeploying
 
-Operator-facing runbook for the case where you need to re-bake `street_graph_igraph.pkl` (or the geocode DB, or the boundary polygon) and ship the new bytes through Railway. This is the **happy path**. The unhappy path (the developer machine is gone, the GitHub release is corrupted) lives in [`DR.md`](DR.md). Sibling deploy-config doc: [`RAILWAY.md`](RAILWAY.md).
+Operator-facing day-to-day procedure for the case where you need to re-bake `street_graph_igraph.pkl` (or the geocode DB, or the boundary polygon) and ship the new bytes through Railway. This is the **happy path**.
+
+**Related runbooks:**
+- [`RELEASE_RUNBOOK.md`](RELEASE_RUNBOOK.md) — deeper context on the bake pipeline, the SEC-001 pickle integrity contract, and the architecture-level rollback recipe. Read it once to understand the system; read this file when you actually need to ship a release.
+- [`RAILWAY.md`](RAILWAY.md) — the deploy contract (env vars, service config). Sibling doc.
+- [`DR.md`](DR.md) — unhappy path (the developer machine is gone, the GitHub release is corrupted).
 
 > **TD-050 acceptance contract.** "Manually rotate `ARTIFACT_REV` without rotating the hash → build fails fast with a clear message." Verified — the Dockerfile guard at `backend/Dockerfile` will refuse to build when `STREET_GRAPH_SHA256` is empty unless `ARTIFACT_REV=local-dev`. See the [Guard rails](#guard-rails) section below for the full set.
 

@@ -97,6 +97,9 @@ Passage/
 │                         #     checklist governing TD resolutions],
 │                         #   Efficiency_Improvements, FEATURE_PLANS, FEATURE_HISTORY,
 │                         #   MOBILE_TESTING, Pending_Verification; archive/RESOLVED_HISTORY)
+│                         # Operator docs: RAILWAY.md (deploy contract — TD-048),
+│                         #   Release.md (artifact rotation runbook — TD-050),
+│                         #   DR.md (disaster recovery — TD-070).
 │
 ├── scripts/
 │   └── dev-tunnel.mjs    # Cross-platform Cloudflare-tunnel orchestrator for mobile dev
