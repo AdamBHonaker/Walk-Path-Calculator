@@ -446,3 +446,11 @@ Top-level place categories (matched against `places.category`):
 - **Address autocomplete** — `AddressAutocomplete` (a generic typeahead combobox) is shared by the route stop inputs and the Explorer's community-area picker. Route stops hit `GET /autocomplete` (debounced 150 ms, abort-on-keystroke); the Explorer's picker passes a local filter over the 77 community-area names. Implements the WAI-ARIA combobox 1.1 inline pattern (`role="combobox"`, `aria-controls`, `aria-expanded`, `aria-activedescendant`). Shipped 2026-05-12; real-device mobile sign-off pending as PV-001 in [`docs/Pending_Verification.md`](docs/Pending_Verification.md).
 - **No transit data** — zero dependency on GTFS, CTA APIs, or any transit graph. The pedestrian street graph and OSM-tag-derived place data are the only spatial inputs.
 - **Naming** — Several internal identifiers (localStorage keys prefixed `walkpath:`, the `WPIcon` component, `walkpath-icons.jsx`, MapLibre `walk-path` source IDs) keep the old prefix to avoid orphaning user data and cascading import churn. The user-facing brand is **Passage**.
+
+## Contributing
+
+Passage is MIT-licensed (see [`LICENSE`](LICENSE)) and welcomes contributions.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the branch model, commit
+conventions, and test requirements; [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+for community expectations; and [`ATTRIBUTION.md`](ATTRIBUTION.md) for the
+upstream data-source and font licenses bundled with the project.

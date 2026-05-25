@@ -18,7 +18,7 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 
 | Wave | TD entries | Theme | Parallel-safe? |
 |------|------------|-------|----------------|
-| 0 | TD-045 | Repo basics & docs | Standalone now (TD-046 / -047 resolved) |
+| 0 | — | Repo basics & docs | All Wave 0 items resolved 2026-05-24. |
 | 1 | TD-051 | Operational hardening | Human-driven (TD-048 / -049 / -050 resolved 2026-05-24) |
 | 2 | — | All Wave 2 items resolved 2026-05-24. |
 | 3 | TD-060 → TD-066 | Frontend correctness + UX | TD-061 + TD-062 both touch App.jsx — keep in lockstep |
@@ -26,23 +26,7 @@ A three-pass codebase audit (six Explore subagents across backend, frontend, cro
 | 5 | TD-068 → TD-071 | Forward-looking architecture | Yes |
 | 6 | TD-072 (+ TD-032, TD-034, TD-044) | Polish / paused | Optional |
 
-**Audit priorities at a glance** — 12 High items concentrated in: PV burn-down (TD-051), missing LICENSE (TD-045). Most other items are 🟡 Medium or 🟢 Low.
-
----
-
-### TD-045 · CHUNK-01 · Repo metadata + license + contributor docs
-- **Files (new)**: `LICENSE`, `ATTRIBUTION.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
-- **Category**: Project governance / legal
-- **Priority**: 🔴 High (LICENSE) / 🟢 Low (the rest)
-- **Findings**:
-  - **X-25** — No `LICENSE` file at repo root; default copyright = "all rights reserved", which prevents OSS contribution.
-  - **X-26** — No `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md`. Commit-prefix convention (`feat:` / `fix:` / `chore:` / `docs:`) and PR-flow are followed but never documented.
-- **Description**: The repo carries no explicit license despite being on GitHub, and the contribution conventions live only in commit history. Adding these is zero code-risk.
-- **Scope**:
-  - Pick a license — MIT recommended unless data-source attribution conflicts (verify OSM, NLCD 2021, Chicago Data Portal, LocationIQ obligations).
-  - Move data-source attribution into a separate `ATTRIBUTION.md` so the license file stays clean.
-  - Codify the commit-prefix + PR-flow conventions already followed in practice; include "test required before merge" expectation.
-- **Acceptance**: GitHub renders the license badge; `CONTRIBUTING.md` is linked from README; `ATTRIBUTION.md` satisfies each upstream data source's license requirements.
+**Audit priorities at a glance** — remaining High item: PV burn-down (TD-051). Most other items are 🟡 Medium or 🟢 Low.
 
 ---
 

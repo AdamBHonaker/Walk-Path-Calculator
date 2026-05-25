@@ -48,7 +48,7 @@ Within each wave, items in the same row can run in different sessions without co
 
 | Wave | Parallel-safe set | Notes |
 |------|-------------------|-------|
-| 0 | TD-045 | TD-046 + TD-047 resolved 2026-05-24; TD-045 remains as the lone Wave 0 item. |
+| 0 | — | All Wave 0 items resolved 2026-05-24. |
 | 1 | TD-051 | TD-048 + TD-049 + TD-050 resolved 2026-05-24; TD-051 is human-driven (device + key + Railway-deploy access). |
 | 2 | — | All Wave 2 items resolved 2026-05-24. |
 | 3 | — | All Wave 3 items landed 2026-05-24. |
@@ -84,9 +84,7 @@ Optional polish, no deps. The catalog itself says "skip unless `App.css` crosses
 
 If you're picking up the next chunk and don't want to think about deps, any of these can start immediately. The buckets are cross-cutting (priority × session-shape), not mutually exclusive — pick the row that matches the session you have.
 
-- **🔴 High, fast:** TD-045 (LICENSE).
 - **🔴 High, deeper:** TD-051 (PV burn-down — unlocks Multi-City; **human-driven**, needs device + LocationIQ key access).
-- **Standalone (any priority, no coordination needed):** TD-045.
 
 ## Chunk completion checklist
 

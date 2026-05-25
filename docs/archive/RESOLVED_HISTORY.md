@@ -1071,6 +1071,30 @@ Total test count after changes: **115 tests, all passing**.
 
 ## Technical Debt Paid Off
 
+### 2026-05-24 · Repo metadata + license + contributor docs (TD-045)
+
+**Files:** new `LICENSE`, new `ATTRIBUTION.md`, new `CONTRIBUTING.md`, new `CODE_OF_CONDUCT.md`, `README.md`.
+
+**Priority:** 🔴 High (`LICENSE`) / 🟢 Low (the rest).
+
+**What the debt was:** The repo sat on GitHub with no `LICENSE` file — default copyright = "all rights reserved", which blocks any OSS contribution or downstream reuse despite the public-facing intent. Commit-prefix conventions (`feat:` / `fix:` / `chore:` / `docs:`) and the PR-flow were followed in practice but never codified, so a first-time contributor would have to reverse-engineer them from history. Upstream data licenses (OSM ODbL share-alike, NLCD, Chicago Data Portal, LocationIQ ToS, OFL fonts) were undocumented at the repo level, leaving share-alike obligations implicit.
+
+**How it was resolved:**
+
+- **[`LICENSE`](../../LICENSE)** — MIT, with a footer pointing to `ATTRIBUTION.md` for the bundled-data licenses (the MIT covers source code; data artifacts carry their own upstream terms).
+- **[`ATTRIBUTION.md`](../../ATTRIBUTION.md)** — per-source obligations for every upstream the repo bundles or links: OSM (ODbL share-alike — covers the street graph pickle/graphml, places_osm.json, residential / green-space / boundary polygons, and the address + intersections tables in chicago_geocode.db); NLCD Tree Canopy Cover 2021 (US Gov public domain); Chicago Data Portal (per-source `_source` keys catalogued); LocationIQ (caching permitted under their ToS); MapLibre GL JS (BSD-3-Clause); and the three self-hosted OFL fonts (Fraunces, Inter, JetBrains Mono).
+- **[`CONTRIBUTING.md`](../../CONTRIBUTING.md)** — codifies the branch model (main-only, topic branches deleted after merge), Conventional Commits table with the project's `data:` extension, the "tests required before merge" expectation per stack (backend `pytest`, frontend `npm test` + `npm run lint` + `npm run build` for build-touching changes), and the chunk-completion checklist pointer for TD work. Cross-links every active tracking doc.
+- **[`CODE_OF_CONDUCT.md`](../../CODE_OF_CONDUCT.md)** — reference-only adoption of Contributor Covenant 2.1 (links to the canonical text rather than embedding the full enumeration). Reporting address: `wayfarer.atlas@gmail.com`.
+- **[`README.md`](../../README.md)** — new "Contributing" section near the end linking `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `ATTRIBUTION.md`, satisfying the catalog's "CONTRIBUTING.md is linked from README" acceptance line.
+
+**Acceptance:**
+
+- GitHub renders the MIT license badge automatically off the new `LICENSE` file (visible on next push).
+- `CONTRIBUTING.md` is linked from `README.md`'s new Contributing section.
+- `ATTRIBUTION.md` enumerates every upstream Passage depends on and the form of attribution each requires — satisfies the OSM ODbL "attribution + share-alike" obligation explicitly for the derived artifacts.
+
+---
+
 ### 2026-05-24 · Wave 1 operational hardening — Railway docs + CI + artifact guard (TD-048 + TD-049 + TD-050)
 
 **Files:** new `docs/RAILWAY.md`, new `docs/Release.md`, new `.github/workflows/ci.yml`, new `.github/dependabot.yml`, `backend/railway.toml`, `backend/.env.example`, `backend/Dockerfile`.
