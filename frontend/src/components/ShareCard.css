@@ -1,0 +1,238 @@
+/* TD-044 — ShareDispatch.jsx's inline `style={{ ... }}` blocks migrated
+ * into BEM-ish classes here so the production CSP can drop
+ * `'unsafe-inline'` from `style-src`. Static styles only; per-instance
+ * dynamics (the 2-vs-3-vs-4 stat-column grid, the last-cell border
+ * toggle, the size-fits-the-content stat number) stay inline because
+ * they vary per render.
+ *
+ * The Wayfarer design tokens (`--paper-bright` / `--ember` / `--mute` /
+ * etc.) resolve at render time, so these rules continue to honor the
+ * Cream / Dusk theme toggle without touching `.share-card-*` classes.
+ *
+ * Layout numbers (font sizes, paddings, letter-spacings) mirror the
+ * prior inline values byte-for-byte — the migration is supposed to be
+ * visually identical, so the catalog's acceptance criterion ("share-card
+ * PNG visually identical to baseline") is on a tight tolerance.
+ */
+
+.share-card {
+  /* Stretch to fit share-modal-card-wrap on mobile (full-bleed modal),
+     never exceed the editorial 480 px design width on desktop. PNG
+     export uses pixelRatio: 3 so even a 320 px card renders at ~960 px. */
+  width: 100%;
+  max-width: 480px;
+  background: var(--paper-bright);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  font-family: var(--wf-serif);
+  box-sizing: border-box;
+}
+
+.share-card-masthead {
+  padding: 10px 18px 8px;
+  border-bottom: 1px solid var(--ink);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.share-card-masthead__brand { color: var(--ink); }
+
+.share-card-title {
+  padding: 10px 22px 6px;
+  text-align: center;
+}
+.share-card-title__eyebrow {
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--ember);
+}
+.share-card-title__heading {
+  font-family: var(--wf-serif);
+  font-weight: 700;
+  font-style: italic;
+  font-size: 26px;
+  line-height: 1.1;
+  margin: 4px 0 0;
+  color: var(--ink);
+  letter-spacing: -0.4px;
+}
+.share-card-title__heading-prep {
+  /* "From" / "to" — upright sans-y context word inside the italic heading. */
+  font-style: normal;
+  font-weight: 500;
+}
+
+.share-card-rule {
+  margin: 0 22px;
+  height: 5px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.share-card-drop {
+  padding: 10px 22px 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.share-card-drop__figure {
+  font-family: var(--wf-mono);
+  font-size: 54px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 0.85;
+  letter-spacing: -2px;
+  font-variant-numeric: tabular-nums;
+}
+.share-card-drop__body {
+  flex: 1;
+  padding-top: 4px;
+  min-width: 0;
+}
+.share-card-drop__label {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.share-card-drop__motivation {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.45;
+  margin-top: 6px;
+}
+
+.share-card-map-wrap {
+  padding: 0 22px 12px;
+}
+.share-card-map {
+  height: 200px;
+  width: 100%;
+  background: var(--paper-deep);
+  border: 1px solid var(--ink);
+  position: relative;
+  overflow: hidden;
+}
+
+.share-card-stats {
+  margin: 0 22px;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  display: grid;
+  /* gridTemplateColumns is set inline per-instance (2 / 3 / 4 columns
+     depending on mobility profile + pace label availability). */
+}
+.share-card-stats__cell {
+  text-align: center;
+  padding: 10px 4px;
+  /* border-right is set inline per-cell (last cell suppresses). */
+}
+.share-card-stats__num {
+  font-family: var(--wf-mono);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  /* font-size is set inline (22 px default, 16 px when the value string
+     exceeds 4 characters — keeps the cells visually balanced when one
+     reads "leisurely" while another reads "2.8"). */
+}
+.share-card-stats__unit {
+  font-family: var(--wf-sans);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--mute);
+  text-transform: uppercase;
+  margin-top: 4px;
+}
+
+.share-card-equiv {
+  padding: 10px 22px 0;
+  text-align: center;
+}
+.share-card-equiv__pill {
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--gilt);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.share-card-footer {
+  margin-top: 12px;
+  padding: 10px 22px;
+  border-top: 2px solid var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.share-card-footer__brand {
+  font-family: var(--wf-sans);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.share-card-footer__colophon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.share-card-data {
+  padding: 6px 22px 0;
+  text-align: center;
+}
+.share-card-data__sources {
+  font-family: var(--wf-sans);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.share-card-visit {
+  padding: 8px 22px 10px;
+  border-top: 1px solid var(--mute-fog);
+  text-align: center;
+}
+.share-card-visit__cta {
+  font-family: var(--wf-sans);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-right: 10px;
+}
+.share-card-visit__host {
+  font-family: var(--wf-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0.5px;
+}

@@ -13,10 +13,19 @@ import { safePaceLabel, motivationMessage } from "../lib/routeFormat.js";
 import { calorieEquivalent } from "../calorieEquiv.js";
 import { WPIcon } from "../wayfarer/walkpath-icons.jsx";
 import { COLOPHON_TEXT, DEFAULT_ATTRIBUTION_SOURCES } from "../wayfarer/primitives.jsx";
+import "./ShareCard.css";
 
-const CARD_WIDTH = 480;
-const HORIZONTAL_PAD = 22;
-const MAP_HEIGHT = 200;
+// TD-044: inline-style → CSS-class migration (the final SEC-007 chunk).
+// Static styles live in ShareCard.css; only per-instance dynamics stay
+// inline. Three dynamic surfaces remain:
+//   1. .share-card-stats `gridTemplateColumns` — 2 / 3 / 4 columns
+//      depending on mobility profile + pace-label availability.
+//   2. .share-card-stats__cell `borderRight` — last cell omits the
+//      divider; can't be expressed as `:last-child` because the cell
+//      count varies per render.
+//   3. .share-card-stats__num `fontSize` — shrinks from 22 px to 16 px
+//      when the value string is > 4 chars so a "leisurely" value
+//      doesn't overflow next to a "2.8".
 
 function formatIssueDate(d = new Date()) {
   return d.toLocaleDateString("en-US", {
@@ -112,230 +121,90 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
   } = result;
   const paceLabel = safePaceLabel(pace);
 
+  const statCells = isWheeled
+    ? [
+        { v: total_miles, u: "miles" },
+        { v: total_minutes, u: "minutes" },
+      ]
+    : [
+        { v: total_miles, u: "miles" },
+        { v: total_minutes, u: "minutes" },
+        { v: calories_approx, u: "calories" },
+        ...(paceLabel ? [{ v: paceLabel.split(" · ")[0], u: paceLabel.split(" · ")[1] || "pace" }] : []),
+      ];
+  const statsGridTemplate = `repeat(${statCells.length}, 1fr)`;
+
   return (
-    <div
-      ref={ref}
-      className="paper-grain paper-bright"
-      style={{
-        // Stretch to fit the share-modal-card-wrap on mobile (where the modal
-        // becomes full-bleed), but never exceed the editorial 480px design
-        // width on desktop. PNG export uses pixelRatio: 3 so even a 320px
-        // card renders at ~960px — high enough for a social share.
-        width: "100%",
-        maxWidth: CARD_WIDTH,
-        background: "var(--paper-bright)",
-        color: "var(--ink)",
-        border: "2px solid var(--ink)",
-        fontFamily: "var(--wf-serif)",
-        boxSizing: "border-box",
-      }}
-    >
+    <div ref={ref} className="share-card paper-grain paper-bright">
       {/* Masthead */}
-      <div
-        style={{
-          padding: "10px 18px 8px",
-          borderBottom: "1px solid var(--ink)",
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          fontFamily: "var(--wf-sans)",
-          fontSize: 9,
-          fontWeight: 800,
-          letterSpacing: 2.5,
-          textTransform: "uppercase",
-          color: "var(--mute)",
-        }}
-      >
+      <div className="share-card-masthead">
         <span>{formatIssueDate()}</span>
-        <span style={{ color: "var(--ink)" }}>Passage</span>
+        <span className="share-card-masthead__brand">Passage</span>
       </div>
 
       {/* Title block */}
-      <div style={{ padding: "10px 22px 6px", textAlign: "center" }}>
-        <div
-          style={{
-            fontFamily: "var(--wf-sans)",
-            fontSize: 9,
-            fontWeight: 800,
-            letterSpacing: 4,
-            textTransform: "uppercase",
-            color: "var(--ember)",
-          }}
-        >
-          A Dispatch · On Foot
-        </div>
-        <h1
-          style={{
-            fontFamily: "var(--wf-serif)",
-            fontWeight: 700,
-            fontStyle: "italic",
-            fontSize: 26,
-            lineHeight: 1.1,
-            margin: "4px 0 0",
-            color: "var(--ink)",
-            letterSpacing: -0.4,
-          }}
-        >
-          <span style={{ fontStyle: "normal", fontWeight: 500 }}>From </span>
+      <div className="share-card-title">
+        <div className="share-card-title__eyebrow">A Dispatch · On Foot</div>
+        <h1 className="share-card-title__heading">
+          <span className="share-card-title__heading-prep">From </span>
           {originLabel}
           <br />
-          <span style={{ fontStyle: "normal", fontWeight: 500 }}>to </span>
+          <span className="share-card-title__heading-prep">to </span>
           {destLabel}
         </h1>
       </div>
 
       {/* Double rule */}
-      <div
-        style={{
-          margin: "0 22px",
-          height: 5,
-          borderTop: "1px solid var(--ink)",
-          borderBottom: "1px solid var(--ink)",
-        }}
-      />
+      <div className="share-card-rule" />
 
       {/* Drop figure + italic body */}
-      <div
-        style={{
-          padding: "10px 22px 8px",
-          display: "flex",
-          alignItems: "flex-start",
-          gap: 16,
-        }}
-      >
-        <div
-          style={{
-            fontFamily: "var(--wf-mono)",
-            fontSize: 54,
-            fontWeight: 600,
-            color: "var(--ink)",
-            lineHeight: 0.85,
-            letterSpacing: -2,
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
+      <div className="share-card-drop">
+        <div className="share-card-drop__figure">
           {isWheeled ? total_miles : total_steps.toLocaleString()}
         </div>
-        <div style={{ flex: 1, paddingTop: 4, minWidth: 0 }}>
-          <div
-            style={{
-              fontFamily: "var(--wf-sans)",
-              fontSize: 10,
-              fontWeight: 800,
-              letterSpacing: 2,
-              textTransform: "uppercase",
-              color: "var(--ink)",
-            }}
-          >
+        <div className="share-card-drop__body">
+          <div className="share-card-drop__label">
             {isWheeled ? "Miles · all the way" : "Steps · all the way"}
           </div>
           {motivation && (
-            <div
-              style={{
-                fontFamily: "var(--wf-serif)",
-                fontStyle: "italic",
-                fontSize: 13,
-                color: "var(--ink-soft)",
-                lineHeight: 1.45,
-                marginTop: 6,
-              }}
-            >
-              {motivation}
-            </div>
+            <div className="share-card-drop__motivation">{motivation}</div>
           )}
         </div>
       </div>
 
       {/* Map */}
-      <div style={{ padding: `0 ${HORIZONTAL_PAD}px 12px` }}>
-        <div
-          ref={mapContainerRef}
-          style={{
-            height: MAP_HEIGHT,
-            width: "100%",
-            background: "var(--paper-deep)",
-            border: "1px solid var(--ink)",
-            position: "relative",
-            overflow: "hidden",
-          }}
-        />
+      <div className="share-card-map-wrap">
+        <div ref={mapContainerRef} className="share-card-map" />
       </div>
 
-      {/* Stats grid */}
-      <div
-        style={{
-          margin: "0 22px",
-          borderTop: "1px solid var(--ink)",
-          borderBottom: "1px solid var(--ink)",
-          display: "grid",
-          gridTemplateColumns: (isWheeled
-            ? "1fr 1fr"
-            : (paceLabel ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr")),
-        }}
-      >
-        {(isWheeled
-          ? [
-              { v: total_miles, u: "miles" },
-              { v: total_minutes, u: "minutes" },
-            ]
-          : [
-              { v: total_miles, u: "miles" },
-              { v: total_minutes, u: "minutes" },
-              { v: calories_approx, u: "calories" },
-              ...(paceLabel ? [{ v: paceLabel.split(" · ")[0], u: paceLabel.split(" · ")[1] || "pace" }] : []),
-            ]
-        ).map((s, i, arr) => (
+      {/* Stats grid — gridTemplateColumns is dynamic (per render) */}
+      <div className="share-card-stats" style={{ gridTemplateColumns: statsGridTemplate }}>
+        {statCells.map((s, i, arr) => (
           <div
             key={i}
-            style={{
-              textAlign: "center",
-              padding: "10px 4px",
-              borderRight: i < arr.length - 1 ? "1px solid var(--mute-fog)" : "none",
-            }}
+            className="share-card-stats__cell"
+            // borderRight is dynamic — last cell omits the divider, and the
+            // cell count varies per render so :last-child won't suffice.
+            style={{ borderRight: i < arr.length - 1 ? "1px solid var(--mute-fog)" : "none" }}
           >
             <div
-              style={{
-                fontFamily: "var(--wf-mono)",
-                fontSize: typeof s.v === "string" && s.v.length > 4 ? 16 : 22,
-                fontWeight: 600,
-                color: "var(--ink)",
-                lineHeight: 1,
-                fontVariantNumeric: "tabular-nums",
-              }}
+              className="share-card-stats__num"
+              // fontSize is dynamic — shrink to 16 px when the value string is
+              // > 4 chars (e.g. "Strolling" pace label) so it doesn't overflow
+              // next to a numeric cell.
+              style={{ fontSize: typeof s.v === "string" && s.v.length > 4 ? 16 : 22 }}
             >
               {s.v}
             </div>
-            <div
-              style={{
-                fontFamily: "var(--wf-sans)",
-                fontSize: 8,
-                fontWeight: 700,
-                letterSpacing: 1.5,
-                color: "var(--mute)",
-                textTransform: "uppercase",
-                marginTop: 4,
-              }}
-            >
-              {s.u}
-            </div>
+            <div className="share-card-stats__unit">{s.u}</div>
           </div>
         ))}
       </div>
 
       {/* Calorie equivalent aside */}
       {equiv && (
-        <div style={{ padding: "10px 22px 0", textAlign: "center" }}>
-          <span
-            style={{
-              fontFamily: "var(--wf-serif)",
-              fontStyle: "italic",
-              fontSize: 12,
-              color: "var(--gilt)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
+        <div className="share-card-equiv">
+          <span className="share-card-equiv__pill">
             <WPIcon name="calorie-sigil" size={12} color="var(--gilt)" />
             {equiv}
           </span>
@@ -343,64 +212,16 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
       )}
 
       {/* Footer */}
-      <div
-        style={{
-          marginTop: 12,
-          padding: "10px 22px",
-          borderTop: "2px solid var(--ink)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--wf-sans)",
-            fontSize: 10,
-            fontWeight: 800,
-            letterSpacing: 3,
-            textTransform: "uppercase",
-            color: "var(--mute)",
-          }}
-        >
-          Passage
-        </span>
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            fontFamily: "var(--wf-sans)",
-            fontSize: 9,
-            fontWeight: 800,
-            letterSpacing: 2.5,
-            textTransform: "uppercase",
-            color: "var(--ink)",
-          }}
-        >
-          {COLOPHON_TEXT}
-        </span>
+      <div className="share-card-footer">
+        <span className="share-card-footer__brand">Passage</span>
+        <span className="share-card-footer__colophon">{COLOPHON_TEXT}</span>
       </div>
 
       {/* Data attribution — mirrors the page-footer WFAttribution subline so
           the share card credits upstream sources (CDP / OSM / LocationIQ)
           even when the PNG is shared standalone. */}
-      <div
-        style={{
-          padding: "6px 22px 0",
-          textAlign: "center",
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--wf-sans)",
-            fontSize: 8,
-            fontWeight: 700,
-            letterSpacing: 1.5,
-            textTransform: "uppercase",
-            color: "var(--mute)",
-          }}
-        >
+      <div className="share-card-data">
+        <span className="share-card-data__sources">
           Data: {DEFAULT_ATTRIBUTION_SOURCES.join(" · ")}
         </span>
       </div>
@@ -409,37 +230,9 @@ export const ShareDispatch = forwardRef(function ShareDispatch(
           their own trip. The full deep-link with stops is carried by the
           Web Share API / clipboard path; here we only print the host. */}
       {siteHost && (
-        <div
-          style={{
-            padding: "8px 22px 10px",
-            borderTop: "1px solid var(--mute-fog)",
-            textAlign: "center",
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--wf-sans)",
-              fontSize: 9,
-              fontWeight: 800,
-              letterSpacing: 3,
-              textTransform: "uppercase",
-              color: "var(--mute)",
-              marginRight: 10,
-            }}
-          >
-            Plan yours at
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--wf-mono)",
-              fontSize: 12,
-              fontWeight: 600,
-              color: "var(--ink)",
-              letterSpacing: 0.5,
-            }}
-          >
-            {siteHost}
-          </span>
+        <div className="share-card-visit">
+          <span className="share-card-visit__cta">Plan yours at</span>
+          <span className="share-card-visit__host">{siteHost}</span>
         </div>
       )}
     </div>

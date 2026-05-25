@@ -67,11 +67,27 @@ function cspPlugin() {
         const directives = [
           "default-src 'self'",
           `script-src ${scriptSrc}`,
-          // Inline styles remain allowed: the editorial design system uses
-          // `style={{ ... }}` throughout (ShareDispatch, ErrorDispatch, the
-          // Wayfarer primitives). See TD entry "Inline-style → CSS-class
-          // migration" in docs/Technical_Debt.md.
-          "style-src 'self' 'unsafe-inline'",
+          // TD-044: style-src tightened to 'self' alone after the
+          // ShareDispatch inline-style migration consolidated static
+          // styling into CSS classes. Remaining inline `style={{ }}`
+          // sites across the app (10 total — share-card stat-grid
+          // column count, route-flavor-tab grid count, per-category
+          // pin color swatches, goal-bar widths, sheet drag transforms)
+          // are all DYNAMIC per-instance attributes that can't easily
+          // become static classes. Those are governed by the CSP3
+          // `style-src-attr` directive, which we still keep
+          // 'unsafe-inline' for. `<style>` blocks (which a future
+          // contributor could accidentally introduce inside JSX, or
+          // a Wayfarer primitive could grow) now fall back to the
+          // `style-src 'self'` baseline — CSP rejects them loudly.
+          //
+          // Browser support note: `style-src-attr` is CSP3 (Chrome 75+,
+          // Firefox 74+, Safari 14+). Older browsers fall back to
+          // `style-src 'self'` and would block the remaining inline
+          // attributes — acceptable, those versions are well past EOL
+          // and the app already relies on newer features.
+          "style-src 'self'",
+          "style-src-attr 'unsafe-inline'",
           "img-src 'self' data: blob: https:",
           "font-src 'self' data:",
           `connect-src ${connectSrc}`,
