@@ -211,8 +211,10 @@ export function AddressAutocomplete({
         setActive(-1);
       }
     } else if (e.key === "Home" && suggestions.length) {
+      e.preventDefault();
       setActive(0);
     } else if (e.key === "End" && suggestions.length) {
+      e.preventDefault();
       setActive(suggestions.length - 1);
     }
   }

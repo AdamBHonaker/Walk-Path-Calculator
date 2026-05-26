@@ -49,6 +49,7 @@ export function DirectionLedger({
             <button
               type="button"
               onClick={handleCopy}
+              disabled={copied}
               className="directions-copy-btn"
             >
               {copied ? "Copied" : "Copy"}
@@ -83,31 +84,20 @@ export function DirectionLedger({
                   → Stop {step.leg_index + 1}: {legLabel}
                 </li>
               )}
-              <li
-                onClick={() => onStepClick?.(i)}
-                role={onStepClick ? "button" : undefined}
-                tabIndex={onStepClick ? 0 : undefined}
-                onKeyDown={onStepClick ? (e) => {
-                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onStepClick(i); }
-                } : undefined}
-                className={rowCls}
-              >
-                <span className="direction-row-num">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span>
-                  <span className="direction-row-label">
-                    {formatStepLabel(step, i)}
-                  </span>
-                  <span className="direction-row-meta">
-                    {step.street && step.direction_full && `Head ${step.direction_full} · `}
-                    {formatBlocks(step.blocks, step.block_type)}
-                    {" · "}{step.minutes} min
-                  </span>
-                </span>
-                <span className="direction-row-steps">
-                  {formatSteps(step.steps)} steps
-                </span>
+              <li>
+                {onStepClick ? (
+                  <button
+                    type="button"
+                    onClick={() => onStepClick(i)}
+                    className={rowCls}
+                  >
+                    <DirectionRowContent step={step} i={i} />
+                  </button>
+                ) : (
+                  <div className={rowCls}>
+                    <DirectionRowContent step={step} i={i} />
+                  </div>
+                )}
               </li>
             </Fragment>
           );
@@ -143,5 +133,28 @@ export function DirectionLedger({
         </button>
       )}
     </section>
+  );
+}
+
+function DirectionRowContent({ step, i }) {
+  return (
+    <>
+      <span className="direction-row-num">
+        {String(i + 1).padStart(2, "0")}
+      </span>
+      <span>
+        <span className="direction-row-label">
+          {formatStepLabel(step, i)}
+        </span>
+        <span className="direction-row-meta">
+          {step.street && step.direction_full && `Head ${step.direction_full} · `}
+          {formatBlocks(step.blocks, step.block_type)}
+          {" · "}{step.minutes} min
+        </span>
+      </span>
+      <span className="direction-row-steps">
+        {formatSteps(step.steps)} steps
+      </span>
+    </>
   );
 }

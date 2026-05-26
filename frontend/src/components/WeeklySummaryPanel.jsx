@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "steps", stepLengthInches }) {
   const [open, setOpen] = useState(false);
   const isDistance = metricMode === "distance";
+  const bodyId = useId();
 
   const totals = useMemo(() => {
     let steps = 0;
@@ -34,6 +35,7 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
         className="weekly-summary-toggle"
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
+        aria-controls={bodyId}
       >
         <span>This week</span>
         <span className="weekly-summary-toggle-meta">
@@ -60,7 +62,7 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
       </button>
 
       {open && (
-        <div className="weekly-summary-body">
+        <div className="weekly-summary-body" id={bodyId}>
           <div className="goal-bar-wrap">
             <div className="goal-bar-label">
               {isDistance
@@ -68,7 +70,14 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
                 : `Weekly measure · ${weeklyStepGoal.toLocaleString()} steps`}
               <span className="weekly-summary-pct">{weeklyPct}%</span>
             </div>
-            <div className="goal-bar-track">
+            <div
+              className="goal-bar-track"
+              role="progressbar"
+              aria-valuenow={weeklyPct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Weekly measure progress: ${weeklyPct}%`}
+            >
               <div className="goal-bar-fill" style={{ width: `${weeklyPct}%` }} />
             </div>
           </div>
