@@ -82,6 +82,81 @@ describe("PersonalizeModal — Mobility profile", () => {
   });
 });
 
+describe("PersonalizeModal — focus management", () => {
+  beforeEach(() => {
+    try { localStorage.clear(); } catch { /* ignore */ }
+  });
+
+  function FocusHarness() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button type="button" data-testid="trigger" onClick={() => setOpen(true)}>Open</button>
+        {open && (
+          <PersonalizeModal
+            open
+            onClose={() => setOpen(false)}
+            heightFt={null}
+            heightIn={null}
+            weightKg={null}
+            dailyGoal={null}
+            mobilityProfile="walking"
+            avoidStairs={false}
+            preferPedestrian={false}
+            pace="normal"
+            onChangeHeight={() => {}}
+            onChangeWeight={() => {}}
+            onChangeGoal={() => {}}
+            onChangeMobilityProfile={() => {}}
+            onChangeAvoidStairs={() => {}}
+            onChangePreferPedestrian={() => {}}
+            onChangePace={() => {}}
+          />
+        )}
+      </>
+    );
+  }
+
+  it("moves focus to the close button when opened", async () => {
+    const user = userEvent.setup();
+    render(<FocusHarness />);
+    await user.click(screen.getByTestId("trigger"));
+    expect(screen.getByRole("button", { name: /close personalize modal/i })).toHaveFocus();
+  });
+
+  it("closes the modal and restores focus to the trigger on Escape", async () => {
+    const user = userEvent.setup();
+    render(<FocusHarness />);
+    const trigger = screen.getByTestId("trigger");
+    await user.click(trigger);
+    expect(screen.queryByRole("dialog")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("wraps Tab from the last focusable back to the first", () => {
+    render(<FocusHarness />);
+    fireEvent.click(screen.getByTestId("trigger"));
+    const closeBtn = screen.getByRole("button", { name: /close personalize modal/i });
+    const keepBtn = screen.getByRole("button", { name: /keep these particulars/i });
+    keepBtn.focus();
+    expect(keepBtn).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(closeBtn).toHaveFocus();
+  });
+
+  it("wraps Shift+Tab from the first focusable back to the last", () => {
+    render(<FocusHarness />);
+    fireEvent.click(screen.getByTestId("trigger"));
+    const closeBtn = screen.getByRole("button", { name: /close personalize modal/i });
+    const keepBtn = screen.getByRole("button", { name: /keep these particulars/i });
+    expect(closeBtn).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(keepBtn).toHaveFocus();
+  });
+});
+
 describe("motivationMessage — wheeled swap", () => {
   it("uses walk wording by default", () => {
     expect(motivationMessage(500)).toMatch(/walk/);

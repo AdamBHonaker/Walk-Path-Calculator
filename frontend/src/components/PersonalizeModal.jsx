@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { lbToKg, kgToLb } from "../lib/units.js";
 import { loadWeightUnit, saveWeightUnit } from "../lib/personaPrefs.js";
 import { loadTheme, applyTheme } from "../lib/theme.js";
@@ -105,6 +105,43 @@ export function PersonalizeModal({
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Focus management: when the dialog opens, snapshot the previously-focused
+  // element, move focus into the dialog (close button), and trap Tab cycling
+  // inside. On close, restore focus to the snapshot. Pure a11y addition — no
+  // visible behavior change for non-AT users.
+  const cardRef = useRef(null);
+  const previouslyFocusedRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    previouslyFocusedRef.current = document.activeElement;
+    const card = cardRef.current;
+    const closeBtn = card?.querySelector(".personalize-close");
+    closeBtn?.focus();
+
+    function onTab(e) {
+      if (e.key !== "Tab" || !card) return;
+      const focusables = card.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onTab);
+    return () => {
+      document.removeEventListener("keydown", onTab);
+      const prev = previouslyFocusedRef.current;
+      if (prev && typeof prev.focus === "function") prev.focus();
+    };
+  }, [open]);
+
   if (!open) return null;
 
   function handleFt(e) {
@@ -177,6 +214,7 @@ export function PersonalizeModal({
       className="wf-modal-overlay"
     >
       <div
+        ref={cardRef}
         onClick={(e) => e.stopPropagation()}
         className="wf-modal-card paper-grain paper-bright"
       >
