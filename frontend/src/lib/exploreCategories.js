@@ -269,3 +269,40 @@ export const PIN_CATEGORIES = ALL_CATEGORIES.filter(c => !c.heatmapOnly);
 // about `residential` (it's served via the residential_heatmap field, not
 // `places`), so it's filtered out of the categories param at request time.
 export const REQUESTABLE_CATEGORY_KEYS = PIN_CATEGORIES.map(c => c.key);
+
+// Single source of truth for "which /explore places does the current
+// selection actually show?". Consumed by both MapExploreLayer (to build
+// the pin GeoJSON) and App's result panel (so the "X of Y places shown"
+// counter agrees with what's on the map).
+//
+// `activeSubs` is the visibleCategories Set from App: a mix of bare
+// category keys ("libraries") and "category/sub" composite keys
+// ("medical/pharmacy"). A place passes when:
+//   - its parent category is in activeSubs (user picked the whole category), or
+//   - its full "category/subcategory" composite is in activeSubs, or
+//   - it has no subcategory and any sub of its parent is selected (curated
+//     null-sub entries belong to the parent — keep them visible whenever a
+//     sibling sub is selected).
+//
+// When `activeSubs` is null/undefined, no filtering is applied (legacy
+// "show everything" debug path).
+export function filterPlacesByVisibleCategories(places, activeSubs) {
+  if (!Array.isArray(places)) return [];
+  if (!activeSubs) {
+    return places.filter(p =>
+      typeof p?.lat === "number" && typeof p?.lon === "number",
+    );
+  }
+  const categoriesWithAnySub = new Set();
+  for (const k of activeSubs) {
+    const i = typeof k === "string" ? k.indexOf("/") : -1;
+    if (i > 0) categoriesWithAnySub.add(k.slice(0, i));
+  }
+  return places.filter(p => {
+    if (typeof p?.lat !== "number" || typeof p?.lon !== "number") return false;
+    if (activeSubs.has(p.category)) return true;
+    if (p.subcategory && activeSubs.has(`${p.category}/${p.subcategory}`)) return true;
+    if (!p.subcategory && categoriesWithAnySub.has(p.category)) return true;
+    return false;
+  });
+}

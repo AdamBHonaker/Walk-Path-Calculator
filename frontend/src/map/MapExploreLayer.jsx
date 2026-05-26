@@ -14,6 +14,7 @@ import {
   CANOPY_BAND_COLORS,
 } from "../mapHelpers.js";
 import { useTheme } from "../lib/theme.js";
+import { filterPlacesByVisibleCategories } from "../lib/exploreCategories.js";
 
 // Defer `fn` until the MapLibre style is loaded. Returns a cleanup
 // callback. The per-source render effects each call this so a freshly-
@@ -86,22 +87,11 @@ export function MapExploreLayer({
 
   // Build the GeoJSON FeatureCollection for the pin source from the
   // /explore response, filtered by the user's category/sub selection.
-  // A place passes when either its parent category is in `activeSubs`
-  // (user picked the whole category) or its `category/subcategory`
-  // composite key is (user picked a specific sub). When `activeSubs`
-  // is null, no filter is applied — matches the legacy "show everything"
-  // debug path.
+  // The filter predicate lives in lib/exploreCategories.js so the App
+  // result panel's "X of Y places shown" counter and the map agree by
+  // construction (otherwise the counter overstates what's visible).
   const placeFeatures = useMemo(() => {
-    const places = exploreResult?.places;
-    if (!Array.isArray(places)) return [];
-    return places
-      .filter(p => {
-        if (typeof p?.lat !== "number" || typeof p?.lon !== "number") return false;
-        if (!activeSubs) return true;
-        if (activeSubs.has(p.category)) return true;
-        if (p.subcategory && activeSubs.has(`${p.category}/${p.subcategory}`)) return true;
-        return false;
-      })
+    return filterPlacesByVisibleCategories(exploreResult?.places, activeSubs)
       .map(p => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: [p.lon, p.lat] },
