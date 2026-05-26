@@ -298,8 +298,8 @@ class RouteResponse(BaseModel):
     personalized_calories: bool = Field(
         ...,
         description=(
-            "True when the caller supplied `weight_kg`. Informational — "
-            "not currently consumed by the UI."
+            "True when the caller supplied `weight_kg`. Drives the "
+            "'personalized' badge next to the calorie chip in `StepHero.jsx`."
         ),
     )
     pace: PaceLabel
