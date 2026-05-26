@@ -479,11 +479,11 @@ def _load_graph() -> "ig.Graph | None":
         # silently truncate the index on a very large multi-city graph.
         # `_get_nearest_node` returns `int(_kdtree_to_vertex[idx])` and
         # downstream consumers assume the vertex IDs fit in a Python int —
-        # safe as long as the array holds int64.
-        assert valid_idx.dtype == np.int64, (
-            f"_kdtree_to_vertex must be int64, got {valid_idx.dtype}"
-        )
-        _kdtree_to_vertex = valid_idx
+        # safe as long as the array holds int64. `astype(copy=False)` is a
+        # no-op when the dtype already matches, and produces an int64 copy
+        # otherwise — robust under `python -O` (an explicit cast can't be
+        # stripped the way an `assert` can).
+        _kdtree_to_vertex = valid_idx.astype(np.int64, copy=False)
         _coord_kdtree = cKDTree(np.column_stack([lons[valid_idx], lats[valid_idx]]))
 
         if _pickle_data is not None and _pickle_data.get("format_version", 1) >= 2:

@@ -108,6 +108,146 @@ class TestReverseDisplayNameTrim:
         assert "United States" not in label
 
 
+class TestCircuitBreakerSharedState:
+    """The breaker is persisted to chicago_geocode.db so a 429 trip from
+    one uvicorn worker is honored by every other worker on its next
+    `_circuit_is_open()` check. The module globals are an in-process
+    cache of that shared state.
+    """
+
+    @pytest.mark.requires_artifact("data/chicago_geocode.db")
+    def test_trip_persists_to_sqlite(self):
+        import sqlite3
+        import geocoding
+
+        geocoding._cache_connect()
+        geocoding._circuit_reset_for_test()
+        geocoding._circuit_trip_429()
+
+        # Read via a fresh connection -- simulates another uvicorn worker.
+        peer = sqlite3.connect(str(geocoding._CACHE_DB_PATH))
+        try:
+            peer.row_factory = sqlite3.Row
+            row = peer.execute(
+                "SELECT open_until, consecutive_trips FROM breaker_state WHERE id = 0"
+            ).fetchone()
+        finally:
+            peer.close()
+
+        assert row is not None
+        assert int(row["consecutive_trips"]) == 1, (
+            "trip from worker A must be visible to worker B"
+        )
+        assert float(row["open_until"]) > 0, "open_until should be in the future"
+
+        geocoding._circuit_reset_for_test()
+
+    @pytest.mark.requires_artifact("data/chicago_geocode.db")
+    def test_load_refreshes_module_globals_from_sqlite(self):
+        import geocoding
+
+        db = geocoding._cache_connect()
+        geocoding._circuit_reset_for_test()
+        # Simulate a peer worker tripping the breaker by writing directly.
+        future = 9_999_999_999.0  # far-future epoch so the breaker reads as open
+        db.execute(
+            "UPDATE breaker_state SET open_until = ?, consecutive_trips = ? "
+            "WHERE id = 0",
+            (future, 3),
+        )
+        # Stomp the module globals to a definitely-stale value so a refresh
+        # is detectable.
+        geocoding._circuit_open_until = 0.0
+        geocoding._circuit_consecutive_trips = 0
+
+        assert geocoding._circuit_is_open() is True
+        assert geocoding._circuit_consecutive_trips == 3, (
+            "module globals must be refreshed from SQLite on load"
+        )
+
+        geocoding._circuit_reset_for_test()
+
+
+class TestMalformedJsonHandling:
+    """A LocationIQ 200 with a malformed body must not crash, and must
+    write a negative-cache entry so the next call short-circuits to the
+    cache instead of re-fetching the same broken body. The outer
+    `except Exception` would catch the JSONDecodeError but skip the
+    cache-negative + breaker-probe side effects of the normal 200 path.
+    """
+
+    def test_forward_malformed_200_returns_none_and_does_not_trip_breaker(self):
+        # Behavior test that works without the cache DB: the function must
+        # return None and must not trip the breaker on a malformed body.
+        import geocoding
+
+        query = "zzz_malformed_json_probe_xyz"
+        geocoding._circuit_reset_for_test()
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"<html>oops, not json</html>"
+        resp.json = MagicMock(side_effect=ValueError("Expecting value"))
+
+        get_mock = MagicMock(return_value=resp)
+        with patch.object(geocoding, "_LOCATIONIQ_API_KEY", "k"), \
+             patch.object(geocoding._http_session, "get", get_mock):
+            result = geocoding.geocode_external(query)
+
+        assert result is None, "malformed 200 must surface as a None coords result"
+        assert geocoding._circuit_consecutive_trips == 0, (
+            "a single garbled response must not trip the breaker"
+        )
+
+    @pytest.mark.requires_artifact("data/chicago_geocode.db")
+    def test_forward_malformed_200_caches_negative(self):
+        # The "next call short-circuits to cache" guarantee requires the DB.
+        import geocoding
+
+        query = "zzz_malformed_json_probe_xyz"
+        geocoding._cache_clear_forward_for_test(query)
+        geocoding._circuit_reset_for_test()
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"<html>oops, not json</html>"
+        resp.json = MagicMock(side_effect=ValueError("Expecting value"))
+
+        get_mock = MagicMock(return_value=resp)
+        try:
+            with patch.object(geocoding, "_LOCATIONIQ_API_KEY", "k"), \
+                 patch.object(geocoding._http_session, "get", get_mock):
+                geocoding.geocode_external(query)
+                assert geocoding._cache_get_forward(query) is geocoding.NEG_HIT
+
+                calls_before = get_mock.call_count
+                second = geocoding._resolve_location_inner(query)
+                assert second is None
+                assert get_mock.call_count == calls_before, (
+                    "second call should hit the negative cache, not LocationIQ"
+                )
+        finally:
+            geocoding._cache_clear_forward_for_test(query)
+
+    def test_reverse_malformed_200_returns_none_without_tripping_breaker(self):
+        import geocoding
+
+        geocoding._circuit_reset_for_test()
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.content = b"<html>oops</html>"
+        resp.json = MagicMock(side_effect=ValueError("Expecting value"))
+
+        with patch.object(geocoding, "_LOCATIONIQ_API_KEY", "k"), \
+             patch.object(geocoding, "_circuit_is_open", return_value=False), \
+             patch.object(geocoding._http_session, "get", return_value=resp):
+            label = geocoding._reverse_geocode_external(41.85, -87.65)
+
+        assert label is None, "malformed reverse 200 must return None"
+        assert geocoding._circuit_consecutive_trips == 0
+
+
 class TestReverseNeighborhoodKDTreeProjection:
     """BUG-005 — the neighborhood KDTree pre-filter must rank candidates in
     projected (metric-consistent) space, not raw lon/lat degrees, so it cannot
