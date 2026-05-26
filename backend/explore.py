@@ -4,7 +4,8 @@ Isochrone ("Neighborhood Explorer") backend core.
 Given an origin (lat, lon) and a time budget in minutes, return:
   - the alpha-shape polygon enclosing every graph vertex reachable on foot
     within that budget (as GeoJSON);
-  - the list of NEIGHBORHOOD_COORDS names whose centroids fall inside it;
+  - the closest curated Chicago landmarks whose points fall inside it
+    (computed downstream by `within_reach_landmarks`, called from main.py);
   - basic stats (reachable-node count, area in square miles).
 
 Routing is a single-source bounded Dijkstra against the existing pedestrian
@@ -25,12 +26,11 @@ from typing import Any
 
 import numpy as np
 from shapely import concave_hull
-from shapely.geometry import MultiPoint, MultiPolygon, Point, Polygon, mapping, shape
-from shapely.prepared import prep
+from shapely.geometry import MultiPoint, MultiPolygon, Polygon, mapping, shape
 
 import walking
-from geocoding import NEIGHBORHOOD_COORDS
-from utils import WALKING_SPEED_MPH, METERS_PER_MILE, quantize_coord
+from places import places_in_polygon
+from utils import WALKING_SPEED_MPH, METERS_PER_MILE, haversine_miles, quantize_coord
 
 logger = logging.getLogger(__name__)
 
@@ -120,36 +120,6 @@ def _polygon_area_sq_mi(polygon) -> float:
     return area_m2 / (METERS_PER_MILE ** 2)
 
 
-# Per-request `Point(lon, lat)` allocation for every entry in
-# NEIGHBORHOOD_COORDS adds up — the table has ~150 entries, the points are
-# static, and shapely's C-level Point init is non-trivial. We build the list
-# once on first call and reuse it across every `/explore` request. The
-# coordinate-dedupe step (aliases like "loyola" / "loyola university") is
-# folded into the build so the per-request loop is one prepared.contains()
-# per unique point.
-_neighborhood_points_lock = threading.Lock()
-_neighborhood_points: "list[tuple[str, Point]] | None" = None
-
-
-def _get_neighborhood_points() -> "list[tuple[str, Point]]":
-    global _neighborhood_points
-    if _neighborhood_points is not None:
-        return _neighborhood_points
-    with _neighborhood_points_lock:
-        if _neighborhood_points is not None:
-            return _neighborhood_points
-        seen: set[tuple[float, float]] = set()
-        points: list[tuple[str, Point]] = []
-        for raw_name, (lat, lon) in NEIGHBORHOOD_COORDS.items():
-            key = (round(lat, 5), round(lon, 5))
-            if key in seen:
-                continue
-            seen.add(key)
-            points.append((raw_name.title(), Point(lon, lat)))
-        _neighborhood_points = points
-    return _neighborhood_points
-
-
 # City of Chicago administrative boundary. Used to clip isochrone hulls
 # against the Lake Michigan shoreline (the city limits ARE the shoreline
 # along the lakefront). Loaded lazily so absence of the file degrades
@@ -212,23 +182,33 @@ def _clip_to_boundary(polygon):
     return clipped
 
 
-def _reachable_neighborhoods(polygon) -> list[str]:
-    """Return NEIGHBORHOOD_COORDS keys whose centroids fall inside `polygon`.
+def within_reach_landmarks(
+    polygon,
+    origin_lat: float,
+    origin_lon: float,
+) -> list[dict[str, Any]]:
+    """Return curated Chicago landmarks inside `polygon`, closest first.
 
-    Names are returned in title case (matching how the frontend displays
-    NEIGHBORHOOD_COORDS keys today). Coordinate dedupe (so aliases like
-    "loyola" / "loyola university" don't both show) is baked into the
-    pre-built point list — see `_get_neighborhood_points`.
+    Sourced from `places_curated.json` via `places.places_in_polygon` filtered
+    to `category == "landmarks"` (the ~400 Commission on Chicago Landmarks
+    designations). Each entry is a dict of `name / lat / lon`. Ordering is
+    ascending haversine distance from the origin with the name as a secondary
+    tiebreak so identical-distance entries don't swap across requests.
+
+    `distance_miles` is used for sorting only and intentionally not returned —
+    the frontend renders chips in the order received.
     """
-    if polygon.is_empty:
+    if polygon is None or polygon.is_empty:
         return []
-    # Prepared geometry builds the polygon's edge index once so the
-    # contains() checks below don't each rebuild it.
-    prepared = prep(polygon)
-    points = _get_neighborhood_points()
-    names = [name for name, pt in points if prepared.contains(pt)]
-    names.sort()
-    return names
+    landmarks = places_in_polygon(polygon, categories=["landmarks"])
+    ranked = sorted(
+        landmarks,
+        key=lambda p: (
+            haversine_miles(origin_lat, origin_lon, p["lat"], p["lon"]),
+            p["name"],
+        ),
+    )
+    return [{"name": p["name"], "lat": p["lat"], "lon": p["lon"]} for p in ranked]
 
 
 @lru_cache(maxsize=32)
@@ -264,11 +244,9 @@ def _explore_quantized(
     polygon = _hull_polygon(lats, lons)
     polygon = _clip_to_boundary(polygon)
     area_sq_mi = round(_polygon_area_sq_mi(polygon), 4)
-    neighborhoods = _reachable_neighborhoods(polygon)
 
     return {
         "polygon": mapping(polygon),
-        "reachable_neighborhoods": neighborhoods,
         "stats": {
             "node_count": int(reachable.size),
             "area_sq_mi": area_sq_mi,

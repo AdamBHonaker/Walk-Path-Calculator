@@ -45,7 +45,7 @@ const FAKE_RESULT = {
   origin_coords: [41.88, -87.63],
   max_minutes: 20,
   polygon: POLY,
-  reachable_neighborhoods: ["Loop"],
+  within_reach_landmarks: [{ name: "Chicago Cultural Center", lat: 41.8838, lon: -87.6248 }],
   stats: { node_count: 1000, area_sq_mi: 1.2 },
   places: [
     { category: "coffee_bakery", subcategory: null, name: "A", lat: 41.88, lon: -87.64, address: "", source: "osm" },

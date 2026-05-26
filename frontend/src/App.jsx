@@ -704,9 +704,12 @@ export default function App() {
     fetchRouteRef.current([originName, destName]);
   }, [setMode, explorePrefsRef, fetchRouteRef, showToast]);
 
-  // Reachable-neighborhood chip → route from the explorer's origin to the
-  // clicked neighborhood.
-  const handleNeighborhoodChip = useCallback((neighborhoodName) => {
+  // Within-reach landmark chip → route from the explorer's origin to the
+  // clicked landmark. Mirrors `handlePlaceGoHere` — curated landmark names
+  // resolve through `local_search`'s POI tier, with the coord-string a
+  // defensive fallback for the unlikely missing-name case.
+  const handleLandmarkChip = useCallback((landmark) => {
+    if (!landmark) return;
     const o = explorePrefsRef.current.origin;
     const originName = o.kind === "community_area"
       ? o.communityArea
@@ -715,12 +718,13 @@ export default function App() {
       showToast("Still reading your location — try again in a moment.");
       return;
     }
+    const destName = landmark.name || formatLatLonLabel(landmark.lat, landmark.lon);
     setMode("route");
     setStops([
       { id: makeStopId(), value: originName },
-      { id: makeStopId(), value: neighborhoodName },
+      { id: makeStopId(), value: destName },
     ]);
-    fetchRouteRef.current([originName, neighborhoodName]);
+    fetchRouteRef.current([originName, destName]);
   }, [setMode, explorePrefsRef, fetchRouteRef, showToast]);
 
   const handleRecentSelect = useCallback((item) => {
@@ -931,8 +935,8 @@ export default function App() {
         onMaxMinutesChange={handleExploreMaxMinutesChange}
         onSubmit={handleExploreSubmit}
         loading={exploreLoading}
-        reachableNeighborhoods={exploreResult?.reachable_neighborhoods}
-        onChipClick={handleNeighborhoodChip}
+        withinReachLandmarks={exploreResult?.within_reach_landmarks ?? []}
+        onChipClick={handleLandmarkChip}
         onLocateMe={handleExploreLocateMe}
         locating={locating}
         geoError={exploreError}
@@ -994,7 +998,7 @@ export default function App() {
     explorePrefs,
     exploreLoading, exploreResult, exploreError, locating,
     handleExploreOriginChange, handleExploreMaxMinutesChange, handleExploreSubmit,
-    handleNeighborhoodChip, handleExploreLocateMe,
+    handleLandmarkChip, handleExploreLocateMe,
     handleToggleGroup, handleToggleCategory, handleToggleSub, handleToggleHeatmap,
     handleSelectAllCategories, handleClearAllCategories,
   ]);

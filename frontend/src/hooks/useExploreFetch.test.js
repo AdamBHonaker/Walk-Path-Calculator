@@ -21,7 +21,7 @@ const FAKE_RESULT = {
   origin_coords: [41.88, -87.63],
   max_minutes: 20,
   polygon: { type: "Polygon", coordinates: [[[-87.65, 41.87], [-87.63, 41.87], [-87.63, 41.89], [-87.65, 41.89], [-87.65, 41.87]]] },
-  reachable_neighborhoods: ["Loop"],
+  within_reach_landmarks: [{ name: "Chicago Cultural Center", lat: 41.8838, lon: -87.6248 }],
   stats: { node_count: 1000, area_sq_mi: 1.2 },
   places: [],
   residential_heatmap: null,

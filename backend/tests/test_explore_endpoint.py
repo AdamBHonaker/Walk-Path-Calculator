@@ -78,7 +78,13 @@ class TestExploreSuccess:
         assert body["max_minutes"] == 20
         assert len(body["origin_coords"]) == 2
         assert body["polygon"]["type"] in ("Polygon", "MultiPolygon")
-        assert isinstance(body["reachable_neighborhoods"], list)
+        landmarks = body["within_reach_landmarks"]
+        assert isinstance(landmarks, list)
+        for item in landmarks:
+            assert set(item.keys()) == {"name", "lat", "lon"}
+            assert isinstance(item["name"], str)
+            assert isinstance(item["lat"], (int, float))
+            assert isinstance(item["lon"], (int, float))
         assert body["stats"]["node_count"] > 0
         assert body["stats"]["area_sq_mi"] > 0
         assert isinstance(body["places"], list)

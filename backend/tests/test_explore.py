@@ -38,15 +38,41 @@ class TestExplore:
         assert small["stats"]["node_count"] < large["stats"]["node_count"]
         assert small["stats"]["area_sq_mi"] < large["stats"]["area_sq_mi"]
 
-    def test_returns_neighborhood_names(self):
+    def test_within_reach_landmarks_shape_and_sort(self):
         result = explore.explore(ORIGIN_LAT, ORIGIN_LON, 25)
         assert result is not None
-        names = result["reachable_neighborhoods"]
-        assert isinstance(names, list)
-        assert all(isinstance(n, str) for n in names)
-        # No coordinate-key duplicates — title-cased aliases at the same
-        # point are filtered by the (lat, lon) seen-set.
-        assert len(names) == len(set(names))
+        polygon = shape(result["polygon"])
+        landmarks = explore.within_reach_landmarks(polygon, ORIGIN_LAT, ORIGIN_LON)
+        assert isinstance(landmarks, list)
+        for item in landmarks:
+            assert set(item.keys()) == {"name", "lat", "lon"}
+            assert isinstance(item["name"], str)
+            assert isinstance(item["lat"], float)
+            assert isinstance(item["lon"], float)
+        # Ascending haversine distance from the origin.
+        from utils import haversine_miles
+        distances = [
+            haversine_miles(ORIGIN_LAT, ORIGIN_LON, p["lat"], p["lon"])
+            for p in landmarks
+        ]
+        assert distances == sorted(distances), "landmarks must be sorted by distance"
+
+    def test_within_reach_landmarks_only_returns_landmark_category(self):
+        # Every name returned should match a `category == "landmarks"` record
+        # in places_curated.json (i.e., the dataset is the sole source).
+        import places as places_module
+        all_landmarks = {
+            p["name"]
+            for p in places_module.all_places()
+            if p.get("category") == "landmarks"
+        }
+        result = explore.explore(ORIGIN_LAT, ORIGIN_LON, 25)
+        assert result is not None
+        polygon = shape(result["polygon"])
+        landmarks = explore.within_reach_landmarks(polygon, ORIGIN_LAT, ORIGIN_LON)
+        assert landmarks, "expected at least one landmark in a 25-min Wicker Park isochrone"
+        for item in landmarks:
+            assert item["name"] in all_landmarks
 
     def test_zero_or_negative_minutes_returns_none(self):
         assert explore.explore(ORIGIN_LAT, ORIGIN_LON, 0) is None

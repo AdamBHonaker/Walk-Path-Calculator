@@ -166,6 +166,18 @@ class ExploreStats(BaseModel):
     area_sq_mi: float = Field(..., description="Concave-hull polygon area, square miles.")
 
 
+class WithinReachLandmark(BaseModel):
+    """One entry in the "Within reach" chip rail. Sourced from the curated
+    Commission on Chicago Landmarks dataset (`places_curated.json` filtered
+    to `category == "landmarks"`); ordered ascending by haversine distance
+    from the explore origin, alphabetical tiebreak.
+    """
+
+    name: str
+    lat: float
+    lon: float
+
+
 class ExploreResponse(BaseModel):
     """Walkable-isochrone response. Heatmap fields are ``null`` when either
     (a) the caller's ``with_heatmaps`` filter excluded the layer or (b) no
@@ -176,7 +188,7 @@ class ExploreResponse(BaseModel):
     origin_coords: Coord
     max_minutes: int
     polygon: dict[str, Any] = Field(..., description="GeoJSON Polygon of the isochrone.")
-    reachable_neighborhoods: list[str]
+    within_reach_landmarks: list[WithinReachLandmark]
     stats: ExploreStats
     places: list[ExplorePlace]
     residential_heatmap: dict[str, Any] | None = Field(
