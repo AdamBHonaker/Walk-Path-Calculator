@@ -5,6 +5,7 @@ import {
   CATEGORY_BY_KEY,
   PIN_CATEGORIES,
   REQUESTABLE_CATEGORY_KEYS,
+  filterPlacesByVisibleCategories,
 } from "./exploreCategories.js";
 
 describe("exploreCategories — structural integrity", () => {
@@ -53,5 +54,71 @@ describe("exploreCategories — structural integrity", () => {
       const subKeys = c.subs.map(s => s.key);
       expect(new Set(subKeys).size).toBe(subKeys.length);
     }
+  });
+});
+
+describe("filterPlacesByVisibleCategories", () => {
+  const library    = { category: "libraries",    subcategory: null,         lat: 41.95, lon: -87.65, name: "Branch A" };
+  const pharmacy   = { category: "medical",      subcategory: "pharmacy",   lat: 41.95, lon: -87.65, name: "Pharm" };
+  const hospital   = { category: "medical",      subcategory: "hospital",   lat: 41.95, lon: -87.65, name: "Hosp" };
+  const urgentCare = { category: "medical",      subcategory: "urgent_care",lat: 41.95, lon: -87.65, name: "UC" };
+  const cafe       = { category: "coffee_bakery",subcategory: "cafe",       lat: 41.95, lon: -87.65, name: "Cafe" };
+  const noCoords   = { category: "libraries",    subcategory: null,         name: "No coords" };
+
+  it("returns [] when places is not an array", () => {
+    expect(filterPlacesByVisibleCategories(null, new Set(["libraries"]))).toEqual([]);
+    expect(filterPlacesByVisibleCategories(undefined, new Set())).toEqual([]);
+  });
+
+  it("drops places without valid lat/lon even with null activeSubs", () => {
+    expect(filterPlacesByVisibleCategories([library, noCoords], null)).toEqual([library]);
+  });
+
+  it("null activeSubs returns every place with valid coords (legacy debug path)", () => {
+    const out = filterPlacesByVisibleCategories([library, pharmacy, hospital], null);
+    expect(out).toEqual([library, pharmacy, hospital]);
+  });
+
+  it("keeps a null-sub place when its parent category is in activeSubs", () => {
+    const out = filterPlacesByVisibleCategories([library], new Set(["libraries"]));
+    expect(out).toEqual([library]);
+  });
+
+  it("narrows medical to just pharmacies when only the sub is selected", () => {
+    const out = filterPlacesByVisibleCategories(
+      [pharmacy, hospital, urgentCare],
+      new Set(["medical/pharmacy"]),
+    );
+    expect(out).toEqual([pharmacy]);
+  });
+
+  it("keeps both bare-parent matches and composite-sub matches when both are active", () => {
+    const out = filterPlacesByVisibleCategories(
+      [pharmacy, hospital, cafe],
+      new Set(["medical", "coffee_bakery/cafe"]),
+    );
+    expect(out).toEqual([pharmacy, hospital, cafe]);
+  });
+
+  it("preserves null-sub curated places when a sibling sub of their parent is selected", () => {
+    // Defensive: if a future category mixes curated null-sub entries with
+    // selectable subs, the null-sub entries should still surface alongside
+    // the user's specific sub pick.
+    const curatedLibrary = { ...library };
+    const subLibrary     = { category: "libraries", subcategory: "research", lat: 41.95, lon: -87.65, name: "Research" };
+    const out = filterPlacesByVisibleCategories(
+      [curatedLibrary, subLibrary],
+      new Set(["libraries/research"]),
+    );
+    expect(out).toEqual([curatedLibrary, subLibrary]);
+  });
+
+  it("does not leak null-sub places across categories", () => {
+    // A medical/pharmacy selection must NOT keep a libraries (null-sub) place.
+    const out = filterPlacesByVisibleCategories(
+      [library, pharmacy],
+      new Set(["medical/pharmacy"]),
+    );
+    expect(out).toEqual([pharmacy]);
   });
 });

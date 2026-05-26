@@ -57,7 +57,7 @@ import {
   EXPLORE_DEFAULTS,
   HEATMAP_LAYERS,
 } from "./lib/explorePrefs.js";
-import { PIN_CATEGORIES } from "./lib/exploreCategories.js";
+import { PIN_CATEGORIES, filterPlacesByVisibleCategories } from "./lib/exploreCategories.js";
 
 // PIN_CATEGORIES is a frozen module-level export. Project its pin-paint
 // fields once at import time so App doesn't pay a per-instance useMemo
@@ -875,6 +875,17 @@ export default function App() {
     return out;
   }, [explorePrefs.selectedCategories, explorePrefs.selectedSubs]);
 
+  // Post-filter pin count for the "X of Y places shown" result-panel stat.
+  // The backend filters by parent category; the frontend narrows further
+  // by sub. Without this memo the counter would overstate what's painted
+  // on the map (sub-narrowed places drop on the client but still get
+  // counted). Uses the same predicate MapExploreLayer uses, so X always
+  // equals the pin count.
+  const filteredPlacesCount = useMemo(
+    () => filterPlacesByVisibleCategories(exploreResult?.places, visibleCategories).length,
+    [exploreResult?.places, visibleCategories],
+  );
+
   // Inline arrows used inside the memoized sidebar contents below. Hoisted
   // so the useMemo deps are simple stable references (OPT-037).
   const handleRetryRoute = useCallback(() => {
@@ -967,7 +978,9 @@ export default function App() {
             </div>
             <div className="explore-result-stat">
               <span className="explore-result-stat-num">
-                {exploreResult.places?.length ?? 0}
+                {(exploreResult.places?.length ?? 0) === filteredPlacesCount
+                  ? filteredPlacesCount
+                  : `${filteredPlacesCount} of ${exploreResult.places?.length ?? 0}`}
               </span>
               <span className="explore-result-stat-unit">places shown</span>
             </div>
