@@ -114,8 +114,8 @@ import green_space
 import tree_canopy
 from explore import explore as compute_explore
 from community_areas import lookup_centroid
-from places import places_in_polygon, residential_heatmap
-from parks import parks_in_polygon
+from places import dedupe_osm_parks_against_cpd, places_in_polygon, residential_heatmap
+from parks import parks_in_polygon, pins_from_feature_collection as cpd_park_pins_from_fc
 from green_space import green_space_in_polygon
 from tree_canopy import tree_canopy_in_polygon
 from shapely.geometry import shape as _shape
@@ -715,6 +715,16 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         if payload.with_heatmaps is not None
         else _HEATMAP_LAYER_NAMES
     )
+    # CPD parks pin injection: we always compute the parks clip when the
+    # caller wants `parks` pins (either no category filter, or "parks" is in
+    # the filter), even if `with_heatmaps` toggled the parks-fill layer off.
+    # The clip's grouped intersections are the source of truth for the pin
+    # coordinates; deriving them after the fact guarantees the pin lies
+    # inside the visible park ∩ isochrone slice.
+    want_park_pins = (
+        payload.categories is None or "parks" in payload.categories
+    )
+    compute_parks = want_park_pins or "parks" in include_heatmaps
     heatmap_specs = (
         ("residential", residential_heatmap),
         ("tree_canopy", tree_canopy_in_polygon),
@@ -724,12 +734,21 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
     heatmap_futs = {
         name: loop.run_in_executor(_heatmap_pool, _clip, fn)
         for name, fn in heatmap_specs
-        if name in include_heatmaps
+        if (name == "parks" and compute_parks) or (name != "parks" and name in include_heatmaps)
     }
     places_fut = loop.run_in_executor(_heatmap_pool, _clip, places_in_polygon, payload.categories)
     gathered = await asyncio.gather(places_fut, *heatmap_futs.values())
     places = gathered[0]
     heatmap_results: dict[str, object] = dict(zip(heatmap_futs.keys(), gathered[1:]))
+
+    # Splice CPD park pins into the places list, deduping any OSM `parks`
+    # entry that names the same park within ~75 m. The CPD roster is
+    # authoritative for "what is an official Chicago Park District park,"
+    # so a collision is resolved in CPD's favor.
+    if want_park_pins:
+        cpd_pins = cpd_park_pins_from_fc(heatmap_results.get("parks"))
+        if cpd_pins:
+            places = dedupe_osm_parks_against_cpd(places, cpd_pins) + cpd_pins
 
     return quantize_geojson({
         "origin_coords": [origin_lat, origin_lon],
@@ -747,8 +766,11 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         "tree_canopy_heatmap": heatmap_results.get("tree_canopy"),
         # GeoJSON FeatureCollection of CPD park footprints clipped to the
         # isochrone (one Feature per park with name + acres properties),
-        # or null when no park polygons overlap.
-        "parks_heatmap": heatmap_results.get("parks"),
+        # or null when no park polygons overlap. When the caller's
+        # `with_heatmaps` filter excluded "parks" we still compute the clip
+        # internally to derive CPD park pins for `places`, but suppress the
+        # footprint payload here so the response respects the toggle.
+        "parks_heatmap": heatmap_results.get("parks") if "parks" in include_heatmaps else None,
         # GeoJSON FeatureCollection of non-CPD green space (cemeteries,
         # golf courses, nature reserves / Forest Preserves, recreation
         # grounds) clipped to the isochrone. One Feature per `kind`

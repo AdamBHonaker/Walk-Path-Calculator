@@ -142,6 +142,7 @@ PlaceSource = Literal[
     "cfd_stations",
     "cdp_divvy",
     "cdp_landmarks",
+    "cdp_parks",
 ]
 
 

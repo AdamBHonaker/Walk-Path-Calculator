@@ -144,3 +144,78 @@ class TestClip:
         park_full = Polygon(_ring(-87.70, 41.90, -87.68, 41.92))
         assert clipped.area < park_full.area
         assert clipped.is_valid
+
+
+class TestPinsFromFeatureCollection:
+    def test_none_input_returns_empty(self):
+        assert parks.pins_from_feature_collection(None) == []
+
+    def test_no_features_returns_empty(self):
+        assert parks.pins_from_feature_collection({"type": "FeatureCollection", "features": []}) == []
+
+    def test_one_feature_one_pin(self, patched_artifact):
+        patched_artifact([
+            {"name": "Lincoln Park", "acres": 1208.0,
+             "ring": _ring(-87.695, 41.905, -87.692, 41.908)},
+        ])
+        poly = box(-87.70, 41.90, -87.69, 41.91)
+        fc = parks.parks_in_polygon(poly)
+        pins = parks.pins_from_feature_collection(fc)
+        assert len(pins) == 1
+        pin = pins[0]
+        assert pin["category"] == "parks"
+        assert pin["subcategory"] is None
+        assert pin["name"] == "Lincoln Park"
+        assert pin["source"] == "cdp_parks"
+        assert pin["address"] == "1208.0 acres"
+
+    def test_pin_lies_inside_clipped_geometry(self, patched_artifact):
+        # Park spans well past the isochrone; the pin must sit inside the
+        # park ∩ isochrone slice, not the park's true centroid (which here
+        # would fall outside the isochrone box).
+        patched_artifact([
+            {"name": "Lakefront", "acres": 500.0,
+             "ring": _ring(-87.70, 41.90, -87.50, 41.92)},
+        ])
+        # Tiny isochrone at the far west edge of the park — true centroid
+        # at (-87.60, 41.91) is ~7km away and well outside this box.
+        poly = box(-87.695, 41.905, -87.685, 41.910)
+        fc = parks.parks_in_polygon(poly)
+        pins = parks.pins_from_feature_collection(fc)
+        assert len(pins) == 1
+        pin = pins[0]
+        clip = shape(fc["features"][0]["geometry"])
+        from shapely.geometry import Point
+        assert clip.contains(Point(pin["lon"], pin["lat"]))
+        # Confirm the pin is NOT at the park's true centroid.
+        true_centroid_lon = -87.60
+        assert abs(pin["lon"] - true_centroid_lon) > 0.05
+
+    def test_missing_acres_yields_null_address(self, patched_artifact):
+        patched_artifact([
+            {"name": "Unsized Park", "acres": None,
+             "ring": _ring(-87.695, 41.905, -87.692, 41.908)},
+        ])
+        poly = box(-87.70, 41.90, -87.69, 41.91)
+        fc = parks.parks_in_polygon(poly)
+        pins = parks.pins_from_feature_collection(fc)
+        assert len(pins) == 1
+        assert pins[0]["address"] is None
+
+    def test_skips_features_without_name(self):
+        fc = {
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature",
+                 "properties": {"name": "", "acres": 10.0},
+                 "geometry": {"type": "Polygon",
+                              "coordinates": [_ring(-87.7, 41.9, -87.69, 41.91)]}},
+                {"type": "Feature",
+                 "properties": {"name": "Real Park", "acres": 5.0},
+                 "geometry": {"type": "Polygon",
+                              "coordinates": [_ring(-87.69, 41.9, -87.68, 41.91)]}},
+            ],
+        }
+        pins = parks.pins_from_feature_collection(fc)
+        assert len(pins) == 1
+        assert pins[0]["name"] == "Real Park"

@@ -197,3 +197,89 @@ class TestExploreSuccess:
             "max_minutes": 15,
         })
         assert resp.status_code == 200
+
+
+class TestCpdParkPins:
+    """Verifies the CPD-parks pin injection: the /explore handler derives
+    one pin per park ∩ isochrone intersection, deduping any OSM `parks`
+    entry that names the same park within ~75 m. Closes the gap where
+    CPD parks not tagged in OSM never surfaced as clickable pins."""
+
+    def test_response_includes_cpd_park_pins(self):
+        # Lincoln Park community area sits squarely on top of several CPD
+        # parks; a 20-minute walkshed should overlap many of them.
+        resp = client.post("/explore", json={
+            "origin": {"community_area": "Lincoln Park"},
+            "max_minutes": 20,
+            "categories": ["parks"],
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        cpd_pins = [p for p in body["places"] if p.get("source") == "cdp_parks"]
+        if not cpd_pins:
+            pytest.skip("parks_polygons.json absent or no CPD parks overlap this isochrone")
+        for pin in cpd_pins:
+            assert pin["category"] == "parks"
+            assert pin["subcategory"] is None
+            assert pin["name"]
+            # `address` carries the park's acreage when available
+            # (e.g., "12.3 acres"); when null the source had no acres.
+            if pin["address"] is not None:
+                assert pin["address"].endswith("acres")
+
+    def test_cpd_pins_lie_inside_isochrone(self):
+        # The point of polygon-aware injection: every pin coordinate must
+        # be inside the isochrone polygon, not at the park's true centroid
+        # (which can fall outside a tight walkshed for big parks).
+        from shapely.geometry import Point, shape
+
+        resp = client.post("/explore", json={
+            "origin": {"community_area": "Lincoln Park"},
+            "max_minutes": 15,
+            "categories": ["parks"],
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        cpd_pins = [p for p in body["places"] if p.get("source") == "cdp_parks"]
+        if not cpd_pins:
+            pytest.skip("parks_polygons.json absent or no CPD parks overlap this isochrone")
+        isochrone = shape(body["polygon"])
+        for pin in cpd_pins:
+            # Tiny float slack — `representative_point()` may land on the
+            # boundary after coordinate quantization.
+            assert isochrone.buffer(1e-6).contains(Point(pin["lon"], pin["lat"])), (
+                f"CPD pin {pin['name']!r} at ({pin['lat']}, {pin['lon']}) "
+                f"fell outside the isochrone polygon"
+            )
+
+    def test_pins_suppressed_when_parks_not_in_category_filter(self):
+        # CPD pins are subject to the same category filter as OSM places:
+        # if the caller didn't ask for `parks`, they shouldn't appear.
+        resp = client.post("/explore", json={
+            "origin": {"community_area": "Lincoln Park"},
+            "max_minutes": 15,
+            "categories": ["coffee_bakery"],
+        })
+        assert resp.status_code == 200
+        cpd_pins = [p for p in resp.json()["places"] if p.get("source") == "cdp_parks"]
+        assert cpd_pins == []
+
+    def test_parks_heatmap_suppressed_but_pins_present_when_only_pins_requested(self):
+        # When `with_heatmaps` excludes "parks" but the user wants the
+        # parks pin category, the response should carry pins but null out
+        # the heatmap footprint payload.
+        resp = client.post("/explore", json={
+            "origin": {"community_area": "Lincoln Park"},
+            "max_minutes": 15,
+            "categories": ["parks"],
+            "with_heatmaps": ["residential"],
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        # Heatmap explicitly suppressed.
+        assert body["parks_heatmap"] is None
+        # But pins survived (assuming the artifact is present in this env).
+        cpd_pins = [p for p in body["places"] if p.get("source") == "cdp_parks"]
+        if not cpd_pins:
+            pytest.skip("parks_polygons.json absent or no CPD parks overlap this isochrone")
+        assert len(cpd_pins) > 0
