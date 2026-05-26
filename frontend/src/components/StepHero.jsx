@@ -77,7 +77,14 @@ export function StepHero({ result, dailyGoal, onShare, metricMode = "steps" }) {
       {!isDistance && (
         <div className="goal-bar-wrap">
           <div className="goal-bar-label">Daily measure · {effectiveGoal} steps</div>
-          <div className="goal-bar-track">
+          <div
+            className="goal-bar-track"
+            role="progressbar"
+            aria-valuenow={barWidth}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Daily measure progress"
+          >
             <div className="goal-bar-fill" style={{ width: `${barWidth}%` }} />
           </div>
           <div className="goal-bar-caption">{pct}% of daily measure</div>
