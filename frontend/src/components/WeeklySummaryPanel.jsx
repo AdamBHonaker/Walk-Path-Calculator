@@ -76,7 +76,7 @@ export function WeeklySummaryPanel({ log, dailyGoal, onClear, metricMode = "step
               aria-valuenow={weeklyPct}
               aria-valuemin={0}
               aria-valuemax={100}
-              aria-label={`Weekly measure progress: ${weeklyPct}%`}
+              aria-label="Weekly measure progress"
             >
               <div className="goal-bar-fill" style={{ width: `${weeklyPct}%` }} />
             </div>

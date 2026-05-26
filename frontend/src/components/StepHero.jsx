@@ -83,7 +83,7 @@ export function StepHero({ result, dailyGoal, onShare, metricMode = "steps" }) {
             aria-valuenow={barWidth}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Daily measure progress: ${pct}%`}
+            aria-label="Daily measure progress"
           >
             <div className="goal-bar-fill" style={{ width: `${barWidth}%` }} />
           </div>

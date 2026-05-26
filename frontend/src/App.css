@@ -2890,6 +2890,7 @@
   border: none;
   border-left: 3px solid transparent;
   border-bottom: 1px dashed var(--mute-fog);
+  border-radius: 0;
   cursor: default;
   background: transparent;
   color: inherit;
