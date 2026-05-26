@@ -217,6 +217,109 @@ class TestCuratedSources:
             assert p["subcategory"] is None
 
 
+class TestDedupeOsmParksAgainstCpd:
+    """Unit tests for places.dedupe_osm_parks_against_cpd — runtime dedupe
+    that suppresses OSM `parks` pins colliding with a CPD park pin."""
+
+    @staticmethod
+    def _osm_park(name: str, lat: float, lon: float, subcategory: str | None = None) -> dict:
+        return {
+            "category":    "parks",
+            "subcategory": subcategory,
+            "name":        name,
+            "lat":         lat,
+            "lon":         lon,
+            "address":     None,
+            "source":      "osm",
+        }
+
+    @staticmethod
+    def _cpd_pin(name: str, lat: float, lon: float) -> dict:
+        return {
+            "category":    "parks",
+            "subcategory": None,
+            "name":        name,
+            "lat":         lat,
+            "lon":         lon,
+            "address":     "10.0 acres",
+            "source":      "cdp_parks",
+        }
+
+    def test_empty_cpd_returns_places_unchanged(self):
+        osm = [self._osm_park("Lincoln Park", 41.9213, -87.6347)]
+        result = places.dedupe_osm_parks_against_cpd(osm, [])
+        assert result == osm
+
+    def test_collocated_same_name_osm_park_is_suppressed(self):
+        # OSM and CPD both tag "Lincoln Park" within ~25 m of each other.
+        osm = [self._osm_park("Lincoln Park", 41.92130, -87.63470)]
+        cpd = [self._cpd_pin("Lincoln Park", 41.92150, -87.63480)]
+        result = places.dedupe_osm_parks_against_cpd(osm, cpd)
+        assert result == []
+
+    def test_distant_same_name_osm_park_survives(self):
+        # Same name but ~200 m apart — different park, keep the OSM entry.
+        osm = [self._osm_park("Pulaski Park", 41.9000, -87.6800)]
+        cpd = [self._cpd_pin("Pulaski Park", 41.9020, -87.6820)]
+        result = places.dedupe_osm_parks_against_cpd(osm, cpd)
+        assert len(result) == 1
+        assert result[0]["source"] == "osm"
+
+    def test_different_name_collocated_osm_park_survives(self):
+        # Different parks that happen to be near each other (e.g. a small
+        # neighborhood park abutting a CPD park) — both should render.
+        osm = [self._osm_park("Bauler Triangle", 41.92130, -87.63470)]
+        cpd = [self._cpd_pin("Lincoln Park", 41.92150, -87.63480)]
+        result = places.dedupe_osm_parks_against_cpd(osm, cpd)
+        assert len(result) == 1
+        assert result[0]["name"] == "Bauler Triangle"
+
+    def test_dog_park_inside_cpd_park_survives(self):
+        # A dog park inside a CPD park should still surface as its own pin.
+        osm = [self._osm_park("Wiggly Field", 41.92130, -87.63470, subcategory="dog_park")]
+        cpd = [self._cpd_pin("Lincoln Park", 41.92150, -87.63480)]
+        result = places.dedupe_osm_parks_against_cpd(osm, cpd)
+        assert len(result) == 1
+        assert result[0]["subcategory"] == "dog_park"
+
+    def test_playground_inside_cpd_park_survives(self):
+        osm = [self._osm_park("Lincoln Park Playlot", 41.92130, -87.63470, subcategory="playground")]
+        cpd = [self._cpd_pin("Lincoln Park", 41.92150, -87.63480)]
+        result = places.dedupe_osm_parks_against_cpd(osm, cpd)
+        assert len(result) == 1
+        assert result[0]["subcategory"] == "playground"
+
+    def test_non_park_categories_pass_through(self):
+        # A coffee shop named "Lincoln Park Cafe" 10 m from the CPD pin
+        # must not be deduped — different category.
+        osm = [{
+            "category":    "coffee_bakery",
+            "subcategory": None,
+            "name":        "Lincoln Park Cafe",
+            "lat":         41.92130,
+            "lon":         -87.63470,
+            "address":     None,
+            "source":      "osm",
+        }]
+        cpd = [self._cpd_pin("Lincoln Park", 41.92150, -87.63480)]
+        result = places.dedupe_osm_parks_against_cpd(osm, cpd)
+        assert len(result) == 1
+        assert result[0]["category"] == "coffee_bakery"
+
+    def test_stop_tokens_dont_inflate_name_jaccard(self):
+        # Two unrelated parks whose only shared token is "park" must NOT
+        # be considered a match. Without stop-word filtering, "Lincoln
+        # Park" ∩ "Grant Park" = {"park"} → Jaccard 1/3 ≈ 0.33 (under
+        # threshold), but if "Foo Park" vs "Bar Park" stripped only
+        # punctuation we'd see 1/3 and false-positive too. Either way,
+        # stop tokens make the test robust.
+        osm = [self._osm_park("Grant Park", 41.92130, -87.63470)]
+        cpd = [self._cpd_pin("Lincoln Park", 41.92140, -87.63480)]
+        result = places.dedupe_osm_parks_against_cpd(osm, cpd)
+        assert len(result) == 1
+        assert result[0]["source"] == "osm"
+
+
 class TestResidentialHeatmap:
     """Tests for places.residential_heatmap — the single-unioned MultiPolygon
     returned for the explorer's heatmap fill."""

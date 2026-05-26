@@ -37,7 +37,7 @@ from shapely.ops import unary_union
 from shapely.prepared import prep
 from shapely.strtree import STRtree
 
-from utils import quantize_coord
+from utils import haversine_miles, quantize_coord
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +272,91 @@ def places_in_polygon(
         if not prepared.contains(_geoms[i]):
             continue
         out.append(place)
+    return out
+
+
+# Dedupe threshold for OSM `parks` pins colliding with CPD park pins.
+# 75 m haversine + name-token Jaccard >= 0.5. OSM tags often place a park's
+# centroid node 30–60 m off the polygon centroid; 75 m is wide enough to
+# catch those without absorbing a different nearby park.
+_CPD_PARK_DEDUPE_MILES: float = 75.0 / 1609.344
+_CPD_PARK_NAME_JACCARD_MIN: float = 0.5
+# Lat/lon bin width for the dedupe lookup. 0.001° ≈ 111 m at Chicago
+# latitude — comfortably wider than the 75 m radius so a single bin lookup
+# (plus the 8 neighbors) captures every candidate.
+_CPD_PARK_BIN_DEG: float = 0.001
+# Generic name tokens stripped before computing Jaccard similarity. They
+# carry no discriminating signal (every park has "park" in its name) and
+# would inflate the similarity score for unrelated names.
+_PARK_NAME_STOP_TOKENS: frozenset[str] = frozenset(
+    {"park", "playground", "the", "a", "an", "of", "and"}
+)
+
+
+def _normalize_park_name_tokens(name: str) -> set[str]:
+    """Lowercase, strip punctuation, drop stop tokens, return the residual set."""
+    if not name:
+        return set()
+    cleaned = "".join(c if c.isalnum() or c.isspace() else " " for c in name.lower())
+    return {t for t in cleaned.split() if t and t not in _PARK_NAME_STOP_TOKENS}
+
+
+def _park_name_jaccard(a: str, b: str) -> float:
+    """Jaccard similarity of two park names, post token-normalization."""
+    sa, sb = _normalize_park_name_tokens(a), _normalize_park_name_tokens(b)
+    if not sa or not sb:
+        return 0.0
+    return len(sa & sb) / len(sa | sb)
+
+
+def dedupe_osm_parks_against_cpd(
+    places: list[dict[str, Any]],
+    cpd_pins: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return ``places`` with OSM `parks` pins suppressed when they collide
+    with a CPD park pin from ``cpd_pins``.
+
+    Collision rule: OSM entry with ``category == "parks"`` and
+    ``subcategory is None`` whose coordinates are within ~75 m of any CPD
+    pin AND whose normalized-name Jaccard against that pin is >= 0.5.
+
+    OSM entries with ``subcategory in {"dog_park", "playground"}`` are not
+    deduped — a playground inside Lincoln Park should still surface.
+    """
+    if not cpd_pins:
+        return places
+
+    # Lat/lon bin index over CPD pins for O(n + k) scan.
+    cpd_bins: dict[tuple[int, int], list[dict[str, Any]]] = {}
+    for c in cpd_pins:
+        key = (int(c["lat"] / _CPD_PARK_BIN_DEG), int(c["lon"] / _CPD_PARK_BIN_DEG))
+        cpd_bins.setdefault(key, []).append(c)
+
+    out: list[dict[str, Any]] = []
+    for p in places:
+        if (
+            p.get("category") == "parks"
+            and p.get("subcategory") is None
+            and p.get("source") != "cdp_parks"
+        ):
+            key = (int(p["lat"] / _CPD_PARK_BIN_DEG), int(p["lon"] / _CPD_PARK_BIN_DEG))
+            collided = False
+            for dk in (-1, 0, 1):
+                if collided:
+                    break
+                for dl in (-1, 0, 1):
+                    for c in cpd_bins.get((key[0] + dk, key[1] + dl), ()):
+                        d = haversine_miles(p["lat"], p["lon"], c["lat"], c["lon"])
+                        if d > _CPD_PARK_DEDUPE_MILES:
+                            continue
+                        if _park_name_jaccard(p.get("name", ""), c.get("name", "")) >= _CPD_PARK_NAME_JACCARD_MIN:
+                            collided = True
+                            break
+                    if collided:
+                        break
+            if collided:
+                continue
+        out.append(p)
     return out
 
 

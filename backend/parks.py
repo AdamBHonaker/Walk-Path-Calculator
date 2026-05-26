@@ -35,7 +35,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, shape
 from shapely.strtree import STRtree
 
 from heatmap_clipper import (
@@ -140,3 +140,47 @@ def parks_in_polygon(polygon) -> dict[str, Any] | None:
         properties_for=_props,
         simplify_tolerance=PARKS_SIMPLIFY_TOLERANCE,
     )
+
+
+def pins_from_feature_collection(fc: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Derive one pin per CPD park from the parks heatmap FeatureCollection.
+
+    Each pin's coordinate is the ``representative_point()`` of the park ∩
+    isochrone intersection (the FC geometry), so it is guaranteed to lie
+    inside both the park polygon and the isochrone — handles large or
+    oddly-shaped parks whose true centroid falls outside a tight walkshed.
+
+    Returns an empty list when ``fc`` is ``None`` or carries no features.
+    """
+    if fc is None:
+        return []
+    features = fc.get("features") or []
+    out: list[dict[str, Any]] = []
+    for feat in features:
+        geometry = feat.get("geometry")
+        props = feat.get("properties") or {}
+        name = (props.get("name") or "").strip()
+        if not geometry or not name:
+            continue
+        try:
+            geom = shape(geometry)
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if geom.is_empty:
+            continue
+        point = geom.representative_point()
+        acres = props.get("acres")
+        if isinstance(acres, (int, float)) and acres > 0:
+            address = f"{acres:.1f} acres"
+        else:
+            address = None
+        out.append({
+            "category":    "parks",
+            "subcategory": None,
+            "name":        name,
+            "lat":         point.y,
+            "lon":         point.x,
+            "address":     address,
+            "source":      "cdp_parks",
+        })
+    return out

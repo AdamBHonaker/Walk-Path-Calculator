@@ -59,6 +59,32 @@ A log of features that have been designed and fully implemented. Entries are mov
 | Route Turn Segment Differentiation | Bolt-On | 2026-05-21 |
 | El / Metra Station Split (Neighborhood Explorer) | Bolt-On | 2026-05-22 |
 | Coffee / Bakery Subcategory Split (Neighborhood Explorer) | Bolt-On | 2026-05-22 |
+| CPD Parks Pin Layer (Neighborhood Explorer) | Bolt-On | 2026-05-26 |
+
+---
+
+## CPD Parks Pin Layer (Neighborhood Explorer)
+**Type:** Bolt-On | **Area:** Backend | **Shipped:** 2026-05-26
+
+Selecting "Public parks" in the Explorer previously sourced only from OSM tags (`leisure=park` / `dog_park` / `playground`, ~1,405 Chicago entries in `places_osm.json`). The Chicago Park District's authoritative roster of 804 parks (`parks_polygons.json`, built by `scripts/build_parks.py`) was rendered only as a polygon heatmap, so any CPD park not also tagged in OSM was invisible as a clickable pin — and large or oddly-shaped parks whose centroid landed outside a tight isochrone were dropped from the heatmap-pin pair entirely.
+
+This patch surfaces every CPD park whose footprint intersects the isochrone as a pin under `source: "cdp_parks"`, derived at request time from the parks-heatmap clipping pass — no new ingestion script, no `places_curated.json` regeneration.
+
+**Design decisions:**
+- Pin coordinate is the `representative_point()` of the **park ∩ isochrone** intersection, not the park's true centroid. Guarantees the pin sits inside both the polygon AND the visible walkshed slice; handles Lincoln, Grant, Jackson, Burnham, and other large parks that previously vanished from tight isochrones.
+- Acres are surfaced via the entry's `address` field as `"<acres> acres"` (only free string slot on the place schema; renders naturally in any popup that shows address).
+- Dedupe against OSM `parks` (subcategory None) at 75 m haversine + name-token Jaccard ≥ 0.5, with stop tokens `{park, playground, the, …}` stripped before scoring. Dog parks and playgrounds (other subcategories) inside a CPD park always survive.
+- The parks clip runs whenever the `parks` pin category is requested even if `with_heatmaps` excludes the parks footprint — the response then nulls the footprint payload but still returns the pins. Pin computation reuses the heatmap clipping pass, so the marginal cost is one `representative_point()` per intersecting park.
+
+**What changed:**
+- [`backend/parks.py`](../backend/parks.py): new `pins_from_feature_collection(fc)` helper derives one pin per park ∩ isochrone slice from the existing FeatureCollection output.
+- [`backend/places.py`](../backend/places.py): new `dedupe_osm_parks_against_cpd(places, cpd_pins)` plus `_park_name_jaccard` / `_normalize_park_name_tokens` helpers. Lat-bin index keeps the pass linear.
+- [`backend/main.py`](../backend/main.py): `/explore` handler computes parks clip when `parks` is in the requested categories (regardless of `with_heatmaps`), splices pins into `places` (dedupe + concat), and nulls `parks_heatmap` if the caller toggled the fill off.
+- [`backend/models.py`](../backend/models.py): added `"cdp_parks"` to the `PlaceSource` Literal so the new value passes response-model validation.
+- Tests: `tests/test_parks.py` adds a `TestPinsFromFeatureCollection` class (5 tests, including the centroid-outside-isochrone regression for large parks); `tests/test_places.py` adds `TestDedupeOsmParksAgainstCpd` (8 tests covering same-name collocation, distant same-name preservation, subcategory survival, stop-token robustness); `tests/test_explore_endpoint.py` adds a `TestCpdParkPins` class (4 integration tests).
+- [`CLAUDE.md`](../CLAUDE.md): new "CPD parks pin layer" bullet in Key Design Decisions; `cdp_parks` added to the `/explore` `source` enumeration.
+
+**Out of scope:** route-flavor selection between OSM and CPD attributes per park (the OSM entry's tags / hours, if any, are dropped when its pin is suppressed; CPD records carry only name + acres). Re-baking the OSM ingest with CPD-name-aware merging is a heavier change tracked elsewhere if popup metadata becomes a priority.
 
 ---
 
