@@ -391,10 +391,15 @@ def _query_addresses_prefix(norm: str, limit: int) -> list[Suggestion]:
     db = _connect()
     if db is None:
         return []
+    # `normalize_address` strips a small set of punctuation but does not touch
+    # SQL LIKE wildcards (`%`, `_`, `\`). Escape them in the bound parameter
+    # and declare ESCAPE so a user-typed `%` matches a literal percent rather
+    # than dragging in every row that shares a prefix with `norm`.
+    escaped = norm.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     rows = db.execute(
         "SELECT raw, lat, lon, (normalized = ?) AS is_exact "
-        "FROM addresses WHERE normalized LIKE ? LIMIT ?",
-        (norm, norm + "%", limit),
+        "FROM addresses WHERE normalized LIKE ? ESCAPE '\\' LIMIT ?",
+        (norm, escaped + "%", limit),
     ).fetchall()
     out: list[Suggestion] = []
     for r in rows:

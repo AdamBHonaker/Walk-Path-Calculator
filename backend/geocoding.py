@@ -100,15 +100,74 @@ _circuit_consecutive_trips: int = 0
 _circuit_lock = threading.Lock()
 
 
+def _circuit_load_state() -> tuple[float, int]:
+    """Return (open_until, consecutive_trips), preferring SQLite-backed
+    shared state when available so all uvicorn workers see the same
+    breaker. Refreshes the module globals as a side effect so debug
+    tooling and existing tests can inspect them directly.
+
+    Falls back to module globals when the cache DB is missing or the
+    `breaker_state` table couldn't be bootstrapped (e.g., read-only
+    mount). In that fallback mode the breaker is per-worker, matching
+    the pre-shared behavior.
+    """
+    global _circuit_open_until, _circuit_consecutive_trips
+    db = _cache_connect()
+    if db is None:
+        return _circuit_open_until, _circuit_consecutive_trips
+    try:
+        row = db.execute(
+            "SELECT open_until, consecutive_trips FROM breaker_state WHERE id = 0"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return _circuit_open_until, _circuit_consecutive_trips
+    if row is None:
+        return _circuit_open_until, _circuit_consecutive_trips
+    open_until = float(row["open_until"] or 0.0)
+    trips = int(row["consecutive_trips"] or 0)
+    with _circuit_lock:
+        _circuit_open_until = open_until
+        _circuit_consecutive_trips = trips
+    return open_until, trips
+
+
+def _circuit_save_state(open_until: float, consecutive_trips: int) -> None:
+    """Persist breaker state to shared SQLite. No-op when the DB or
+    `breaker_state` table is unavailable.
+    """
+    db = _cache_connect()
+    if db is None:
+        return
+    try:
+        db.execute(
+            "UPDATE breaker_state SET open_until = ?, consecutive_trips = ? "
+            "WHERE id = 0",
+            (open_until, consecutive_trips),
+        )
+    except sqlite3.OperationalError as exc:
+        logger.warning("Could not persist circuit breaker state: %s", exc)
+
+
 def _circuit_is_open() -> bool:
-    return time.time() < _circuit_open_until
+    open_until, _ = _circuit_load_state()
+    return time.time() < open_until
 
 
 def _circuit_trip_429() -> None:
-    """Record a 429; open the breaker with exponential backoff."""
+    """Record a 429; open the breaker with exponential backoff. Persists
+    to shared SQLite state so other workers honor the trip on their next
+    `_circuit_is_open()` check.
+
+    The read-then-write is not transactional across workers (each step is
+    autocommitted independently), so two workers tripping in the same
+    ~millisecond can each base the cooloff off the same prior count. That
+    yields a backoff one step shorter than ideal in pathological burst
+    cases — benign given the 60 s floor and the rate-limit recovery time.
+    """
     global _circuit_open_until, _circuit_consecutive_trips
+    _, prior_trips = _circuit_load_state()
     with _circuit_lock:
-        _circuit_consecutive_trips += 1
+        _circuit_consecutive_trips = prior_trips + 1
         cooloff = min(
             _CIRCUIT_INITIAL_COOLOFF_S * (2 ** (_circuit_consecutive_trips - 1)),
             _CIRCUIT_MAX_COOLOFF_S,
@@ -118,24 +177,31 @@ def _circuit_trip_429() -> None:
             "LocationIQ 429 -- circuit breaker open for %.0fs (trip=%d)",
             cooloff, _circuit_consecutive_trips,
         )
+    _circuit_save_state(_circuit_open_until, _circuit_consecutive_trips)
 
 
 def _circuit_record_success() -> None:
-    """Close the breaker after a successful probe."""
+    """Close the breaker after a successful probe. Persists to shared state."""
     global _circuit_open_until, _circuit_consecutive_trips
+    _, prior_trips = _circuit_load_state()
     with _circuit_lock:
-        if _circuit_consecutive_trips > 0:
+        if _circuit_consecutive_trips > 0 or prior_trips > 0:
             logger.info("LocationIQ recovered -- circuit breaker closed")
         _circuit_open_until = 0.0
         _circuit_consecutive_trips = 0
+    _circuit_save_state(0.0, 0)
 
 
 def _circuit_reset_for_test() -> None:
-    """Test-only: force the breaker back to closed/zero state."""
+    """Test-only: force the breaker back to closed/zero state. Clears
+    both the module globals and the shared SQLite state so tests don't
+    leak across each other.
+    """
     global _circuit_open_until, _circuit_consecutive_trips
     with _circuit_lock:
         _circuit_open_until = 0.0
         _circuit_consecutive_trips = 0
+    _circuit_save_state(0.0, 0)
 
 
 # ── LocationIQ HTTP client ──────────────────────────────────────────────────
@@ -249,6 +315,25 @@ def _cache_connect() -> sqlite3.Connection | None:
         try:
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("PRAGMA synchronous = NORMAL")
+        except sqlite3.OperationalError:
+            pass
+        # Shared circuit-breaker state lives in the same DB so all uvicorn
+        # workers see a 429 trip from any worker. Idempotent bootstrap: a
+        # read-only mount surfaces an OperationalError, in which case the
+        # process falls back to per-worker module-global state (the legacy
+        # pre-shared behavior, fine for single-worker dev).
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS breaker_state ("
+                "  id INTEGER PRIMARY KEY CHECK (id = 0),"
+                "  open_until REAL NOT NULL DEFAULT 0,"
+                "  consecutive_trips INTEGER NOT NULL DEFAULT 0"
+                ")"
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO breaker_state (id, open_until, consecutive_trips) "
+                "VALUES (0, 0, 0)"
+            )
         except sqlite3.OperationalError:
             pass
         conn.row_factory = sqlite3.Row
@@ -751,7 +836,19 @@ def geocode_external(query: str) -> "tuple[float, float] | None":
                 resp.status_code, _redact(query),
             )
         elif resp.status_code == 200:
-            data = resp.json() if resp.content else []
+            # Narrow try around the parse: a malformed body is a 200 from
+            # LocationIQ's perspective but unusable for us. Treat the same
+            # as an empty result -- cache negative, probe the breaker --
+            # so the next call short-circuits to the cache instead of
+            # re-fetching the same broken body.
+            try:
+                data = resp.json() if resp.content else []
+            except ValueError as exc:
+                logger.warning(
+                    "LocationIQ returned malformed JSON for %s: %s",
+                    _redact(query), exc,
+                )
+                data = []
             if isinstance(data, list) and data:
                 entry = data[0]
                 try:
@@ -829,7 +926,18 @@ def _reverse_geocode_external(lat: float, lon: float) -> "str | None":
         if resp.status_code != 200:
             logger.warning("LocationIQ reverse unexpected %s", resp.status_code)
             return None
-        data = resp.json() if resp.content else {}
+        # Narrow try around the parse: malformed JSON on a 200 is treated as
+        # "no result" (None) without crashing the broader cascade. Probe the
+        # breaker as a success so a single garbled response doesn't trip it.
+        try:
+            data = resp.json() if resp.content else {}
+        except ValueError as exc:
+            logger.warning(
+                "LocationIQ reverse returned malformed JSON for %s: %s",
+                _redact_coord(lat, lon), exc,
+            )
+            _circuit_record_success()
+            return None
         display = (data.get("display_name") or "").strip()
         _circuit_record_success()
         if not display:

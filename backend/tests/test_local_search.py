@@ -127,6 +127,34 @@ class TestAddressLookup:
         addr = [x for x in s if x.source == "address"]
         assert addr
 
+    def test_percent_literal_does_not_wildcard(self):
+        # `normalize_address` leaves `%` untouched, so without LIKE escaping
+        # a user-typed `%` would expand the pattern to match every address.
+        # Compare against a control query that should yield results.
+        control = autocomplete("1060", limit=10)
+        with_percent = autocomplete("1060%", limit=10)
+        # Both queries pass through `_query_addresses_prefix`; the escape
+        # ensures the `%` is treated as a literal char that won't match
+        # any normalized address (numbers don't contain `%`), so the
+        # escaped query yields zero address rows even though the control
+        # yields some.
+        addr_control = [x for x in control if x.source == "address"]
+        addr_percent = [x for x in with_percent if x.source == "address"]
+        assert addr_control, "control query should match at least one address"
+        assert not addr_percent, (
+            "literal `%` must not wildcard the LIKE pattern "
+            f"(got {[x.label for x in addr_percent]!r})"
+        )
+
+    def test_underscore_literal_does_not_wildcard(self):
+        # Same shape as the `%` test for the single-char wildcard.
+        with_underscore = autocomplete("1060_W", limit=10)
+        addr = [x for x in with_underscore if x.source == "address"]
+        assert not addr, (
+            "literal `_` must not wildcard the LIKE pattern "
+            f"(got {[x.label for x in addr]!r})"
+        )
+
 
 @needs_db
 class TestForward:
