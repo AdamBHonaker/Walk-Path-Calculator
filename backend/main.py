@@ -112,7 +112,7 @@ import places
 import parks
 import green_space
 import tree_canopy
-from explore import explore as compute_explore
+from explore import explore as compute_explore, within_reach_landmarks
 from community_areas import lookup_centroid
 from places import places_in_polygon, residential_heatmap
 from parks import parks_in_polygon
@@ -649,7 +649,7 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
           "origin_coords": [lat, lon],
           "max_minutes": int,
           "polygon": GeoJSON Polygon,
-          "reachable_neighborhoods": [str, ...],
+          "within_reach_landmarks": [ {name, lat, lon}, ... ],
           "stats": { "node_count": int, "area_sq_mi": float },
           "places": [ {category, subcategory, name, lat, lon, address, source}, ... ],
           "residential_heatmap": GeoJSON MultiPolygon | null,
@@ -657,6 +657,11 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
           "parks_heatmap": GeoJSON FeatureCollection | null,
           "green_space_heatmap": GeoJSON FeatureCollection | null,
         }
+
+    `within_reach_landmarks` is the curated Commission on Chicago Landmarks set
+    clipped to the isochrone, ordered ascending by haversine distance from the
+    origin (alphabetical tiebreak). Independent of `categories` — the chip rail
+    is always populated even when landmarks are toggled off as map pins.
 
     `categories` filters `places` to the named top-level category keys (omit
     or send null to return every place inside the polygon). `height_inches`
@@ -727,15 +732,19 @@ async def explore_endpoint(request: Request, payload: ExploreRequest):
         if name in include_heatmaps
     }
     places_fut = loop.run_in_executor(_heatmap_pool, _clip, places_in_polygon, payload.categories)
-    gathered = await asyncio.gather(places_fut, *heatmap_futs.values())
+    landmarks_fut = loop.run_in_executor(
+        _heatmap_pool, _clip, within_reach_landmarks, origin_lat, origin_lon,
+    )
+    gathered = await asyncio.gather(places_fut, landmarks_fut, *heatmap_futs.values())
     places = gathered[0]
-    heatmap_results: dict[str, object] = dict(zip(heatmap_futs.keys(), gathered[1:]))
+    landmarks = gathered[1]
+    heatmap_results: dict[str, object] = dict(zip(heatmap_futs.keys(), gathered[2:]))
 
     return quantize_geojson({
         "origin_coords": [origin_lat, origin_lon],
         "max_minutes": payload.max_minutes,
         "polygon": result["polygon"],
-        "reachable_neighborhoods": result["reachable_neighborhoods"],
+        "within_reach_landmarks": landmarks,
         "stats": result["stats"],
         "places": places,
         # GeoJSON MultiPolygon (or null if no residential land falls inside

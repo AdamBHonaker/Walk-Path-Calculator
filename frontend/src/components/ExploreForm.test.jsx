@@ -33,7 +33,7 @@ function defaults(overrides = {}) {
     onMaxMinutesChange: vi.fn(),
     onSubmit: vi.fn(),
     loading: false,
-    reachableNeighborhoods: [],
+    withinReachLandmarks: [],
     onChipClick: vi.fn(),
     onLocateMe: vi.fn(),
     locating: false,
@@ -129,5 +129,71 @@ describe("ExploreForm — community-area combobox (chunk 4)", () => {
     );
     const combo = screen.getByRole("combobox", { name: "Community area" });
     expect(combo.value).toBe("Uptown");
+  });
+});
+
+// Curated landmark fixtures spanning the 12-chip cap.
+function makeLandmarks(n) {
+  return Array.from({ length: n }, (_, i) => ({
+    name: `Landmark ${i + 1}`,
+    lat: 41.88 + i * 0.001,
+    lon: -87.63 + i * 0.001,
+  }));
+}
+
+describe("ExploreForm — Within reach chip rail", () => {
+  it("caps the chip rail at 12 by default and reveals a Show more toggle", () => {
+    render(
+      <ExploreForm {...defaults({ withinReachLandmarks: makeLandmarks(13) })} />,
+    );
+    const chips = screen.getAllByRole("button", { name: /^Landmark \d+$/ });
+    expect(chips).toHaveLength(12);
+    expect(screen.getByRole("button", { name: /Show more \(\+1\)/ })).toBeInTheDocument();
+  });
+
+  it("clicking Show more reveals every chip and switches to Show less", () => {
+    render(
+      <ExploreForm {...defaults({ withinReachLandmarks: makeLandmarks(15) })} />,
+    );
+    const toggle = screen.getByRole("button", { name: /Show more \(\+3\)/ });
+    fireEvent.click(toggle);
+    expect(screen.getAllByRole("button", { name: /^Landmark \d+$/ })).toHaveLength(15);
+    expect(screen.getByRole("button", { name: /Show less/ })).toBeInTheDocument();
+  });
+
+  it("does not render the toggle when 12 or fewer landmarks fit", () => {
+    render(
+      <ExploreForm {...defaults({ withinReachLandmarks: makeLandmarks(12) })} />,
+    );
+    expect(screen.getAllByRole("button", { name: /^Landmark \d+$/ })).toHaveLength(12);
+    expect(screen.queryByRole("button", { name: /Show more/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Show less/ })).not.toBeInTheDocument();
+  });
+
+  it("clicking a chip calls onChipClick with the full landmark object", () => {
+    const onChipClick = vi.fn();
+    const landmarks = makeLandmarks(3);
+    render(<ExploreForm {...defaults({ withinReachLandmarks: landmarks, onChipClick })} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Landmark 2$/ }));
+    expect(onChipClick).toHaveBeenCalledWith(landmarks[1]);
+  });
+
+  it("collapses the rail when a fresh landmark set arrives", () => {
+    const { rerender } = render(
+      <ExploreForm {...defaults({ withinReachLandmarks: makeLandmarks(15) })} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Show more/ }));
+    expect(screen.getAllByRole("button", { name: /^Landmark \d+$/ })).toHaveLength(15);
+
+    rerender(
+      <ExploreForm {...defaults({ withinReachLandmarks: makeLandmarks(14) })} />,
+    );
+    expect(screen.getAllByRole("button", { name: /^Landmark \d+$/ })).toHaveLength(12);
+    expect(screen.getByRole("button", { name: /Show more \(\+2\)/ })).toBeInTheDocument();
+  });
+
+  it("hides the entire section when no landmarks are within reach", () => {
+    render(<ExploreForm {...defaults({ withinReachLandmarks: [] })} />);
+    expect(screen.queryByText(/Within reach/)).not.toBeInTheDocument();
   });
 });

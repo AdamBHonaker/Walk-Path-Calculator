@@ -10,10 +10,13 @@
 //   onSubmit             — fires when the user releases the slider OR clicks
 //                          the explicit "Discover" button
 //   loading              — disables the submit button while a request is open
-//   reachableNeighborhoods — list of strings to render as chips below the
-//                          slider; null/empty hides the chip rail
-//   onChipClick          — fires with the chip's label when tapped — the
-//                          App handles "exit explore mode + populate To"
+//   withinReachLandmarks — array of `{name, lat, lon}` from the curated
+//                          Commission on Chicago Landmarks set inside the
+//                          isochrone, ordered closest-first. Backend sorts;
+//                          this component caps at LANDMARK_CHIP_CAP with a
+//                          Show more / Show less toggle.
+//   onChipClick          — fires with the full landmark object when tapped —
+//                          the App handles "exit explore mode + populate To"
 //   onLocateMe           — when the user picks "📍 My location" we ask the
 //                          parent to resolve the browser geolocation
 //                          (the parent owns the geolocation lifecycle).
@@ -62,6 +65,11 @@ function filterCommunityAreas(query) {
 
 const SLIDER_TICKS = [5, 10, 15, 20, 25, 30, 35, 40, 45];
 
+// Within-reach chip rail default cap. A 20-min Loop isochrone surfaces 100+
+// curated landmarks; we collapse to 12 to keep the bottom sheet scannable,
+// behind a Show more affordance that reveals the rest in the same order.
+const LANDMARK_CHIP_CAP = 12;
+
 export function ExploreForm({
   origin,
   onOriginChange,
@@ -69,7 +77,7 @@ export function ExploreForm({
   onMaxMinutesChange,
   onSubmit,
   loading,
-  reachableNeighborhoods,
+  withinReachLandmarks,
   onChipClick,
   onLocateMe,
   locating,
@@ -148,7 +156,14 @@ export function ExploreForm({
     return `≈ ${miles.toFixed(1)} mi at a steady walk`;
   }, [maxMinutes]);
 
-  const chipsToShow = Array.isArray(reachableNeighborhoods) ? reachableNeighborhoods : [];
+  const landmarks = Array.isArray(withinReachLandmarks) ? withinReachLandmarks : [];
+  const [chipsExpanded, setChipsExpanded] = useState(false);
+  // Collapse back to the cap whenever the result set changes — otherwise an
+  // expanded rail from a previous isochrone would persist when the user
+  // picks a new origin or budget.
+  useEffect(() => { setChipsExpanded(false); }, [withinReachLandmarks]);
+  const visibleLandmarks = chipsExpanded ? landmarks : landmarks.slice(0, LANDMARK_CHIP_CAP);
+  const hiddenCount = Math.max(0, landmarks.length - LANDMARK_CHIP_CAP);
 
   return (
     <div className="explore-form">
@@ -267,28 +282,38 @@ export function ExploreForm({
         </button>
       </div>
 
-      {chipsToShow.length > 0 && (
+      {landmarks.length > 0 && (
         <div className="explore-section">
           <div className="explore-section-label">
             <WPIcon name="chicago-mark" size={12} />
             <span>Within reach</span>
           </div>
           <div className="explore-chip-rail">
-            {chipsToShow.map(name => (
+            {visibleLandmarks.map(lm => (
               <button
-                key={name}
+                key={`${lm.name}|${lm.lat},${lm.lon}`}
                 type="button"
                 className="explore-chip"
-                onClick={() => onChipClick?.(name)}
-                title={`Walk to ${name}`}
+                onClick={() => onChipClick?.(lm)}
+                title={`Walk to ${lm.name}`}
               >
-                {name}
+                {lm.name}
                 <span className="explore-chip-arrow" aria-hidden="true">→</span>
               </button>
             ))}
           </div>
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="explore-chip-toggle"
+              onClick={() => setChipsExpanded(e => !e)}
+              aria-expanded={chipsExpanded}
+            >
+              {chipsExpanded ? "Show less" : `Show more (+${hiddenCount})`}
+            </button>
+          )}
           <p className="explore-chip-help">
-            Tap a name to plot a walk there.
+            Tap a landmark to plot a walk there.
           </p>
         </div>
       )}

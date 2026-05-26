@@ -2409,7 +2409,7 @@
   cursor: not-allowed;
 }
 
-/* Reachable-neighborhood chips */
+/* Within-reach landmark chips */
 .explore-chip-rail {
   display: flex;
   flex-wrap: wrap;
@@ -2441,6 +2441,23 @@
   font-family: var(--wf-mono);
   color: var(--mute);
   font-size: 12px;
+}
+.explore-chip-toggle {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  color: var(--mute);
+  font-family: var(--wf-serif);
+  font-style: italic;
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.explore-chip-toggle:hover {
+  color: var(--ink);
 }
 .explore-chip-help {
   margin: 0;
