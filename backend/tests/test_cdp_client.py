@@ -96,3 +96,45 @@ class TestFetchRows:
         monkeypatch.setattr(_cdp_client.requests, "get", fake_get)
         _cdp_client.fetch_rows("CDP_API_ENDPOINT_LIBRARIES", limit=10, where="district='1'")
         assert captured["params"] == {"$limit": 10, "$where": "district='1'"}
+
+    def test_warns_when_response_length_equals_limit(self, monkeypatch, caplog):
+        # A full-page response is the truncation signal — BUG-002.
+        monkeypatch.setenv("CHICAGO_DATA_PORTAL_API_KEY_ID", "id")
+        monkeypatch.setenv("CHICAGO_DATA_PORTAL_API_KEY_SECRET", "secret")
+        monkeypatch.setenv("CDP_API_ENDPOINT_LIBRARIES", "https://example/resource/abc.json")
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            resp = Mock()
+            resp.raise_for_status = lambda: None
+            resp.json = lambda: [{"id": i} for i in range(3)]
+            return resp
+
+        monkeypatch.setattr(_cdp_client.requests, "get", fake_get)
+        with caplog.at_level("WARNING", logger="_cdp_client"):
+            rows = _cdp_client.fetch_rows("CDP_API_ENDPOINT_LIBRARIES", limit=3)
+        assert len(rows) == 3
+        truncation_warnings = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "may be truncated" in r.message
+        ]
+        assert len(truncation_warnings) == 1
+
+    def test_no_warning_when_response_below_limit(self, monkeypatch, caplog):
+        monkeypatch.setenv("CHICAGO_DATA_PORTAL_API_KEY_ID", "id")
+        monkeypatch.setenv("CHICAGO_DATA_PORTAL_API_KEY_SECRET", "secret")
+        monkeypatch.setenv("CDP_API_ENDPOINT_LIBRARIES", "https://example/resource/abc.json")
+
+        def fake_get(url, params=None, headers=None, timeout=None):
+            resp = Mock()
+            resp.raise_for_status = lambda: None
+            resp.json = lambda: [{"id": i} for i in range(2)]
+            return resp
+
+        monkeypatch.setattr(_cdp_client.requests, "get", fake_get)
+        with caplog.at_level("WARNING", logger="_cdp_client"):
+            _cdp_client.fetch_rows("CDP_API_ENDPOINT_LIBRARIES", limit=10)
+        truncation_warnings = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "may be truncated" in r.message
+        ]
+        assert truncation_warnings == []

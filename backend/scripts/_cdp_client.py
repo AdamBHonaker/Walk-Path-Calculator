@@ -28,12 +28,15 @@ per-app quota and keeps refresh runs predictable.
 from __future__ import annotations
 
 import base64
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
 import requests
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(_BACKEND_DIR / ".env")
@@ -73,12 +76,19 @@ def fetch_rows(
     where: str | None = None,
     timeout: int = 60,
 ) -> list[dict[str, Any]]:
-    """Fetch every row from the dataset behind `endpoint_env`.
+    """Fetch up to `limit` rows from the dataset behind `endpoint_env`.
 
-    Sends a single classic-SODA GET with `$limit` (and `$where` when provided).
-    Returns the JSON response as a list of row dicts. Raises `RuntimeError`
-    if credentials or the endpoint env var are missing; lets `requests`
-    raise for HTTP / network errors.
+    Sends a single classic-SODA GET with `$limit` (and `$where` when
+    provided). Returns the JSON response as a list of row dicts.
+
+    No pagination — when the response is exactly `limit` rows long, it
+    may have been truncated; the function logs a WARNING in that case so
+    the operator can either raise `limit` or migrate the caller to a
+    real `$offset` loop. Callers should pass a `limit` comfortably above
+    the dataset's known size.
+
+    Raises `RuntimeError` if credentials or the endpoint env var are
+    missing; lets `requests` raise for HTTP / network errors.
     """
     url = get_endpoint(endpoint_env)
     headers = _auth_header()
@@ -87,4 +97,12 @@ def fetch_rows(
         params["$where"] = where
     resp = requests.get(url, params=params, headers=headers, timeout=timeout)
     resp.raise_for_status()
-    return resp.json()
+    rows = resp.json()
+    if len(rows) == limit:
+        logger.warning(
+            "fetch_rows(%s) returned exactly limit=%d rows — response "
+            "may be truncated; raise the limit or implement $offset "
+            "pagination.",
+            endpoint_env, limit,
+        )
+    return rows

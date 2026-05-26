@@ -153,6 +153,9 @@ def main() -> int:
                    help="N x N bbox chunks (default 4 = 16 queries)")
     p.add_argument("--sleep", type=float, default=10.0,
                    help="Seconds to wait between Overpass chunks (default 10)")
+    p.add_argument("--allow-partial", action="store_true",
+                   help="Overwrite the addresses table even when some "
+                        "Overpass chunks failed. Default: abort instead.")
     args = p.parse_args()
 
     bboxes = _chunk_bboxes(args.grid)
@@ -160,15 +163,27 @@ def main() -> int:
                 len(bboxes), args.grid, args.sleep)
 
     all_elements: list[dict] = []
+    failed_chunks = 0
     for idx, bbox in enumerate(bboxes, 1):
         logger.info("[%d/%d] fetching ...", idx, len(bboxes))
         try:
             all_elements.extend(_fetch_chunk(bbox))
         except Exception as exc:
             logger.error("  chunk failed: %s", exc)
+            failed_chunks += 1
         if idx < len(bboxes) and args.sleep > 0:
             time.sleep(args.sleep)
     logger.info("Total raw elements: %d", len(all_elements))
+
+    if failed_chunks and not args.allow_partial:
+        logger.error(
+            "%d / %d Overpass chunks failed — aborting to avoid "
+            "overwriting the addresses table with a partial dataset. "
+            "Re-run after the transient failure clears, or pass "
+            "--allow-partial to accept the incomplete fetch.",
+            failed_chunks, len(bboxes),
+        )
+        return 1
 
     rows = normalize_elements(all_elements)
     logger.info("Normalized + deduplicated to %d unique addresses", len(rows))

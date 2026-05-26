@@ -62,6 +62,42 @@ Priority / Impact: 🔴 High · 🟡 Medium · 🟢 Low.
 
 ## Resolved Bugs
 
+### 2026-05-26 · `build_address_points.py` silently overwrote the address table on a partial Overpass fetch (BUG-001, fifth scan)
+
+**Files:** `backend/scripts/build_address_points.py`, `backend/tests/test_build_address_points.py` (new)
+
+**Priority:** 🔴 High
+
+**What the bug was:** The bbox loop in `main()` iterated the 16 grid chunks, calling `_fetch_chunk(bbox)` for each. `_fetch_chunk` already retried with exponential backoff and re-raised after `max_retries`; the caller wrapped that call in `try / except Exception as exc: logger.error("  chunk failed: %s", exc)` and continued. After the loop, the script unconditionally ran `DELETE FROM addresses` + `DELETE FROM addresses_fts` and re-populated from `all_elements`. A single transient Overpass failure on one chunk — common under load on the public instance — nuked the 519k-row address table and replaced it with whatever survived, then returned exit code 0. CI / cron / human operators saw a successful build. Contrast with `build_landmarks.py`, which already aborted with exit 1 when its fetch came back empty "to avoid overwriting with empty set"; `build_address_points.py` had no equivalent guard despite its blast radius being the largest curated artifact in the build chain. The persistent corruption silently degraded the local-first geocoder cascade, pushing affected queries through to LocationIQ and inflating hosted-tier spend; in a tripped-breaker window the addresses simply stopped resolving.
+
+**How it was resolved:** Added a `failed_chunks` counter in `main()` and a new `--allow-partial` flag. When any chunk fails and the flag is not set, the script logs an error explaining the situation, returns exit 1, and never opens the SQLite connection — the `DELETE` block is therefore unreachable on the failure path. `_fetch_chunk`'s internal retry/backoff is unchanged. Three new tests in `test_build_address_points.py` pin the contract: a clean run writes rows and exits 0, a failed chunk aborts with exit 1 *and* never opens the DB (verified by monkeypatching `connect` and asserting zero calls), and `--allow-partial` restores the legacy overwrite behavior for operators who genuinely want a partial dataset.
+
+---
+
+### 2026-05-26 · `_cdp_client.fetch_rows` docstring promised pagination it did not implement (BUG-002, fifth scan)
+
+**Files:** `backend/scripts/_cdp_client.py`, `backend/tests/test_cdp_client.py`
+
+**Priority:** 🟡 Medium
+
+**What the bug was:** `fetch_rows` was documented as *"Fetch every row from the dataset behind `endpoint_env`."* The implementation sent a single GET with `params={"$limit": limit}` and returned `resp.json()` — no `$offset` loop, no short-page sentinel, no truncation warning. A dataset larger than the caller's `limit` would silently truncate to exactly `limit` rows, and the consuming build script would write a partial artifact as if it were complete. The current five callers (`build_schools_cps.py`, `build_divvy.py`, `build_libraries.py`, `build_police_stations.py`, `build_fire_stations.py`) are safe by coincidence — the datasets sit well under the limits passed in — but the function's contract and behavior were mismatched, and no signal existed if truncation did occur.
+
+**How it was resolved:** Took option (b) from the bug suggestion: tightened the docstring to *"Fetch up to `limit` rows"* with an explicit note that no pagination happens, and added a `logger.warning` whenever `len(rows) == limit` (a likely-truncated signal). Implementing real `$offset` pagination wasn't worth the risk given the bug was future-proofing only and no shipped artifact was truncated; the WARNING gives the operator a clear signal the next time a dataset grows past its caller's limit. Two new tests in `TestFetchRows` pin the warning behavior — one verifying it fires on a full-page response, one verifying it stays quiet when the response is below the limit.
+
+---
+
+### 2026-05-26 · `personalized_calories` field description was stale about UI consumption (BUG-003, fifth scan)
+
+**Files:** `backend/models.py`
+
+**Priority:** 🟢 Low
+
+**What the bug was:** The `personalized_calories` field's description on `RouteResponse` declared *"True when the caller supplied `weight_kg`. Informational — not currently consumed by the UI."* But `frontend/src/components/StepHero.jsx` reads it (`{personalized_calories && (...)}`) to drive the "personalized" badge on the calorie chip. Documentation drift only — runtime behavior was correct — but a future contributor reading the model docs could plausibly remove the field believing the UI doesn't consume it, then ship a frontend regression.
+
+**How it was resolved:** Edited the description on `backend/models.py` to match reality: *"True when the caller supplied `weight_kg`. Drives the 'personalized' badge next to the calorie chip in `StepHero.jsx`."* Pure description-string change on a `pydantic.Field`; no runtime behavior shift, no test needed. The sibling stale claim on `step_length_inches` ("not currently consumed by the UI") at the same site is out of scope — the fifth-scan entry only flagged `personalized_calories`, so a future scan can confirm that one separately.
+
+---
+
 ### 2026-05-22 · Shareable link carrying `hft` without a valid `hin` deleted the visitor's saved height-inches (BUG-001, fourth scan)
 
 **Files:** `frontend/src/hooks/usePersonalization.js`, `frontend/src/hooks/useRouteFetch.js`, `frontend/src/hooks/useShareCard.js`, `frontend/src/hooks/usePersonalization.test.jsx` (new)
