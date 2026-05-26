@@ -24,8 +24,12 @@ export async function parseApiErrorMessage(response, serviceLabel = null) {
       return d.detail;
     }
     if (response.status === 429) return fallback429;
-  } catch {
+  } catch (e) {
     if (response.status === 429) return fallback429;
+    // Non-429 with an unparseable body (e.g. proxy / CDN HTML error page).
+    // Surface in dev so the underlying response shape is diagnosable; the
+    // user-facing string still falls through to the generic Service-error.
+    console.warn(`[apiErrorMessage] ${response.status} body not JSON:`, e);
   }
   return msg;
 }
