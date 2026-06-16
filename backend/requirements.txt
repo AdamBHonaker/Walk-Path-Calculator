@@ -13,4 +13,4 @@ slowapi>=0.1.9,<1.0
 # existing `logger.warning(...)` call works unchanged; only the rendered
 # line format changes. Picked over structlog to avoid touching every log
 # site in the codebase.
-python-json-logger>=2.0,<4.0
+python-json-logger>=4.1.0,<5.0
